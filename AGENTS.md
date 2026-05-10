@@ -7,12 +7,23 @@ These instructions apply to the OwnCanvas project root.
 - Confirm you are in the OwnCanvas root, not the parent `dndn작업실` directory.
 - Run `git status --short --branch` before changing files.
 - Read the project context that matches the task:
+  - Persistent memory: `wiki/index.md` and `wiki/log.md`
   - DDD/domain: `CONTEXT.md`
   - Product and marketing: `.agents/product-marketing-context.md`
   - UI/design system: `DESIGN.md`
   - Skill availability: `.agents/skills/README.md` and `.agents/skills/registry.json`
-- Create a `plans/YYYYMMDD_<topic>.md` before implementation.
-- Record results and verification in `context/context_YYYYMMDD_<topic>.md`.
+- Use `wiki/` as the default work memory. Do not create new `plans/` or `context/` files by default.
+- Create `plans/` or `context/` files only when the user explicitly asks, a long/risky task needs a separate execution artifact, or an upstream workflow requires it.
+
+## Wiki Memory
+
+- Use `llm-wiki` before creating, querying, linting, or updating OwnCanvas persistent knowledge.
+- Read `wiki/index.md` first, then the smallest relevant wiki pages.
+- Append every meaningful task outcome to `wiki/log.md`.
+- Put reusable conclusions in `wiki/concepts/`, `wiki/entities/`, or `wiki/analyses/`.
+- Write generated wiki pages and durable notes in Korean by default.
+- Use stable kebab-case filenames and H1 titles in `한국어 | English` format where practical.
+- Keep `raw/` immutable unless the user explicitly asks to reorganize source material.
 
 ## Remote Skill Setup
 
@@ -33,7 +44,7 @@ If skills are missing, restore the relevant group:
 ```bash
 export TRUSTED_SKILLS_DIR=/path/to/trusted/skills
 mkdir -p ~/.codex/skills
-cp -R "$TRUSTED_SKILLS_DIR"/{DDD-zoom-out,DDD-grill-with-docs,DDD-improve-architecture,DDD-tdd,marketing-ideas,product-marketing-context,community-marketing,marketing-psychology} ~/.codex/skills/
+cp -R "$TRUSTED_SKILLS_DIR"/{DDD-zoom-out,DDD-grill-with-docs,DDD-improve-architecture,DDD-tdd,marketing-ideas,product-marketing-context,community-marketing,marketing-psychology,llm-wiki} ~/.codex/skills/
 
 mkdir -p ~/.gstack/repos
 git clone https://github.com/garrytan/gstack.git ~/.gstack/repos/gstack
@@ -47,10 +58,11 @@ If a destination already exists, update it through that package's normal pull/up
 ## Missing Skill Rule
 
 - Do not claim a missing external skill was used.
-- If a DDD skill is missing, use `CONTEXT.md` and write the domain assumption in the active plan/context.
+- If a DDD skill is missing, use `CONTEXT.md` and write the domain assumption in `wiki/log.md` or a relevant `wiki/concepts/` page.
 - If a marketing skill is missing, use `.agents/product-marketing-context.md`.
 - If `design-review` is missing, use `DESIGN.md` plus local browser/visual verification when UI is involved.
-- If a superpowers planning/execution skill is missing, use the project `plans/` and `context/` workflow directly.
+- If `llm-wiki` is missing, update `wiki/index.md`, `wiki/log.md`, and the relevant wiki page directly.
+- If a superpowers planning/execution skill is missing, use the project `wiki/` workflow directly.
 
 ## Skill Routing
 
@@ -60,6 +72,7 @@ If a destination already exists, update it through that package's normal pull/up
 - Use `DDD-tdd` for domain behavior changes that need test-first specification.
 - Use `product-marketing-context` before changing positioning, audience, copy, or value proposition.
 - Use `marketing-ideas`, `community-marketing`, and `marketing-psychology` for growth, launch, community, objection, or switching-friction work.
+- Use `llm-wiki` whenever work should update persistent project memory.
 - Use `office-hours` for founder-style product critique.
 - Use `plan-ceo-review` before scope or prioritization changes.
 - Use `plan-eng-review` before architecture or integration-heavy implementation.

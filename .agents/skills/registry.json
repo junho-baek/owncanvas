@@ -7,9 +7,9 @@
       "commands": [
         "export TRUSTED_SKILLS_DIR=/path/to/trusted/skills",
         "mkdir -p ~/.codex/skills",
-        "cp -R \"$TRUSTED_SKILLS_DIR\"/{DDD-zoom-out,DDD-grill-with-docs,DDD-improve-architecture,DDD-tdd,marketing-ideas,product-marketing-context,community-marketing,marketing-psychology} ~/.codex/skills/"
+        "cp -R \"$TRUSTED_SKILLS_DIR\"/{DDD-zoom-out,DDD-grill-with-docs,DDD-improve-architecture,DDD-tdd,marketing-ideas,product-marketing-context,community-marketing,marketing-psychology,llm-wiki} ~/.codex/skills/"
       ],
-      "fallback": "Use OwnCanvas repo docs: CONTEXT.md for DDD terms, .agents/product-marketing-context.md for marketing, and DESIGN.md for UI."
+      "fallback": "Use OwnCanvas repo docs: CONTEXT.md for DDD terms, .agents/product-marketing-context.md for marketing, DESIGN.md for UI, and wiki/ for durable memory."
     },
     "gstack": {
       "description": "gstack review and planning skills expected under ~/.gstack/repos/gstack/.agents/skills.",
@@ -17,7 +17,7 @@
         "mkdir -p ~/.gstack/repos",
         "git clone https://github.com/garrytan/gstack.git ~/.gstack/repos/gstack"
       ],
-      "fallback": "Use the AGENTS.md routing rules directly and record assumptions in plans/context."
+      "fallback": "Use the AGENTS.md routing rules directly and record assumptions in wiki/log.md or a relevant wiki page."
     },
     "superpowers": {
       "description": "Superpowers skills expected under ~/.codex/superpowers/skills.",
@@ -25,7 +25,7 @@
         "mkdir -p ~/.codex",
         "git clone https://github.com/obra/superpowers.git ~/.codex/superpowers"
       ],
-      "fallback": "Use plain repo plans in plans/ and execute them step by step with verification in context/."
+      "fallback": "Use wiki/log.md as the work log and create a focused wiki/analyses page only when a separate execution artifact is needed."
     }
   },
   "skills": [
@@ -37,7 +37,7 @@
       "pathCandidates": [
         "~/.codex/skills/DDD-zoom-out/SKILL.md"
       ],
-      "fallback": "Read CONTEXT.md and write down the domain boundary decision in the active plan."
+      "fallback": "Read CONTEXT.md and write down the domain boundary decision in wiki/log.md or a relevant wiki/concepts page."
     },
     {
       "name": "DDD-grill-with-docs",
@@ -110,6 +110,16 @@
       "fallback": "Use the objections and switching dynamics in .agents/product-marketing-context.md."
     },
     {
+      "name": "llm-wiki",
+      "category": "Knowledge",
+      "group": "codex-skills",
+      "when": "Use when creating, querying, linting, or updating the persistent OwnCanvas Markdown wiki.",
+      "pathCandidates": [
+        "~/.codex/skills/llm-wiki/SKILL.md"
+      ],
+      "fallback": "Maintain wiki/index.md, wiki/log.md, and relevant wiki/concepts or wiki/analyses pages directly in Korean."
+    },
+    {
       "name": "office-hours",
       "category": "gstack",
       "group": "gstack",
@@ -161,7 +171,7 @@
       "pathCandidates": [
         "~/.codex/superpowers/skills/writing-plans/SKILL.md"
       ],
-      "fallback": "Write a plan in plans/ with background, goal, scope, files, tests, rollback, and risks."
+      "fallback": "Write the execution outline in wiki/log.md, or create a wiki/analyses page for long/risky work."
     },
     {
       "name": "superpowers:writing-skills",
@@ -181,7 +191,7 @@
       "pathCandidates": [
         "~/.codex/superpowers/skills/executing-plans/SKILL.md"
       ],
-      "fallback": "Execute the plan top to bottom, update status as work completes, and record verification in context/."
+      "fallback": "Execute the wiki/log outline top to bottom and record verification in wiki/log.md."
     }
   ]
 }

@@ -20,7 +20,7 @@ npm run skills:check:strict
 
 | Group | Expected location | Restore command |
 | --- | --- | --- |
-| Codex personal/team skills | `~/.codex/skills/<skill>/SKILL.md` | `export TRUSTED_SKILLS_DIR=/path/to/trusted/skills && mkdir -p ~/.codex/skills && cp -R "$TRUSTED_SKILLS_DIR"/{DDD-zoom-out,DDD-grill-with-docs,DDD-improve-architecture,DDD-tdd,marketing-ideas,product-marketing-context,community-marketing,marketing-psychology} ~/.codex/skills/` |
+| Codex personal/team skills | `~/.codex/skills/<skill>/SKILL.md` | `export TRUSTED_SKILLS_DIR=/path/to/trusted/skills && mkdir -p ~/.codex/skills && cp -R "$TRUSTED_SKILLS_DIR"/{DDD-zoom-out,DDD-grill-with-docs,DDD-improve-architecture,DDD-tdd,marketing-ideas,product-marketing-context,community-marketing,marketing-psychology,llm-wiki} ~/.codex/skills/` |
 | gstack skills | `~/.gstack/repos/gstack/.agents/skills/gstack-*/SKILL.md` | `mkdir -p ~/.gstack/repos && git clone https://github.com/garrytan/gstack.git ~/.gstack/repos/gstack` |
 | superpowers skills | `~/.codex/superpowers/skills/<skill>/SKILL.md` | `mkdir -p ~/.codex && git clone https://github.com/obra/superpowers.git ~/.codex/superpowers` |
 
@@ -33,6 +33,6 @@ If a listed skill is missing, do not pretend it ran. Use the project-local fallb
 - DDD/domain decisions: `CONTEXT.md`
 - Product/marketing decisions: `.agents/product-marketing-context.md`
 - UI/design decisions: `DESIGN.md`
-- Execution record: `plans/` before work and `context/` after verification
+- Persistent memory and work log: `wiki/index.md`, `wiki/log.md`, and relevant `wiki/concepts/` or `wiki/analyses/` pages
 
 The machine-readable source of truth is `registry.json`.

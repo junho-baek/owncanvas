@@ -16,7 +16,7 @@ Open the local URL printed by React Router.
 
 ## Agent Skill Setup
 
-OwnCanvas keeps project-specific agent instructions in `AGENTS.md` and the external skill registry in `.agents/skills/`. Remote clones can check whether the expected DDD, marketing, gstack, and superpowers skills are installed:
+OwnCanvas keeps project-specific agent instructions in `AGENTS.md`, persistent project memory in `wiki/`, and the external skill registry in `.agents/skills/`. Remote clones can check whether the expected DDD, marketing, llm-wiki, gstack, and superpowers skills are installed:
 
 ```bash
 npm run skills:check
