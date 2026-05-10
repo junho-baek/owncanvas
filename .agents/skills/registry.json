@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "project": "owncanvas",
+  "installGroups": {
+    "codex-skills": {
+      "description": "Personal or team Codex skills expected under ~/.codex/skills.",
+      "commands": [
+        "export TRUSTED_SKILLS_DIR=/path/to/trusted/skills",
+        "mkdir -p ~/.codex/skills",
+        "cp -R \"$TRUSTED_SKILLS_DIR\"/{DDD-zoom-out,DDD-grill-with-docs,DDD-improve-architecture,DDD-tdd,marketing-ideas,product-marketing-context,community-marketing,marketing-psychology} ~/.codex/skills/"
+      ],
+      "fallback": "Use OwnCanvas repo docs: CONTEXT.md for DDD terms, .agents/product-marketing-context.md for marketing, and DESIGN.md for UI."
+    },
+    "gstack": {
+      "description": "gstack review and planning skills expected under ~/.gstack/repos/gstack/.agents/skills.",
+      "commands": [
+        "mkdir -p ~/.gstack/repos",
+        "git clone https://github.com/garrytan/gstack.git ~/.gstack/repos/gstack"
+      ],
+      "fallback": "Use the AGENTS.md routing rules directly and record assumptions in plans/context."
+    },
+    "superpowers": {
+      "description": "Superpowers skills expected under ~/.codex/superpowers/skills.",
+      "commands": [
+        "mkdir -p ~/.codex",
+        "git clone https://github.com/obra/superpowers.git ~/.codex/superpowers"
+      ],
+      "fallback": "Use plain repo plans in plans/ and execute them step by step with verification in context/."
+    }
+  },
+  "skills": [
+    {
+      "name": "DDD-zoom-out",
+      "category": "DDD",
+      "group": "codex-skills",
+      "when": "Use before changing domain shape, object names, context boundaries, or product mental models.",
+      "pathCandidates": [
+        "~/.codex/skills/DDD-zoom-out/SKILL.md"
+      ],
+      "fallback": "Read CONTEXT.md and write down the domain boundary decision in the active plan."
+    },
+    {
+      "name": "DDD-grill-with-docs",
+      "category": "DDD",
+      "group": "codex-skills",
+      "when": "Use when product/domain wording needs pressure-testing against existing docs.",
+      "pathCandidates": [
+        "~/.codex/skills/DDD-grill-with-docs/SKILL.md"
+      ],
+      "fallback": "Compare proposed language against CONTEXT.md, README.md, and .agents/product-marketing-context.md."
+    },
+    {
+      "name": "DDD-improve-architecture",
+      "category": "DDD",
+      "group": "codex-skills",
+      "when": "Use before refactoring feature boundaries, adapters, models, or domain modules.",
+      "pathCandidates": [
+        "~/.codex/skills/DDD-improve-architecture/SKILL.md"
+      ],
+      "fallback": "Keep domain language in app/features/*/model and isolate framework/provider glue in adapters."
+    },
+    {
+      "name": "DDD-tdd",
+      "category": "DDD",
+      "group": "codex-skills",
+      "when": "Use for behavior changes where domain rules should be specified before implementation.",
+      "pathCandidates": [
+        "~/.codex/skills/DDD-tdd/SKILL.md"
+      ],
+      "fallback": "Write the expected domain behavior in the plan, implement the smallest slice, then verify it locally."
+    },
+    {
+      "name": "marketing-ideas",
+      "category": "Marketing",
+      "group": "codex-skills",
+      "when": "Use when generating acquisition, positioning, launch, or growth ideas.",
+      "pathCandidates": [
+        "~/.codex/skills/marketing-ideas/SKILL.md"
+      ],
+      "fallback": "Use .agents/product-marketing-context.md and keep ideas tied to the local-first/BYO-provider wedge."
+    },
+    {
+      "name": "product-marketing-context",
+      "category": "Marketing",
+      "group": "codex-skills",
+      "when": "Use when changing positioning, personas, objections, value proposition, or copy direction.",
+      "pathCandidates": [
+        "~/.codex/skills/product-marketing-context/SKILL.md"
+      ],
+      "fallback": "Read and update .agents/product-marketing-context.md directly."
+    },
+    {
+      "name": "community-marketing",
+      "category": "Marketing",
+      "group": "codex-skills",
+      "when": "Use when planning community-led distribution, audience research, or founder-led channels.",
+      "pathCandidates": [
+        "~/.codex/skills/community-marketing/SKILL.md"
+      ],
+      "fallback": "Anchor community ideas to creative operators, solo founders, agencies, and open-source users."
+    },
+    {
+      "name": "marketing-psychology",
+      "category": "Marketing",
+      "group": "codex-skills",
+      "when": "Use when evaluating motivation, objections, switching friction, and persuasion.",
+      "pathCandidates": [
+        "~/.codex/skills/marketing-psychology/SKILL.md"
+      ],
+      "fallback": "Use the objections and switching dynamics in .agents/product-marketing-context.md."
+    },
+    {
+      "name": "office-hours",
+      "category": "gstack",
+      "group": "gstack",
+      "when": "Use for founder-style critique of product direction, wedge, urgency, or why-now.",
+      "pathCandidates": [
+        "~/.gstack/repos/gstack/.agents/skills/gstack-office-hours/SKILL.md",
+        "~/.codex/skills/gstack-office-hours/SKILL.md"
+      ],
+      "fallback": "State the product thesis, strongest objection, and next test in the plan."
+    },
+    {
+      "name": "plan-ceo-review",
+      "category": "gstack",
+      "group": "gstack",
+      "when": "Use before starting a plan that affects product scope, prioritization, or business direction.",
+      "pathCandidates": [
+        "~/.gstack/repos/gstack/.agents/skills/gstack-plan-ceo-review/SKILL.md",
+        "~/.codex/skills/gstack-plan-ceo-review/SKILL.md"
+      ],
+      "fallback": "Review the plan for scope, user value, sequencing, and smallest shippable slice."
+    },
+    {
+      "name": "plan-eng-review",
+      "category": "gstack",
+      "group": "gstack",
+      "when": "Use before implementation plans that change architecture, data flow, or shared code.",
+      "pathCandidates": [
+        "~/.gstack/repos/gstack/.agents/skills/gstack-plan-eng-review/SKILL.md",
+        "~/.codex/skills/gstack-plan-eng-review/SKILL.md"
+      ],
+      "fallback": "Review the plan for blast radius, tests, rollback, and integration risk."
+    },
+    {
+      "name": "design-review",
+      "category": "gstack",
+      "group": "gstack",
+      "when": "Use after UI work or before finalizing visual interaction decisions.",
+      "pathCandidates": [
+        "~/.gstack/repos/gstack/.agents/skills/gstack-design-review/SKILL.md",
+        "~/.codex/skills/gstack-design-review/SKILL.md"
+      ],
+      "fallback": "Check the UI against DESIGN.md, responsive constraints, contrast, and text fit."
+    },
+    {
+      "name": "superpowers:writing-plans",
+      "category": "superpowers",
+      "group": "superpowers",
+      "when": "Use when turning a request into an implementation plan or execution checklist.",
+      "pathCandidates": [
+        "~/.codex/superpowers/skills/writing-plans/SKILL.md"
+      ],
+      "fallback": "Write a plan in plans/ with background, goal, scope, files, tests, rollback, and risks."
+    },
+    {
+      "name": "superpowers:writing-skills",
+      "category": "superpowers",
+      "group": "superpowers",
+      "when": "Use when creating, editing, or evaluating reusable skill/process documentation.",
+      "pathCandidates": [
+        "~/.codex/superpowers/skills/writing-skills/SKILL.md"
+      ],
+      "fallback": "Keep project-specific process in AGENTS.md or .agents/skills/README.md instead of inventing global skill bodies."
+    },
+    {
+      "name": "superpowers:executing-plans",
+      "category": "superpowers",
+      "group": "superpowers",
+      "when": "Use when executing a written plan through implementation, verification, and completion.",
+      "pathCandidates": [
+        "~/.codex/superpowers/skills/executing-plans/SKILL.md"
+      ],
+      "fallback": "Execute the plan top to bottom, update status as work completes, and record verification in context/."
+    }
+  ]
+}

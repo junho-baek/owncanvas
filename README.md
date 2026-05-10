@@ -8,10 +8,21 @@ OwnCanvas is a local-first creative AI canvas for your own keys, subscriptions, 
 
 ```bash
 npm install
+npm run skills:check
 npm run dev
 ```
 
 Open the local URL printed by React Router.
+
+## Agent Skill Setup
+
+OwnCanvas keeps project-specific agent instructions in `AGENTS.md` and the external skill registry in `.agents/skills/`. Remote clones can check whether the expected DDD, marketing, gstack, and superpowers skills are installed:
+
+```bash
+npm run skills:check
+```
+
+Missing skills should be restored with the commands printed by the checker, or handled through the fallback docs listed in `.agents/skills/README.md`.
 
 ## Current Scope
 
