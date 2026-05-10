@@ -9,6 +9,12 @@
   background: #fbfaf7;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body {
   margin: 0;
@@ -88,6 +94,327 @@ button {
 .tool-button:not(.active):hover {
   background: #f2eee7;
   color: #2a2630;
+}
+
+.generation-palette {
+  position: fixed;
+  left: 128px;
+  top: 66px;
+  z-index: 20;
+  width: 288px;
+  border: 1px solid #e6e1d7;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 14px;
+  box-shadow: 0 18px 44px rgba(42, 31, 18, 0.09);
+  backdrop-filter: blur(12px);
+}
+
+.generation-palette,
+.generation-palette * {
+  box-sizing: border-box;
+}
+
+.palette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.palette-header strong {
+  font-size: 13px;
+  font-weight: 900;
+  color: #25212b;
+}
+
+.palette-kicker {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #9b92a3;
+}
+
+.palette-item {
+  display: flex;
+  min-height: 58px;
+  width: auto;
+  min-width: 0;
+  justify-self: stretch;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #ebe7df;
+  border-radius: 12px;
+  background: #fffefa;
+  padding: 10px;
+  color: #25212b;
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.palette-item:hover {
+  border-color: #c9d8ff;
+  box-shadow: 0 10px 24px rgba(63, 95, 130, 0.08);
+  transform: translateY(-1px);
+}
+
+.palette-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  background: #f2eee7;
+  color: #25212b;
+}
+
+.palette-item.image .palette-icon {
+  background: #eaf4ff;
+  color: #2563eb;
+}
+
+.palette-item.video .palette-icon {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.palette-item.voice .palette-icon {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.palette-item strong,
+.palette-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-item strong {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.palette-item small {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #786f80;
+}
+
+.palette-badge {
+  min-width: 34px;
+  border-radius: 999px;
+  background: #f2eee7;
+  padding: 5px 7px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 900;
+  color: #6f687a;
+}
+
+.generation-node {
+  position: relative;
+  width: 316px;
+  border: 1.5px solid #e6e1d7;
+  border-radius: 18px;
+  background: #fffefa;
+  box-shadow: 0 16px 34px rgba(53, 43, 27, 0.08);
+}
+
+.generation-node.selected {
+  box-shadow:
+    0 0 0 3px rgba(147, 197, 253, 0.16),
+    0 20px 44px rgba(53, 43, 27, 0.1);
+}
+
+.generation-node.ink {
+  border-color: #4c4650;
+}
+
+.generation-node.blue {
+  border-color: #bfdbfe;
+}
+
+.generation-node.violet {
+  border-color: #ddd6fe;
+}
+
+.generation-node.green {
+  border-color: #bbf7d0;
+}
+
+.generation-node-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #ece8df;
+  padding: 14px;
+}
+
+.generation-node-header strong,
+.generation-node-header small,
+.node-kicker-inline {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-kicker-inline {
+  margin-bottom: 2px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #aaa1b1;
+}
+
+.generation-node-header strong {
+  font-size: 15px;
+  font-weight: 900;
+  color: #15131a;
+}
+
+.generation-node-header small {
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #7d7485;
+}
+
+.generation-node-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  place-items: center;
+  border-radius: 14px;
+  background: #f2eee7;
+  color: #25212b;
+}
+
+.generation-node-icon.blue {
+  background: #eaf4ff;
+  color: #2563eb;
+}
+
+.generation-node-icon.violet {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.generation-node-icon.green {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.generation-status {
+  flex: none;
+  border-radius: 999px;
+  padding: 6px 8px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+
+.generation-status.ready {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.generation-status.draft {
+  background: #eef4fb;
+  color: #64748b;
+}
+
+.generation-status.needs-input {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.generation-description {
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid #ece8df;
+  color: #5f5868;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.generation-contract-row {
+  display: grid;
+  min-height: 34px;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid #f0ece4;
+  padding: 7px 14px;
+  font-size: 10px;
+}
+
+.generation-contract-row span {
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #aaa1b1;
+}
+
+.generation-contract-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+  color: #24202a;
+}
+
+.generation-contract-row em {
+  border-radius: 999px;
+  background: #edf2fb;
+  padding: 5px 7px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.generation-contract-row em.blue {
+  background: #eaf4ff;
+  color: #2563eb;
+}
+
+.generation-contract-row em.violet {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.generation-contract-row em.green {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.generation-node-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.generation-node-footer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #6f687a;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .timed-node {
@@ -315,4 +642,16 @@ button {
 
 .blue-handle {
   background: #60a5fa;
+}
+
+.ink-handle {
+  background: #4c4650;
+}
+
+.violet-handle {
+  background: #a855f7;
+}
+
+.green-handle {
+  background: #10b981;
 }

@@ -2,7 +2,7 @@
 
 Use the AI you already pay for.
 
-OwnCanvas is a local-first creative AI canvas for your own keys, subscriptions, and models. It starts as a lightweight React Router workspace for designing image, video, voice, and content workflows without another canvas subscription.
+OwnCanvas is a local-first creative AI canvas for your own keys, subscriptions, and models. It starts as a lightweight React Router workspace for building campaign creative with text, image, video, and voice generation blocks without another canvas subscription.
 
 ## Local Preview
 
@@ -17,9 +17,10 @@ Open the local URL printed by React Router.
 
 - React Router v7 app scaffold
 - Tailwind v4 styling
-- React Flow workflow canvas
-- DNDN-inspired workflow studio surface
-- Mock creative workflow data
+- React Flow creative canvas
+- DNDN-inspired campaign canvas surface
+- Generation Palette with text, image, video, and voice blocks
+- Mock campaign creative data
 
 ## App Structure
 
@@ -28,10 +29,11 @@ app/
   core/
     lib/
   features/
-    workflow-canvas/
+    creative-canvas/
+      adapters/
       components/
       model/
   routes/
 ```
 
-Provider execution, local project files, caching, and real image generation adapters come next.
+Provider execution, local project files, caching, and real generation adapters come next.
