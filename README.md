@@ -17,6 +17,7 @@ Open the local URL printed by React Router.
 
 - React Router v7 app scaffold
 - Tailwind v4 styling
+- Airtable-inspired `DESIGN.md` from `getdesign`
 - React Flow creative canvas
 - DNDN-inspired campaign canvas surface
 - Generation Palette with text, image, video, and voice blocks
@@ -37,3 +38,11 @@ app/
 ```
 
 Provider execution, local project files, caching, and real generation adapters come next.
+
+## Design System
+
+UI work should use `DESIGN.md` as the product design reference. It was installed with:
+
+```bash
+npx getdesign@latest add airtable
+```
