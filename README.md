@@ -14,6 +14,14 @@ npm run dev
 
 Open the local URL printed by React Router.
 
+To preview on your phone, run the dev server on your LAN interface:
+
+```bash
+npm run dev -- --host 0.0.0.0
+```
+
+Then open the machine's LAN IP from your phone browser.
+
 ## Agent Skill Setup
 
 OwnCanvas keeps project-specific agent instructions in `AGENTS.md`, persistent project memory in `wiki/`, and the external skill registry in `.agents/skills/`. Remote clones can check whether the expected DDD, marketing, llm-wiki, gstack, and superpowers skills are installed:
@@ -23,6 +31,18 @@ npm run skills:check
 ```
 
 Missing skills should be restored with the commands printed by the checker, or handled through the fallback docs listed in `.agents/skills/README.md`.
+
+## Plugin Workflow Example
+
+The plugin-system example workflow is documented in `app/features/plugins/model/README.md`. It covers the comment-to-DM-to-landing commerce flow, including plugin registration, DM routing, landing referral parsing, conversion tracking, and synchronized Campaign JSON/canvas state.
+
+Run the focused regression with:
+
+```bash
+node --experimental-strip-types --test app/features/plugins/model/plugin-registration-template-routing.test.ts
+```
+
+Start the app with `npm run dev`, then inspect plugin discovery through `/api/plugin-kinds`, `/api/plugin-kinds/direct-message`, `/api/agent/plugins`, and `/api/agent/plugins?view=installed`.
 
 ## Current Scope
 

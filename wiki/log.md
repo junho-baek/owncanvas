@@ -2,9 +2,1640 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-11] campaign-completion-action-structured-failure-reasons | Sub-AC 11.3.3
+
+- `updatePersistedCampaignRecord()` now throws `CampaignCompletionActionError` when a campaign completion action fails eligibility validation, preserving the existing error message while exposing structured `reasons` and `completionState`.
+- Direct human/agent model callers can inspect the same blocker codes used by the API, including measurement eligibility and measurement-based improvement eligibility failures, without relying on string parsing.
+- 검증: failing-first `node --experimental-strip-types --test --test-name-pattern "structured completion action failure reasons" app/features/creative-canvas/model/creative-canvas.test.ts`, then passing same command; `node --experimental-strip-types --test --test-name-pattern "completion|structured completion action failure reasons" app/features/creative-canvas/model/creative-canvas.test.ts`; `node --experimental-strip-types --test --test-name-pattern "completion|gating reasons" app/routes/campaign-api.test.ts`; `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/routes/campaign-api.test.ts`; focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts app/routes/api.campaign.ts app/routes/campaign-api.test.ts`; `npm run build`.
+- 참고: `npm run build` still prints the known nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning but exits 0.
+
+## [2026-05-11] campaign-completion-improvement-record-validation | Sub-AC 11.3.2
+
+- `validateCampaignCompletion()` now rejects `completed` campaigns that have completed measurement cycles but no completed measurement-based improvement record.
+- The API PATCH path returns `campaign_completion.improvement_record_required` for attempted completion before the conversion improvement loop is closed, preserving the previous measurement-record guard for blank campaigns.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "without improvement records|without improvement record|without measurement records" app/features/creative-canvas/model/creative-canvas.test.ts`; `node --experimental-strip-types --test --test-name-pattern "without improvement records|without measurement results" app/routes/campaign-api.test.ts`; `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/routes/campaign-api.test.ts`; focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts app/routes/api.campaign.ts app/routes/campaign-api.test.ts`.
+
+## [2026-05-11] measurement-result-used-improvement-completion | Sub-AC 11.2.2
+
+- Improvement cycle completion now requires a completed improvement action to include `owncanvas.campaign-measurement-result-usage.v1` metadata that references metric ids from the source completed measurement cycle.
+- `getCampaignMeasurementBasedImprovementStatus()` no longer marks a campaign complete from action status alone; it stays `proposed` until the measurement result usage records the applied change and valid usage timestamp.
+- 검증: failing-first `node --experimental-strip-types --test --test-name-pattern "campaign improvement status waits" app/features/creative-canvas/model/creative-canvas.test.ts`, then passing same command; `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/features/creative-canvas/model/creative-canvas.test.ts app/routes/campaign-api.test.ts`; focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/routes/api.campaign.ts app/routes/campaign-api.test.ts`; `npm run build`.
+- 참고: `npm run build` still prints the known nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning but exits 0.
+
+## [2026-05-11] measurement-derived-improvement-actions | Sub-AC 11.2
+
+- Campaign tracking JSON now records `owncanvas.campaign-improvement-action.v1` proposed actions derived from completed measurement cycles.
+- New measurement metrics regenerate measurement-cycle derivatives and create a deterministic improvement action from the primary purchase-conversion result: missed targets propose conversion-path optimization, while met targets propose scaling the winning path.
+- `GET/PATCH /api/campaigns/:campaignId` includes the recorded improvement actions in `measurementResults`, preserving the source measurement cycle, goal ids, observed value, target, recommendation, and rationale.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/routes/campaign-api.test.ts`; focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/routes/api.campaign.ts app/routes/campaign-api.test.ts`.
+
+## [2026-05-11] post-publication-measurement-results-api | Sub-AC 11.1
+
+- `PATCH /api/campaigns/:campaignId` can now record post-publication measurement results and regenerate completed measurement cycles when new metrics are submitted without an explicit cycle list.
+- `GET/PATCH /api/campaigns/:campaignId` exposes a `measurementResults` read model only after a campaign has published links, including publication context, metric/result counts, primary purchase-conversion result, recorded timestamp, and latest completed cycle.
+- 검증: failing-first then passing `node --experimental-strip-types --test app/routes/campaign-api.test.ts`; `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts`.
+- 참고: `npm run typecheck` remains blocked by existing nested `dndnFE` missing package/path issues (`expo/tsconfig.base`, `radix-ui`, `class-variance-authority`, aliases, Supabase, etc.).
+
+## [2026-05-11] campaign-measurement-cycle-completion | Sub-AC 11.1
+
+- Campaign tracking JSON에 `owncanvas.campaign-measurement-cycle.v1` completed cycle records를 추가해 performance metrics가 저장될 때 goal scope, started/completed timestamps, result count, primary result, full performance results를 함께 보존한다.
+- `getCampaignMeasurementCycleCompletion()` / `hasCampaignCompletedMeasurementCycle()` helper를 추가해 blank campaign은 미완료로, recorded performance results가 있는 campaign은 at least one completed measurement cycle로 판정할 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts`; `node --experimental-strip-types --test app/routes/campaign-api.test.ts`; focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/routes/api.campaign.ts app/routes/campaign-api.test.ts`; `npm run build`.
+- 참고: `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다. Full `npm run typecheck`는 owncanvas/plugin fixture 호환성 확인 후에도 기존 nested `dndnFE/` missing dependency/path alias 오류들로 실패한다.
+
+## [2026-05-11] campaign-comparison-primary-purchase-conversion | Sub-AC 10.3.2
+
+- Campaign comparison view model을 추가해 비교 컬럼의 첫 번째이자 `primarySuccessMetric`을 `purchase_conversion_rate` / `Purchase conversion`으로 고정했다.
+- 비교 row는 동일한 reporting formatter를 재사용해 campaign별 purchase conversion 표시값과 help text를 만들고, purchase conversion rate 기준으로 정렬해 conversion-first KPI가 비교 화면의 기본 판단 기준이 되게 했다.
+- 기존 single-campaign reporting summary section 기대값도 보존해 `primary_purchase_conversion` 섹션이 purchase conversion metric을 먼저 노출한다.
+- 검증: failing-first `node --experimental-strip-types --test --test-name-pattern "campaign comparison view model" app/routes/campaign-reporting-view.test.ts`, then passing same command; `node --experimental-strip-types --test app/routes/campaign-reporting-view.test.ts`; focused `npx tsc --noEmit ... app/routes/campaign-reporting-view-model.ts app/routes/campaign-reporting-view.test.ts`; `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 누락을 보고해 repo fallback 문서(`CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, wiki)를 사용했다. `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] campaign-conversion-metrics-reporting | Sub-AC 10.2.4
+
+- `GET /api/campaigns/:campaignId/tracking/metrics` 응답에 `owncanvas.campaign-conversion-metrics.v1` reporting block을 추가해 exposure/click/conversion/purchase funnel counts, session counts, CTR, purchase conversion rate, total value, AOV, revenue per click, currency breakdown을 한 번에 노출한다.
+- Conversion KPI reporting은 기존 Campaign analytics event store와 동일한 filter contract(`campaignId`, `pageId`, channel/product/offer/time 등)를 사용하므로 canvas JSON tracking source of truth와 reporting output이 분리되지 않는다.
+- 검증: failing-first `node --experimental-strip-types --test --test-name-pattern "conversion reporting metrics" app/routes/campaign-metric-query-contracts-api.test.ts`, then passing same command; `node --experimental-strip-types --test app/routes/campaign-metric-query-contracts-api.test.ts`; `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`; focused `npx tsc --noEmit ...`; `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 누락을 보고해 repo fallback 문서(`CONTEXT.md`, wiki)를 사용했다. `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] campaign-evaluation-primary-purchase-conversion | Sub-AC 10.1
+
+- Campaign evaluation model의 기본 `primarySuccessMetric`이 `purchase_conversion_rate` / `purchase` event / `final_conversion` attribution role을 가진 primary metric으로 정의되어 있음을 확인했다.
+- `createCampaignTrackingConfiguration()`의 기본 tracking에도 `owncanvas.campaign-evaluation.v1` evaluation model이 포함되어 blank campaign과 API 노출 경로가 purchase conversion을 campaign success 기준으로 보존한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "campaign evaluation model defines purchase conversion|blank campaign starts" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts`, `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 누락을 보고해 repo fallback 문서(`CONTEXT.md`, `.agents/product-marketing-context.md`, wiki)를 사용했다. `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] revisit-measurement-query-report-output | Sub-AC 9.5.4
+
+- `GET /api/campaigns/:campaignId/tracking/metrics?metric=revisit&groupBy=matchedBy` now includes a detailed `report` payload using the existing `owncanvas.campaign-metric-report.v1` shape.
+- The metric query route parses `groupBy` dimensions and passes them through to `getCampaignMetricReport()`, so canonical measurement queries can return grouped revisit rows as well as aggregate metric counts.
+- 검증: failing-first `node --experimental-strip-types --test --test-name-pattern "grouped revisit reporting output" app/routes/campaign-metric-query-contracts-api.test.ts`, then passing same command; `node --experimental-strip-types --test --test-name-pattern "reports filtered revisit metrics" app/routes/campaign-tracking-events-api.test.ts`; focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/routes/api.campaign-tracking-metrics.ts app/routes/campaign-metric-query-contracts-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`; `npm run build`.
+- 참고: full `app/routes/campaign-metric-query-contracts-api.test.ts` still has existing assertion drift in the mixed metrics time-range test: the fixture contains two matching click events in the inclusive range, while the assertion expects one. `npm run build` still prints the known nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning but exits 0.
+
+## [2026-05-11] conversion-revisit-metric-reporting | Sub-AC 9.5.3
+
+- 공통 metric report loader를 conversion/revisit까지 확장해 필터링된 count, unique session, conversion total value, grouped rows를 반환한다.
+- `GET /api/campaigns/:campaignId/tracking/conversions`는 기존 attributed conversion analytics를 유지하면서 `metric=conversion`, `groupBy`, conversion filter가 있을 때 metric report query를 제공한다.
+- `GET /api/campaigns/:campaignId/tracking/revisits`에 revisit metric report loader를 연결해 `matchedBy` 필터와 그룹 reporting을 지원한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "reports filtered conversion metrics|reports filtered revisit metrics" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/routes/campaign-metric-query-contracts-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] click-metric-reporting-href-query | Sub-AC 9.5.2
+
+- Click metric query contract now advertises `href` as a supported `groupBy` dimension, matching the existing `href` filter and direct click metric report behavior.
+- `GET /api/campaigns/:campaignId/tracking/clicks` regression now verifies grouped click reporting by `destination` and `href`, returning count and unique-session rows for each clicked link.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "metric query contracts" app/routes/campaign-metric-query-contracts-api.test.ts`, `node --experimental-strip-types --test --test-name-pattern "reports filtered click metrics" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/routes/campaign-metric-query-contracts-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] exposure-metric-reporting-api | Sub-AC 9.5.1
+
+- `GET /api/campaigns/:campaignId/tracking/exposures`에 metric report loader를 연결해 exposure metric reporting output을 제공한다.
+- 공통 `createCampaignTrackingMetricReportLoader()`와 `getCampaignMetricReport()`를 추가해 exposure/click route가 campaign, channel, page 등 필터와 `groupBy` 차원으로 count/unique session rows를 반환할 수 있게 했다.
+- 회귀 테스트는 exposure reporting이 `groupBy=placement`로 hero/offer placement 노출 수와 unique session을 반환하는지 검증한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "reports filtered exposure metrics|reports filtered click metrics" app/routes/campaign-tracking-events-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/routes/api.campaign-tracking-exposures.ts app/routes/api.campaign-tracking-clicks.ts app/routes/api.campaign-tracking-metric-report.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/routes/campaign-metric-query-contracts-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] visit-history-focused-regressions | Sub-AC 9.4.4
+
+- 첫 방문 표면 추적 테스트를 추가해 first-time visit이 revisit 이벤트를 만들지 않고 `tracking.sessions`에 campaign/session/user/channel/touchpoint/UTM/attribution history를 저장하는지 검증했다.
+- returning user 재진입 테스트에 campaign history association assertion을 보강해 `oc_user_id`가 returning visit의 `tracking.sessions` record에 유지되는지 확인했다.
+- inbound session parser/model 테스트를 추가하고 `oc_user_id`/`user_id`를 reserved attribution parameter가 아닌 `CampaignTrackedSession.userId`로 저장하도록 수정했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 `app/routes/campaign-metric-query-contracts-api.test.ts` missing `./api.campaign-tracking-metrics.ts`와 기존 nested `dndnFE/` dependency/path alias 오류로 실패한다. `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] nonblocking-surface-delivery-retry | Sub-AC 8.4.4
+
+- Campaign landing surface tracking delivery now retries transient network or non-2xx POST failures while keeping interaction handlers non-blocking and local Campaign JSON tracking as the source of truth.
+- Conversion event delivery can recover from an initial offline/network failure without interrupting the purchase flow; retries reuse the same tracked event payload and endpoint.
+- Asset generation execution now supports `maxAttempts`, retrying transient provider failures as continued `running` progress rather than surfacing an intermediate failed state before the final attempt.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "retries failed conversion delivery|buffers playback" app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing external skills 8개 누락을 보고해 repo fallback 문서(`CONTEXT.md`, `.agents/product-marketing-context.md`, wiki)를 사용했다. `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] surface-conversion-event-attribution | Sub-AC 8.4.3
+
+- landing surface tracking client에 `emitConversion()`과 `createCampaignSurfaceConversionInput()`을 추가해 purchase conversion 이벤트를 campaign/session/content/UTM/node/input port/channel/product/offer metadata와 함께 생성한다.
+- conversion 이벤트가 로컬 Campaign JSON source of truth의 `tracking.eventLog`, `tracking.conversionRecords`, analytics attribution record에 저장되고 `/api/campaigns/:campaignId/tracking/conversions`로 전송되도록 client endpoint routing을 확장했다.
+- 회귀 테스트는 surface conversion payload가 `checkout` content, `inputs.purchase`, session UTM, product/offer attribution, order/value/currency metadata를 보존하는지 검증한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "conversion events with campaign and content attribution" app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] short-form-immersion-analytics-normalization | Sub-AC 8.3.3
+
+- Campaign tracking events now support normalized `pageId` metadata on content and target records, allowing short-form landing analytics to preserve campaign, page, asset, and session identifiers together.
+- Campaign analytics persistence now indexes page and asset dimensions (`byPageId`, `byAssetId`, campaign-scoped page/asset indexes) and `getPersistedCampaignAnalyticsEvents()` can query by page and asset together with campaign/session/type filters.
+- Short-form playback engagement analytics now include a normalized `immersion` attribution payload for watch depth, completion, replay, and control events that have page and asset context.
+- Campaign surface tracking helpers emit `pageId` defaults for landing-page module exposure, playback, and scroll engagement, and preserve explicit `oc_user_id` session identity for returning-user revisit attribution.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/client/campaign-surface-tracking.ts app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/features/creative-canvas/model/creative-canvas.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails in the unrelated nested `dndnFE` tree due missing package/path aliases and Expo dependencies; `npm run build` exits 0 while printing the existing `dndnFE/expo-webview` missing `expo/tsconfig.base` warning.
+
+## [2026-05-11] returning-campaign-workflow-revisit-events | Sub-AC 9.4.2
+
+- Campaign landing surface sessions now preserve an explicit `oc_user_id`/`user_id` identity alongside the session id, UTM, channel, touchpoint, and attribution parameters.
+- Returning attribution detection for landing re-entry now matches either the persisted session/attribution parameters or a known prior user id from campaign tracking events, then emits a `revisit` event with `outputs.revisit` attribution.
+- Revisit events are persisted in Campaign tracking JSON and delivered to `/api/campaigns/:campaignId/tracking/revisits` through the same buffered tracking client as exposure, click, engagement, and conversion events.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts app/features/creative-canvas/model/campaign-inbound-session-url.test.ts app/routes/campaign-tracking-events-api.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-short-form-control-interaction-tracking | Sub-AC 8.3.2
+
+- Landing native short-form video controls now emit playback engagement events for play, pause, mute, and unmute interactions through the campaign surface tracking client.
+- Control interaction events use stable `control:*` playback action names with count units and preserve current time, duration, landing node, output port, asset, product, offer, URL, session, UTM, and channel attribution.
+- Landing renderer wires native video `onPlay`, `onPause`, and `onVolumeChange` handlers while existing conversion, commerce, and continuation CTAs continue to use the shared tracked click capture path.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] attributed-conversion-reporting-api | Sub-AC 9.3.4
+
+- conversion tracking route에 `GET /api/campaigns/:campaignId/tracking/conversions` loader를 추가해 downstream reporting/analytics가 사용할 수 있는 attributed conversion projection을 노출했다.
+- `getAttributedCampaignConversionAnalytics()`는 Campaign tracking conversion records와 persisted analytics event store를 결합해 summary, flattened reporting rows, 원본 conversion record/event, attribution match, matched prior interaction을 반환한다.
+- reporting row는 conversion id/session/time/event/value/currency/order, UTM source/medium/campaign/content/term, node/channel/product/offer/target, attribution rule, prior interaction event/type/time/window를 포함한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "exposes attributed conversion rows" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 missing을 보고해 repo fallback 문서를 사용했다. `npm run build`는 기존 nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-navigation-conversion-playback-options | Sub-AC 8.2.1
+
+- `owncanvas.landing-page-template.v1`에 `navigation`과 `conversionElements` 설정을 추가해 landing page navigation/CTA가 visibility, placement, timing, playback interruption behavior를 JSON source-of-truth로 표현한다.
+- Landing render model은 navigation 설정과 conversion element 배열을 normalized contract로 노출하며, template validation은 잘못된 placement/timing/destination URL을 structured error로 거부한다.
+- `CampaignLandingPageRenderer`는 visible navigation/conversion elements를 data attribute로 렌더링해 short-form playback 중 non-blocking/pause/block 정책을 UI/runtime이 읽을 수 있게 했다.
+- 기존 analytics event persistence helper를 복원하고 event record key를 campaign/session/event 단위로 맞춰 tracking attribution regression도 통과시켰다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "navigation and conversion element playback policies" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 nested `dndnFE/` dependency/path alias 누락과 `dndnFE/expo-webview` missing `expo/tsconfig.base` 문제로 실패한다. `npm run build`는 같은 warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-template-supported-embed-preview-validation | Sub-AC 8.1.4
+
+- Landing template render model에 embedded short-form `preview` metadata를 추가해 Instagram oEmbed, TikTok/YouTube iframe, OwnCanvas native/generated asset, custom iframe preview surface를 구분해 노출한다.
+- Template validation은 short-form preview가 지원하는 platform/source type/embed mode 조합을 검사하고, platform URL mismatch, unsupported source/embed 조합, unsupported platform을 structured error로 거부한다.
+- 기존 short-form content control test fixture의 direct-message publishing channel에 required `placement` 값을 보강해 focused TypeScript 검증이 현재 model contract를 통과하도록 맞췄다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "preview and validation cover supported short-form embed sources" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test --test-name-pattern "landing page template|landing page render model|landing page renderer" app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 기존 untracked `dndnFE/` tree의 missing package/path alias와 `expo/tsconfig.base` 문제로 실패한다. `npm run build`도 같은 Expo tsconfig warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-layout-breakpoint-visual-contract | Sub-AC 8.2.4
+
+- landing responsive layout test에 desktop/tablet/mobile 시각 계약을 추가해 content visibility, playback access, action presentation을 정적 CSS/renderer contract로 검증한다.
+- tablet breakpoint는 copy와 media 영역을 세로로 분리하면서 playback과 commerce panel은 인접하게 유지해 좁은 two-column 압축을 피한다.
+- mobile breakpoint는 media height budget을 유지하고 signup input/button 및 primary offer action을 full-width tap target으로 표현한다.
+- 검증: `node --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`.
+- 참고: broader `node --experimental-strip-types --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts app/features/creative-canvas/model/creative-canvas.test.ts app/features/creative-canvas/adapters/react-flow-canvas.test.ts`와 `npm run build`는 기존 `creative-canvas.ts` duplicate analytics helper declarations에서 실패한다. `npm run skills:check`는 기존 DDD/marketing 외부 skill 8개 missing을 보고해 repo fallback 문서를 사용했다.
+
+## [2026-05-11] exposure-click-event-payload-schema | Sub-AC 9.2.1
+
+- `CampaignExposureTrackingEvent` and `CampaignClickTrackingEvent` now require first-class `content` metadata and `utm` metadata alongside campaign/session/context/target fields.
+- Exposure and click event schema descriptors list `content` and `utm` as required payload sections, preserving campaign, content, and UTM attribution in the JSON source of truth.
+- Tracking-event validation rejects missing content type/id and missing UTM source/medium/campaign, and ingestion responses include content and UTM snapshots in returned attribution metadata.
+- Verification: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts app/routes/campaign-tracking-events-api.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- Note: `npm run typecheck` remains blocked by existing unrelated `creative-canvas.test.ts` channel placement drift, missing `getSupportedShortFormEmbedConfiguration`, and nested `dndnFE/` dependency/path errors.
+
+## [2026-05-11] published-link-url-utm-normalization | Sub-AC 9.1.3
+
+- `saveCampaignPublishingConfiguration()` now normalizes persisted published campaign link URLs by appending generated UTM parameters, OwnCanvas campaign/channel/responder/message parameters, conversion event, and configured attribution parameters before storage validation.
+- `createCampaignDestinationUrl()` and published-link save normalization share the same tracking query append helper, keeping destination URL generation and saved `publishedUrl` output aligned.
+- Regression covers a publish flow that returns a bare published URL and verifies the saved Campaign JSON contains the tracked published URL.
+- Verification: `node --experimental-strip-types --test --test-name-pattern "appends generated UTM parameters" app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- Note: `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] immersive-landing-responsive-requirements | Sub-AC 8.1.4
+
+- immersive landing render model에 `responsiveLayoutRequirements`와 `interactionRequirements`를 추가해 mobile/tablet/desktop별 block layout, media sizing, continuation placement, CTA placement, input mode, playback activation, scroll behavior를 JSON render contract로 표현했다.
+- embedded short-form module과 inline continuation module이 같은 responsive/interaction requirement를 공유하며, continuation block은 source embedded short의 aspect ratio와 max inline size를 상속한다.
+- source embed의 interaction scroll behavior는 연결된 inline continuation transition style을 따른다. continuation이 없으면 native scroll behavior가 기본값이다.
+- 검증: `node --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`.
+- 참고: `npm run typecheck`는 기존 nested `dndnFE/` tree의 missing Expo/Radix/Supabase/path alias dependency와 `expo/tsconfig.base` 문제로 실패한다.
+
+## [2026-05-11] deterministic-campaign-publish-utm | Sub-AC 9.1.2
+
+- `generateDeterministicCampaignUtmParameters()`를 추가해 campaign id/title/objective, publishing channel platform/type/placement/id, responder/message publish context에서 stable slug 기반 UTM source/medium/campaign/content/term을 생성한다.
+- `createCampaignDestinationUrl()`와 `createCampaignPublishedLink()`가 같은 deterministic UTM resolver를 사용하게 해 destination URL query string과 persisted published link UTM snapshot이 일치하도록 했다.
+- 명시된 channel/campaign UTM 값은 그대로 우선 사용하고, blank draft publish context에서만 deterministic fallback을 생성한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-inbound-session-url.test.ts app/features/creative-canvas/model/campaign-tracking-configuration-save-flow.test.ts app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run typecheck`는 기존 nested `dndnFE/` dependency/path drift로 실패한다.
+
+## [2026-05-11] published-campaign-link-utm-model | Sub-AC 9.1.1
+
+- published campaign link persistence를 `CampaignPublishingChannel.publishedLinks`로 추가하고, 각 link가 `destinationUrl`, 최종 `publishedUrl`, 정규화된 `utm`, OwnCanvas campaign/channel/responder/message/conversion parameters, 외부 attribution parameters, `publishedAt`을 보존하게 했다.
+- `createCampaignPublishedLink()`를 추가해 기존 destination URL 생성과 같은 UTM/attribution 값을 persisted link model로 만들 수 있게 했다.
+- publishing validation은 published link id 중복, channel mismatch, URL validity, 필수 UTM, publish timestamp를 검사한다.
+- 기존 comment-to-DM fixture와 inbound session helper drift를 현재 domain contract에 맞춰 정리했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run typecheck`는 기존처럼 nested `dndnFE/` tree의 Expo/Radix/path dependency errors로 실패한다.
+
+## [2026-05-11] inbound-campaign-session-record-utm-association | Sub-AC 9.1.2
+
+- `CampaignTracking.sessions`에 optional `CampaignTrackedSession` record를 추가해 captured inbound UTM attribution이 Campaign tracking state 안의 session record와 연결되도록 했다.
+- `trackInboundCampaignSession()`는 inbound URL을 campaign id 기준으로 parse/validate하고, normalized UTM, channel/touchpoint id, URL attribution parameters를 tracked session record로 upsert한 뒤 persisted Campaign record에 저장한다.
+- 같은 session id를 다시 capture하면 최초 `firstSeenAt`은 유지하고 `lastSeenAt`과 attribution payload를 갱신할 수 있는 upsert path를 마련했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-inbound-session-url.test.ts app/features/creative-canvas/model/campaign-tracking-configuration-save-flow.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 missing을 보고해 repo fallback 문서를 사용했다.
+
+## [2026-05-11] landing-renderer-responsive-short-form-modules | Sub-AC 8.1.2
+
+- Added a campaign landing render model that turns landing template modules into ordered renderable modules with explicit CSS aspect-ratio values and mobile/tablet/desktop breakpoint requirements.
+- Added a React landing page renderer and `/campaigns/:campaignId/landing` route that renders embedded short-form modules as native video or iframe surfaces while preserving each module's configured aspect ratio.
+- Added responsive landing CSS using `aspect-ratio` plus module max-width variables so vertical, square, and horizontal short-form embeds retain native proportions across breakpoints.
+- Verification: `node --experimental-strip-types --test --test-name-pattern "landing page template|immersive landing|landing page renderer" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- Note: `npm run typecheck` still fails on pre-existing nested `dndnFE/` missing dependencies/path aliases, after the local renderer type mismatch was resolved.
+
+## [2026-05-11] immersive-landing-block-content-schema | Sub-AC 8.1.2
+
+- immersive landing page block type definition에 `contentSchema`와 `configurationOptions`를 추가해 block별 content shape와 renderer/operator 설정값을 명시했다.
+- `short-form-embed`는 source asset, embed mode, poster, tracking event schema와 aspect ratio/autoplay/attribution touchpoint 설정을 선언한다.
+- `short-form-continuation`은 sequence, CTA, offer asset schema와 max segment, transition style, conversion event 설정을 선언한다.
+- 기존 embedded short-form landing template module validation도 함께 유지되어 provider metadata와 configurable playback settings를 검사한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "immersive landing page block types|landing page template schema" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`.
+- 참고: focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`는 현재 작업 범위 밖의 기존 `createCampaignTrackedSession`/`upsertCampaignTrackedSession` missing symbol drift로 실패한다.
+
+## [2026-05-11] inbound-campaign-session-utm-parse-validation | Sub-AC 9.1.1
+
+- `parseInboundCampaignSessionUrl()`와 `validateInboundCampaignSession()`를 추가해 inbound campaign session URL에서 `utm_source`, `utm_medium`, `utm_campaign`, optional `utm_content`/`utm_term`, OwnCanvas campaign/session/channel/touchpoint id, extra click/affiliate attribution parameters를 정규화한다.
+- Parser는 http(s)가 아닌 URL, 필수 UTM 누락, expected campaign id mismatch를 structured error로 반환해 landing/conversion tracking ingestion이 throw 없이 실패 사유를 기록할 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-inbound-session-url.test.ts app/features/creative-canvas/model/campaign-tracking-configuration-save-flow.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`.
+- 참고: `npm run typecheck`는 기존 untracked `dndnFE/` tree의 missing Expo/Radix/Supabase/path alias dependency 문제로 실패한다. `npm run skills:check`는 exit 0이지만 기존 DDD/marketing 외부 skill 8개 missing을 보고해 repo fallback 문서를 사용했다.
+
+## [2026-05-11] asset-generation-workflow-state-aggregation | Sub-AC 3.4.4
+
+- parallel image/video asset generation now aggregates individual job snapshots and result metadata into `campaignSpec.assetGenerationWorkflowState`.
+- The workflow-level state records total/running/completed/failed/skipped counts, percent complete, job/result/asset/provider request ids, generated output locations, and provider errors.
+- `applyCampaignAssetGenerationExecutionResult()` plus image/video-specific apply paths persist the aggregate alongside job records and execution records, preserving JSON as the source of truth.
+- Verification: `node --experimental-strip-types --test --test-name-pattern "parallel media generation aggregation|immersive landing" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, focused `npx tsc --noEmit ... creative-canvas.ts creative-canvas.test.ts`, `npm run build`.
+- Note: `npm run typecheck` remains blocked by the existing untracked `dndnFE/` tree and missing Expo/Radix/path dependencies.
+
+## [2026-05-11] comment-to-dm-example-flow-load-interpretation-test | Sub-AC 7.4.4
+
+- `app/features/plugins/model/instagram-comment-dm-flow.test.ts`에 focused validation을 추가해 comment-to-DM-to-landing fixture가 serialized JSON에서 로드되고, canvas/spec explicit ports, activated plugin runtime, DM dispatch, landing destination mapping까지 end-to-end로 해석되는지 검증했다.
+- 구현 변경은 필요하지 않았다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "sample workflow fixture loads from JSON" app/features/plugins/model/instagram-comment-dm-flow.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 missing을 보고해 repo fallback 문서를 사용했다.
+
+## [2026-05-11] immersive-landing-short-form-block-types | Sub-AC 8.1.1
+
+- immersive landing page가 원본 short-form을 landing 안에 보존하는 `short-form-embed`와 이어지는 landing-native short-form sequence를 표현하는 `short-form-continuation` block type을 명시했다.
+- 각 block type은 content mode, 설명, accepted input ports, output ports, media types, attribution role을 가진 domain contract로 정의되어 DM-to-landing attribution과 conversion loop에서 재사용할 수 있다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "immersive landing page block types" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 missing을 보고해 repo fallback 문서를 사용했다.
+
+## [2026-05-11] plugin-example-workflow-run-docs | Sub-AC 7.5.3
+
+- comment-to-DM-to-landing example workflow를 plugin system을 통해 실행/검사하는 문서를 추가했다.
+- `app/features/plugins/model/README.md`에 focused regression 실행 명령, fixture inspection 경로, 주요 fixture export, plugin API curl inspection flow를 정리했다.
+- root `README.md`에 plugin workflow example 섹션을 추가해 기본 진입점에서 focused test와 API inspection route를 찾을 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-registration-template-routing.test.ts`, `npm run build`.
+
+## [2026-05-11] asset-generation-status-event-tracking | Sub-AC 3.4.1
+
+- `CampaignAssetGenerationExecutionRecord.statusEvents`를 추가해 backend workflow execution record가 각 job의 `running` 시작, 진행률 update, `completed`, `failed` 상태 변화를 순서대로 보존하게 했다.
+- 실패 상태는 `failureDetails`를 job status snapshot, execution record, status event에 함께 남겨 agent/human runtime이 sibling job 성공과 provider failure를 분리해서 읽을 수 있게 했다.
+- 기존 final job status/progress/result metadata persistence와 함께 campaign spec JSON에 execution status history가 저장되도록 clone/normalize 경로를 확장했다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "parallel asset generation persists an independent execution record" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`, `npm run skills:check`.
+- 참고: `npm run typecheck`는 기존 범위 밖의 `app/features/plugins/model/instagram-comment-dm-flow.test.ts` fixture export drift와 `dndnFE` dependency/path alias 누락으로 실패한다. `npm run build`는 기존 `dndnFE/expo-webview` Expo tsconfig warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] persisted-generated-asset-workflow-state | Sub-AC 3.3.4
+
+- parallel media generation persistence가 Campaign workflow node state까지 generated asset reference를 반영하도록 확장했다.
+- `applyCampaignAssetGenerationExecutionResult()`와 image/video 전용 apply 경로가 `canvasState.nodes`와 `campaignSpec.nodes`의 `properties.assetGeneration`에 completion status, generated `assetIds`, `resultIds`, `outputLocations`를 함께 저장한다.
+- image/video 전용 apply 경로도 공통 generated asset merge helper를 사용해 기존 asset 갱신과 신규 asset append 동작을 일관화했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 기존 unrelated drift로 실패한다. 현재 주요 원인은 `app/features/plugins/model/plugin-registration-template-routing.test.ts`의 missing fixture export와 untracked nested `dndnFE/` dependency/path errors다.
+
+## [2026-05-11] spec-to-canvas-create-update-test-coverage | Sub-AC 4.4.3
+
+- spec-to-canvas synchronization create/update coverage를 확인했다. `app/features/creative-canvas/adapters/react-flow-canvas.test.ts`는 blank campaign에 JSON spec edit로 node/edge를 생성해 rendered canvas와 `campaign.canvasState`가 함께 갱신되는 경로를 검증한다.
+- 같은 파일의 update regression은 기존 campaign JSON spec이 text/image 연결에서 text/video 연결로 교체될 때 rendered React Flow nodes/edges, `campaign.canvasState`, canonical `campaignSpec`가 함께 갱신되고 기존 `assetGenerationJobs`가 보존되는지 검증한다.
+- 추가 구현 변경은 필요하지 않았다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing 계열 외부 Codex skill 8개 missing을 보고해 repo fallback 문서를 사용했다.
+
+## [2026-05-11] generated-image-asset-persistence-check | Sub-AC 3.3.2
+
+- completed image generation result persistence를 확인했다. `applyCampaignImageAssetGenerationExecutionResult()`는 completed image job의 `resultMetadata`를 campaign spec에 병합하고, generated image `CampaignAsset`에 `outputLocations.primaryUri`와 `generatedMetadata`를 저장한다.
+- `saveCampaignImageAssetGenerationExecutionResult()`는 동일한 결과를 persisted campaign record에 기록하며 `asset_generation.image_assets.persisted` audit log를 남긴다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`.
+- 참고: `npm run typecheck`는 기존처럼 untracked nested `dndnFE/` dependency/path errors와 unrelated plugin/react-flow type drift로 실패한다.
+
+## [2026-05-11] json-spec-canvas-state-sync-regression | Sub-AC 4.4.2
+
+- React Flow adapter regression에 `campaign spec JSON changes commit to canvas state and rendered canvas together`를 추가했다.
+- 테스트는 JSON spec edit가 기존 image node/edge를 video node/edge로 교체하고 explicit port 연결을 바꿀 때, `campaign.canvasState`, rendered React Flow nodes/edges, canonical `campaignSpec`가 함께 갱신되는지 검증한다.
+- `assetGenerationJobs`가 JSON edit payload에서 생략되어도 기존 generation job 선언이 보존되는지도 함께 확인한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 unrelated existing drift로 실패한다. 현재 주요 원인은 `app/features/plugins/model/plugin-representation.test.ts`의 missing landing conversion exports와 untracked nested `dndnFE/` app의 dependency/path errors다.
+
+## [2026-05-11] invalid-campaign-spec-json-sync-guard | Sub-AC 4.3.1
+
+- Campaign spec JSON sync의 invalid JSON 경로를 확인했다. `parseCampaignSpecJsonEdit()`는 `JSON.parse` 실패 시 `campaign_spec.json_invalid`를 반환하고 기존 Campaign/canvas state를 그대로 돌려준다.
+- React Flow adapter sync regression은 invalid JSON과 incomplete frame이 rendered canvas snapshot을 바꾸지 않고, 이후 valid JSON 입력에서 정상 복구되는 것을 검증한다.
+- 기존 creative-canvas model drift 중 aggregate asset generation apply/save export와 generated image asset metadata persistence를 회복해 focused model suite를 통과시켰다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test --test-concurrency=1 $(find app -name '*test.ts' -type f | sort | grep -v 'plugin-representation.type-test.ts')`, `npm run build`.
+- 참고: `npm run typecheck`는 기존처럼 root 아래 untracked `dndnFE/`의 Expo/radix/motion dependency 및 alias resolution error로 실패한다.
+- 참고: `npm run typecheck`는 unrelated `dndnFE/` dependency/path errors와 plugin landing-flow export drift로 실패한다. `npm run skills:check`는 기존 DDD/marketing 외부 skill 8개 missing을 보고해 repo fallback 문서를 사용했다.
+
+## [2026-05-11] comment-to-dm-focused-fixtures | Sub-AC 7.2.5
+
+- comment ingestion, response rule matching, DM dispatch를 한 번에 재사용할 수 있는 `instagram-comment-dm-flow.fixtures.ts`를 추가했다.
+- 새 focused regression은 Instagram comment event가 Campaign workflow event와 attribution touchpoint로 ingest되는지, `all_keywords` matcher가 tracked DM response mapping을 선택하고 unmatched comment를 skip하는지, 선택된 response가 configured Instagram account로 dispatch되는지 검증한다.
+- verification 중 creative-canvas model에 남아 있던 duplicate generic asset-generation persistence export drift를 정리하고, generated video asset도 image asset과 동일하게 output location/generated metadata를 보존하도록 맞췄다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types app/features/creative-canvas/model/creative-canvas.test.ts`.
+- 참고: `npm run typecheck`는 repo root 아래 untracked nested `dndnFE/` app이 `tsconfig.json`의 `**/*` include에 잡히면서 Expo/radix/motion 등 별도 dependency와 alias resolution error로 실패한다. `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 missing을 보고한다.
+
+## [2026-05-11] concurrent-video-asset-generation-execution | Sub-AC 3.3.1
+
+- `executeCampaignVideoAssetGenerationJobs()`를 추가해 loaded campaign asset generation workflow에서 ready/queued video jobs만 provider executor로 병렬 실행할 수 있게 했다.
+- video execution result는 completed/failed/skipped job snapshots와 workflow-order `jobStatuses`를 반환하며 image jobs는 video-only execution에서 skipped로 보존한다.
+- image workflow helper drift와 asset generation lifecycle validation narrowing을 정리해 campaign model typecheck를 회복했다.
+- concurrent video execution regression은 video jobs가 동시에 실행되고 원본 Campaign job declarations가 mutate되지 않는지 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: plugin model에 남아 있던 DM automation/dispatch merge drift도 현재 테스트 계약에 맞춰 정리했다.
+
+## [2026-05-11] dm-generated-reply-landing-routing | Sub-AC 7.3.3
+
+- `generateDmAutomationReply()`를 추가해 DM automation configuration의 `landingUrlRoutes`에서 조건에 맞는 landing route를 선택하고, `{{campaignId}}`/personalization placeholder를 URL template에 렌더링한다.
+- 선택된 landing URL은 route 설정의 `appendAttribution`에 따라 UTM attribution을 붙인 뒤 `landingUrl` personalization variable로 주입되어 최종 DM reply text와 함께 반환된다.
+- route가 없거나 URL 렌더링이 실패하면 generation result가 명시적 error code로 실패해 unsafe DM reply publish를 막는다.
+- 기존 Instagram DM dispatch adapter drift와 invalid execution request test fixture typing을 정리해 plugin model suite와 project typecheck를 회복했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] parallel-image-generation-workflow | Sub-AC 3.2.2
+
+- `executeCampaignImageAssetGenerationWorkflow()`를 추가해 Campaign JSON source-of-truth에서 asset generation workflow를 로드하고, ready/queued image jobs를 병렬 실행한 뒤, 생성 결과를 Campaign asset list와 `campaignSpec.assetGenerationJobs`에 한 번에 반영할 수 있게 했다.
+- regression test는 두 image job이 `maxConcurrency: 2`에서 실제로 동시에 실행되고, 각 generated image asset URI/rights/actor metadata가 workflow campaign에 persist되며 원본 Campaign draft는 mutate되지 않는지 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어 `CONTEXT.md`와 wiki fallback을 사용했다.
+
+## [2026-05-11] dm-templated-reply-rendering | Sub-AC 7.3.2
+
+- `renderDmAutomationReply()`를 추가해 DM automation reply template의 `{{variable}}` placeholder를 configured personalization variables로 렌더링한다.
+- renderer는 automation configuration validation을 선행하고, 선언되지 않은 personalization input 또는 template placeholder를 `dm-reply-render.variable_not_supported`로 거부한다.
+- configured fallback value를 적용해 optional profile-derived personalization을 안전하게 채우고, required variable이 unresolved이면 `dm-reply-render.variable_required`로 실패한다.
+- 기존 Instagram comment-to-DM response mapping selector와 함께 plugin model suite가 mapped DM reply selection과 rendering contract를 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 unrelated `app/features/creative-canvas/model/creative-canvas.ts`/`.test.ts` image-generation job lifecycle drift로 실패한다. `app/features/plugins/model/plugin-representation.type-test.ts`는 직접 node 실행 시 repo alias `~` 해석이 없어 실패하므로 project typecheck 대상이다.
+
+## [2026-05-11] dm-automation-plugin-interface | Sub-AC 7.3.1
+
+- direct-message plugin detail에 `automationConfigurationSchemas`를 추가해 DM 자동화 설정 스키마를 manifest에서 광고할 수 있게 했다.
+- `DM_AUTOMATION_CONFIGURATION_SCHEMA_VERSION`, `DM_AUTOMATION_CONFIGURATION_SCHEMA`, `DmAutomationConfiguration`, `validateDmAutomationConfiguration()`를 추가해 템플릿 reply, personalization variable, tracked landing URL routing을 channel-neutral contract로 표현했다.
+- direct-message configuration field type에 `personalization`과 `landing-routing`을 추가하고, plugin validation이 automation schema channel/trigger mismatch를 거부하도록 확장했다.
+- `app/features/plugins/model/README.md`와 type-level fixture에 DM automation contract를 반영했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`.
+- 참고: `npm run typecheck`와 `npm run build`는 현재 unrelated `app/features/creative-canvas/model/creative-canvas.ts` duplicate `ingestInstagramCommentEventIntoCampaignWorkflow` 및 missing `appendUnique` drift로 실패한다. `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어 `CONTEXT.md`와 wiki fallback을 사용했다.
+
+## [2026-05-11] instagram-comment-event-workflow-ingestion | Sub-AC 7.2.2
+
+- `CampaignWorkflowEvent`와 optional `campaignSpec.workflowEvents`를 추가해 Instagram comment trigger event를 Campaign JSON source-of-truth 안의 normalized workflow event로 보존할 수 있게 했다.
+- `ingestInstagramCommentEventIntoCampaignWorkflow()`가 plugin-layer Instagram comment event validation을 재사용하고 campaign id mismatch를 거부한 뒤, source/plugin/capability, subject/commenter, workflow port, attribution touchpoint, payload snapshot을 정규화한다.
+- ingestion 결과는 원본 Campaign을 mutate하지 않고 workflow event를 append하며 `tracking.events`, `tracking.attribution.touchpoints`, logs/versions에 comment touchpoint를 남긴다.
+- regression 중 기존 parser/execution drift도 정리되어 `jobStatuses`와 JSON structural edit reporting 계약이 focused suite에서 통과한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 DDD/marketing 계열 외부 Codex skill 8개 missing을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] concurrent-image-job-status-tracking | Sub-AC 3.2.3
+
+- concurrent image generation execution result에 `jobStatuses` projection을 추가해 completed/failed/skipped 상태, 원래 job status, actor, attempt, progress, started/completed/failed timestamp, error를 workflow order로 추적한다.
+- image generation result persistence가 `campaignSpec.assetGenerationJobs` 상태 병합과 함께 `asset_generation.image_job_statuses` audit log/version을 남기도록 했다.
+- mixed concurrent result regression은 image job 성공/실패와 video skipped job이 함께 있을 때 status tracking과 campaign JSON source-of-truth merge가 보존되는지 검증한다.
+- 중복되어 있던 Instagram comment ingestion export와 누락되어 있던 campaign spec structural edit helper drift를 정리해 model test/typecheck/build를 회복했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] instagram-commenter-identity-reference-model | Sub-AC 7.2.3
+
+- Instagram comment trigger event의 `commenter`를 legacy `id`만 가진 객체에서 `InstagramCommenterIdentityReference`로 확장했다.
+- platform user id, username, profile URL/profile picture URL, normalized identity id, namespace, external/anonymous id, email/phone hash, link source/confidence/linkedAt을 Campaign attribution에 연결 가능한 선택 필드로 표현했다.
+- `INSTAGRAM_COMMENT_TRIGGER_EVENT_SCHEMA.identityFields`를 추가해 direct-message plugin manifest가 commenter identity linkage 필드를 광고할 수 있게 했다.
+- `validateInstagramCommentTriggerEvent()`가 제공된 commenter platform/profile/linkage 필드를 검증하고 malformed identity reference를 명시적 error code로 거부하도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`.
+- 참고: `npm run typecheck`와 `npm run build`는 현재 unrelated `app/features/creative-canvas/model/creative-canvas.ts` duplicate `ingestInstagramCommentEventIntoCampaignWorkflow` 및 `CampaignSpecStructuralEdit`/`structuralEdits` drift로 실패한다.
+
+## [2026-05-11] concurrent-image-asset-generation-execution | Sub-AC 3.2.1
+
+- `executeCampaignImageAssetGenerationJobs()`를 추가해 loaded asset generation workflow의 ready/queued image jobs를 provider executor로 병렬 실행할 수 있게 했다.
+- 실행 결과는 원본 Campaign/workflow를 직접 mutate하지 않고 completed/failed/skipped job snapshot과 전체 job projection을 반환한다.
+- 각 image job 실행은 actor, attempt, started/completed/failed timestamp, progress, error/result metadata를 lifecycle에 반영하고 video 또는 실행 불가 상태 job은 skipped로 보존한다.
+- canvas node normalization에서 legacy `kind` node는 기존 canonical JSON처럼 `label`을 제거하고, plugin-style `type` node만 label/properties를 보존하도록 정리했다.
+- 이전 로그에 남아 있던 `executeCampaignImageAssetGenerationJobs` 중복 선언 drift는 현재 정리되어 typecheck/build를 통과한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] stable-campaign-spec-serialization | Sub-AC 4.1.3
+
+- `serializeCampaignSpecJson()`를 추가해 Campaign JSON spec을 nodes, edges, assetGenerationJobs 순서와 각 domain object의 canonical field order로 직렬화하도록 했다.
+- Canvas JSON editor도 raw `JSON.stringify` 대신 canonical serializer를 사용해 같은 canvas edit sequence가 같은 JSON 문자열을 만든다.
+- provider parameter처럼 arbitrary object가 들어갈 수 있는 generation job nested value는 key sort를 적용해 insertion order drift를 줄였다.
+- regression test는 동일한 canvas edit action sequence를 두 번 실행한 Campaign이 byte-for-byte 동일한 serialized campaign spec을 생성하는지 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] image-asset-generation-input-result-metadata | Sub-AC 3.1.2
+
+- image asset generation job에 provider-ready `imageInputs`를 추가해 prompt, negative prompt, reference/product asset ids, output count, aspect ratio, size, style, seed, provider parameters를 Campaign JSON source-of-truth에 보존한다.
+- generated image 결과를 `resultMetadata`로 기록해 result id, linked asset id, URI, mime type, dimensions, size, model, seed, prompt hash, provider request id, generated timestamp, duration, cost, finish reason을 추적할 수 있게 했다.
+- `createCampaignAssetGenerationJob()`와 `loadCampaignAssetGenerationWorkflow()`가 image input/result metadata를 clone해 loaded executor projection이 원본 Campaign spec을 직접 오염시키지 않게 했다.
+- JSON spec serialization helper, readonly canvas action contract, node-definition normalization drift를 보강해 agent/human action replay test fixture가 typecheck 가능한 source-of-truth contract를 갖도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어 `CONTEXT.md`, `.agents/product-marketing-context.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] asset-generation-job-lifecycle | Sub-AC 3.1.1
+
+- Asset generation job status를 `draft`, `ready`, `queued`, `running`, `completed`, `failed`, `canceled` 공용 상태 집합으로 명시했다.
+- `CampaignAssetGenerationJobLifecycle`에 created/updated/queued/started/completed/failed/canceled timestamp, actor, attempt, progress, error metadata를 정의하고 job factory가 기본 lifecycle object를 생성하도록 했다.
+- job validation에 status, lifecycle attempt/progress/timestamp, failed-job error metadata 검증을 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] instagram-dm-action-execution-schema | Sub-AC 7.1.2
+
+- Follow-up: `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION`과 `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA`를 추가해 campaign-time Instagram DM action setup이 campaign id, capability id, trigger configuration, message template/text, tracked landing URL, attribution field를 명시하도록 했다.
+- `InstagramDmActionConfiguration`과 `validateInstagramDmActionConfiguration()`를 추가해 실행 payload 이전의 comment-to-DM action 설정을 검증하고, `DirectMessagePluginDetails.actionConfigurationSchemas`로 manifest에서 광고할 수 있게 했다.
+- `INSTAGRAM_DM_ACTION_EXECUTION_SCHEMA_VERSION`과 `INSTAGRAM_DM_ACTION_EXECUTION_SCHEMA`를 추가해 Instagram DM send action execution request가 campaign id, capability id, trigger event, recipient, message, tracked landing URL, attribution field를 명시하도록 했다.
+- `InstagramDmActionExecutionRequest`, `InstagramDmActionExecutionResponse`, `InstagramDmActionExecutor` 타입을 추가해 external/built-in direct-message plugin 구현체가 동일한 실행 인터페이스를 만족할 수 있게 했다.
+- `validateInstagramDmActionExecutionRequest()`를 추가해 schema version, human/agent requester, timestamp, recipient id, rendered message text, http(s) landing URL, trigger campaign mismatch를 실행 전에 검증한다.
+- type-level contract와 runtime regression으로 attribution-ready action configuration/execution payload와 unsafe payload rejection을 검증했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`.
+
+## [2026-05-11] deterministic-canvas-action-mapping | Sub-AC 4.1.1
+
+- `CampaignCanvasEditAction` union을 추가해 `canvas.node.create`, `canvas.node.update`, `canvas.node.delete`, `canvas.edge.connect`, `canvas.edge.disconnect`를 명시적 action contract로 정의했다.
+- `applyCampaignCanvasEditAction()`을 추가해 각 action이 Campaign `canvasState`와 `campaignSpec.nodes/edges`에 동일한 deterministic mutation을 적용하고, 기존 `campaignSpec.assetGenerationJobs`는 보존하도록 했다.
+- `canvas.edge.connect`는 `sourcePort`와 `targetPort`를 요구하고, edge normalization이 explicit port metadata를 JSON source-of-truth에 보존하도록 확장했다.
+- asset generation lifecycle의 `system` actor type drift를 `CampaignExecutionActor`로 명시해 현재 factory contract와 typecheck를 맞췄다.
+- regression test는 create/update/connect/create/disconnect/delete action sequence가 최종 canvas/spec 구조를 동일하게 만들고 원본 Campaign을 mutation하지 않는지 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] instagram-comment-trigger-schema | Sub-AC 7.1.1
+
+- Follow-up: direct-message plugin detail에 optional `triggerConfigurationSchemas`를 추가해 channel-specific trigger setup contract도 manifest에서 광고할 수 있게 했다.
+- `INSTAGRAM_COMMENT_TRIGGER_CONFIGURATION_SCHEMA_VERSION`, `INSTAGRAM_COMMENT_TRIGGER_CONFIGURATION_SCHEMA`, `InstagramCommentTriggerConfiguration`, `validateInstagramCommentTriggerConfiguration()`를 추가해 Instagram comment trigger 설정이 monitored account, optional media scope, keyword matcher, attribution template를 갖도록 정의했다.
+- direct-message plugin detail에 optional `triggerEventSchemas`를 추가해 channel-specific trigger event contract를 manifest에서 광고할 수 있게 했다.
+- `INSTAGRAM_COMMENT_TRIGGER_EVENT_SCHEMA_VERSION`, `INSTAGRAM_COMMENT_TRIGGER_EVENT_SCHEMA`, `InstagramCommentTriggerEvent`, `validateInstagramCommentTriggerEvent()`를 추가해 Instagram comment event가 campaign id, account/media/comment id, commenter, text, timestamp, UTM-ready attribution field를 갖도록 정의했다.
+- `validateDirectMessagePluginConfiguration()`이 advertised trigger configuration/event schema의 channel/trigger가 direct-message plugin 설정과 맞는지 검증하도록 확장했다.
+- stale creative-canvas test fixture 2곳에 현재 `assetGenerationJobs` canvas/spec 필드를 보강해 repo-wide typecheck를 통과시켰다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, `.agents/product-marketing-context.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] canvas-edit-json-sync | Sub-AC 4.1.1
+
+- React Flow node/edge edit handler가 local UI state만 바꾸지 않고 `createCampaignCanvasEdit()`를 통해 Campaign `canvasState`와 `campaignSpec`을 즉시 갱신하도록 연결했다.
+- Generation Palette에서 block을 추가할 때도 같은 sync 경로를 사용해 blank canvas에서 만든 node가 JSON source-of-truth에 바로 반영된다.
+- React Flow adapter에 canvas block/edge 역변환 helper를 추가해 UI node position과 edge source/target/label을 Campaign JSON 형태로 보존한다.
+- `campaignSpec.assetGenerationJobs`는 canvas node/edge 편집 중에도 유지되도록 sync helper에서 기존 spec 확장 필드를 보존한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] campaign-measurement-tracking-api-validation | Sub-AC 2.5.3
+
+- `GET /api/campaigns/:campaignId` route를 추가해 Campaign read API가 `tracking.measurementGoals`와 tracking configuration을 함께 노출하도록 했다.
+- `PATCH /api/campaigns/:campaignId` route를 추가해 measurement goals와 tracking configuration을 병합 후 저장 전에 검증하고, invalid payload는 `campaign.validation_failed` 400 응답으로 거부하며 기존 persisted Campaign을 덮어쓰지 않게 했다.
+- route 등록에 `api/campaigns/:campaignId`를 추가했고, 기존 measurement-goals API route의 `MapBackedStorage` 선언 순서를 정리해 typecheck를 통과시켰다.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts app/routes/campaign-measurement-goals-api.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/features/creative-canvas/model/campaign-tracking-configuration-save-flow.test.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/plugin-kind-api.test.ts app/routes/agent-plugin-api.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`와 wiki fallback을 사용했다.
+
+## [2026-05-11] campaign-measurement-metrics-schema | Sub-AC 2.5.1
+
+- Campaign `tracking.metrics`를 추가해 실제 관측된 metric name, value/unit, source, attribution touchpoint, observed timestamp를 JSON source-of-truth에 저장한다.
+- `createCampaignMeasurementMetric()`, `validateCampaignMeasurementMetrics()`, `saveCampaignMeasurementMetrics()`를 연결해 measurement goals와 별도로 실측 metric 저장/검증/재조회가 가능해졌다.
+- invalid metric은 persisted campaign을 덮어쓰지 않고 `measurement_metric.*` validation code로 거부한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-tracking-configuration-save-flow.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-state-durable-api | Sub-AC 6.4.1
+
+- agent plugin API route가 durable storage에서 persisted plugin catalog를 먼저 읽고, 없을 때만 default catalog를 fallback으로 쓰도록 연결했다.
+- agent install, activate, deactivate 요청이 성공하면 `owncanvas.plugin-catalog.v1` storage에 lifecycle state와 timestamp를 저장하도록 route-level storage path를 추가했다.
+- 같은 storage를 사용해 installed view를 다시 조회하면 방금 설치한 plugin과 활성화 state가 유지되는 regression을 추가했다.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`와 wiki fallback을 사용했다.
+
 ## [2026-05-10] scaffold | llm-wiki 초기화
 
 - `llm-wiki` 스킬을 OwnCanvas 스킬 레지스트리에 추가했다.
 - `python3 /Users/baekjunho/.codex/skills/llm-wiki/scripts/init_wiki.py .`로 `raw/`와 `wiki/` 구조를 생성했다.
 - OwnCanvas 루트 운영 원칙을 `wiki-first`로 조정했다.
 - 앞으로 의미 있는 작업 결과는 기본적으로 `wiki/log.md`와 관련 wiki page에 남긴다.
+
+## [2026-05-11] responsive-canvas | mobile preview
+
+- Creative Canvas shell을 모바일 반응형으로 조정했다.
+- 데스크톱에서는 고정 사이드바/팔레트/툴바를 유지하고, 모바일에서는 세로 스택으로 재배치되도록 CSS media query를 추가했다.
+- `README.md`에 `npm run dev -- --host 0.0.0.0`로 폰에서 미리보기 하는 방법을 적었다.
+
+## [2026-05-11] blank-campaign-entry | Sub-AC 1.1
+
+- Campaign dashboard에 `New blank campaign` 생성 진입점을 추가했다.
+- `createBlankCampaign()`이 `campaignSpec`과 `canvasState`를 모두 빈 nodes/edges로 시작하게 해 JSON source와 canvas state의 초기 동기화를 명시했다.
+- 생성 후 Creative Canvas는 0 blocks 상태로 열리고, Generation Palette에서 사용자가 첫 Generation Block을 추가할 수 있다.
+- `CreativeCanvasScreen`의 campaign 미전달 fallback도 빈 nodes/edges로 맞춰 direct canvas entry가 데모 템플릿을 자동 주입하지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-schema | shared plugin representation
+
+- `app/features/plugins/model/plugin-representation.ts`에 공통 플러그인 manifest 타입을 추가했다.
+- identity, metadata, origin, lifecycle, capability, port, permission mode, actor install/configure 권한, configuration field를 한 스키마로 묶었다.
+- built-in provider와 external provider, parallel bulk image/video generation, conversion tracking capability를 type-level contract로 검증했다.
+
+## [2026-05-11] blank-campaign-metadata | Sub-AC 1.2
+
+- blank Campaign 생성 후 Creative Canvas 안에서 필수 campaign metadata를 입력할 수 있는 우측 setup 패널을 추가했다.
+- metadata는 `CampaignDraft` JSON 상태의 `title`, `objective`, `targetAudience`, `productOffer`에 즉시 반영되며, 빈 canvas nodes/edges 상태는 유지된다.
+- `targetAudience`는 age, gender, interests, behavior, region, platform을 명시하고, `productOffer`는 name, description, pricePoint, destinationUrl을 명시한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-lifecycle | Sub-AC 5.1.2
+
+- 플러그인 manifest에 `type` 필드를 추가해 provider, commission, agent, dashboard, direct-message, landing, tracking, custom 플러그인 범주를 명시했다.
+- `lifecycle`을 단일 문자열에서 `state`, installed/configured/activated/deactivated timestamp, error, updatedAt을 가진 구조화 필드로 확장했다.
+- allowed lifecycle state를 available, installed, configured, active, inactive, error, uninstalled로 정의하고 transition table 및 `isPluginLifecycleTransitionAllowed()` 헬퍼를 추가했다.
+- type-level contract와 Node 런타임 테스트로 전이 허용/거부 동작을 검증했다.
+
+## [2026-05-11] blank-campaign-persistence | Sub-AC 1.3.1
+
+- blank Campaign 생성 시 `owncanvas.campaigns.v1` localStorage 레코드에 즉시 저장되는 `createBlankCampaignRecord()` 경로를 추가했다.
+- 저장 레코드는 schema version, id, createdAt/updatedAt, 기본 title/objective/status, 빈 `campaignSpec`/`canvasState`, audience/offer/tracking 기본값을 포함한다.
+- Campaign dashboard의 `New blank campaign` 버튼이 persistence helper를 사용해 저장 후 Creative Canvas를 열도록 연결했다.
+- repo-wide typecheck를 막던 plugin manifest literal widening을 `definePluginManifest()` generic helper에서 보정했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] empty-workspace-state | Sub-AC 1.3.2
+
+- blank Campaign 생성 시 `owncanvas.workspace.v1` localStorage 레코드도 함께 초기화하도록 추가했다.
+- workspace state는 campaign id, basic mode, select tool, 빈 canvas nodes/edges, 기본 viewport, 빈 selection, initializedAt/updatedAt을 포함한다.
+- workspace canvas는 Campaign의 빈 `canvasState`에서 파생되어 JSON source와 UI workspace 초기 상태가 같은 빈 구조로 시작한다.
+- repo-wide 검증 중 발견된 provider/commission plugin validation 타입 정합성도 정리해 `tsc`가 전체 model/type-test를 통과하도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-data-model | Sub-AC 1.2.1
+
+- Campaign data model에 `schemaVersion`, required field registry, attribution-ready tracking defaults를 명시했다.
+- blank campaign 기본값은 빈 canvas/spec nodes/edges를 유지하면서 target audience, product offer, plugins, assets, channels, logs, versions, status를 모두 초기화한다.
+- `createBlankCampaignRecord()`와 `CAMPAIGN_STORAGE_KEY`를 추가해 blank campaign record가 생성/수정 timestamp와 함께 storage에 저장되도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-creation-defaults | Sub-AC 1.2.2
+
+- Campaign 생성 flow에서 persisted record에 creation audit log와 initial draft version을 기본 적용하도록 했다.
+- blank draft factory는 템플릿 없는 빈 canvas/spec 상태를 유지하고, storage record 생성 시점에 `campaign.created`와 `draft.created` 기본값을 붙인다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-record-retrieval | Sub-AC 1.2.3
+
+- `getPersistedCampaignRecord()`를 추가해 `owncanvas.campaigns.v1` storage에서 새로 생성된 Campaign record를 id로 다시 조회할 수 있게 했다.
+- blank Campaign 생성 직후 같은 storage에서 조회하면 createdAt/updatedAt, audit log, version, 빈 `campaignSpec`/`canvasState`가 보존된 동일 레코드가 반환되는 테스트를 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 기존 `app/features/plugins/model/plugin-representation.test.ts`의 `validateProviderPluginConfiguration` export/typing 오류로 실패했다.
+
+## [2026-05-11] provider-plugin-config | Sub-AC 5.2.1
+
+- provider 플러그인을 일반 플러그인 manifest와 구분하는 `ProviderPluginManifest`를 추가했다.
+- provider metadata에는 built-in/external kind, 지원 media type, 실행 위치, advanced 여부를 명시한다.
+- provider configuration field는 credential, model, endpoint, budget, webhook, rate-limit, safety 전용 타입으로 세분화했다.
+- built-in provider와 advanced external provider를 type-level contract로 검증했다.
+- 검증: `npm run typecheck`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run build`.
+
+## [2026-05-11] plugin-extension-representation | Sub-AC 5.1.3
+
+- `app/features/plugins/model/README.md`에 plugin type별 Campaign 역할과 공통 manifest 확장 방식을 문서화했다.
+- provider, commission, agent, dashboard, direct-message, landing, tracking, custom이 top-level 공통 필드를 복제하지 않고 capability, port, concurrency, configuration, permission으로 차이를 표현하도록 정리했다.
+- `wiki/concepts/plugin-extension-representation.md`와 `wiki/index.md`에 durable concept 기록을 추가했다.
+
+## [2026-05-11] provider-plugin-type-contract | Sub-AC 5.2.1
+
+- provider plugin manifest를 built-in provider와 external provider의 discriminated union으로 강화했다.
+- provider plugin은 하나 이상의 generation capability(`generate.text`, `generate.image`, `generate.video`, `generate.voice`)와 하나 이상의 provider configuration field를 요구한다.
+- built-in provider configuration은 credential, model, rate-limit, safety field만 허용하고, external provider configuration은 endpoint, budget, webhook field까지 허용한다.
+- origin kind와 provider kind가 일치하도록 type-level contract를 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] commission-plugin-config | Sub-AC 5.2.2
+
+- `CommissionPluginManifest`와 `CommissionPluginDetails`를 추가해 commission model, offer source, payout currency, attribution requirement를 공통 plugin manifest 위에 표현했다.
+- commission configuration field를 network, offer, payout, attribution-window, approval 타입으로 세분화했다.
+- type-level contract와 Node 런타임 테스트로 affiliate commission plugin 예시가 type-specific configuration을 보존하는지 검증했다.
+
+## [2026-05-11] provider-plugin-config-validation | Sub-AC 5.2.3
+
+- provider 플러그인 configuration에 대한 런타임 validation API를 추가했다.
+- `PROVIDER_CONFIGURATION_RULES`와 `validateProviderPluginConfiguration()`이 origin/provider kind 일치, generation capability 존재, configuration field 존재, 중복 key, built-in provider의 external-only field 금지, providerConfigType별 field type, numeric default 양수를 검증한다.
+- provider configuration schema를 non-empty typed field 계약으로 유지해 built-in provider와 advanced external provider 모두 activation 전 검증할 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-plugin-representation | Sub-AC 5.3.1
+
+- `AgentPluginManifest`와 `AgentPluginDetails`를 추가해 autonomy, supported canvas actions, safety mode, human approval requirement를 공통 plugin manifest 위에 표현했다.
+- agent plugin은 하나 이상의 `agent.action` capability와 하나 이상의 typed agent configuration field를 요구한다.
+- agent configuration field를 instruction, model, action-policy, approval-policy, memory 타입으로 세분화했다.
+- `validateAgentPluginConfiguration()`이 agent action capability, configuration field 존재, duplicate key, unknown agent config type, field type mismatch를 검증한다.
+
+## [2026-05-11] commission-plugin-config-validation | Sub-AC 5.2.4
+
+- commission 플러그인 configuration validation rule에 unknown `commissionConfigType` 거부를 추가했다.
+- `COMMISSION_CONFIG_FIELD_TYPES`를 export해 runtime schema contract를 provider validation처럼 명시적으로 참조할 수 있게 했다.
+- `app/features/plugins/model/README.md`에 commission configuration schema/rule 목록을 문서화했다.
+- 검증: focused inline Node assertion으로 unknown commission configuration type이 `commission.unknown_config_type`을 반환함을 확인했고, 이후 전체 plugin test suite, `npm run typecheck`, `npm run build`가 통과했다.
+
+## [2026-05-11] dashboard-plugin-representation | Sub-AC 5.3.2
+
+- `DashboardPluginManifest`와 `DashboardPluginDetails`를 추가해 report type, visualization, realtime/export 지원 여부를 공통 plugin manifest 위에 표현했다.
+- dashboard plugin은 하나 이상의 `dashboard.report` capability와 하나 이상의 typed dashboard configuration field를 요구한다.
+- dashboard configuration field를 metric, attribution-window, filter, visualization, export 타입으로 세분화했다.
+- `DASHBOARD_CONFIGURATION_RULES`와 `validateDashboardPluginConfiguration()`이 dashboard report capability, configuration field 존재, duplicate key, unknown dashboard config type, unsupported metric/visualization, field type mismatch, numeric default 양수를 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-workspace-link | Sub-AC 1.3.3
+
+- persisted Campaign record에 `workspaceState` 링크를 추가해 workspace storage key, workspace id, initializedAt을 함께 저장하도록 했다.
+- workspace state에 stable `id`를 추가하고 `owncanvas.workspace.v1` storage를 배열형 record로 저장해 여러 Campaign workspace를 이후 campaign id로 조회할 수 있게 했다.
+- `getPersistedCampaignWorkspaceState()`를 추가해 persisted Campaign의 workspace link를 따라 초기화된 workspace state를 복원한다.
+- agent plugin 타입/validation export 누락으로 `npm run typecheck`가 막히던 drift도 기존 테스트 계약에 맞춰 보정했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-canvas-navigation | Sub-AC 1.4
+
+- blank Campaign 생성 후 index route의 local state 전환이 아니라 `/campaigns/:campaignId/canvas` 경로로 이동하도록 연결했다.
+- `getCampaignCanvasPath()`를 추가해 새 Campaign id에서 canvas URL을 안정적으로 생성하고, 생성 직후 route path contract를 테스트로 고정했다.
+- 새 `campaign-canvas` route는 localStorage에서 Campaign record를 id로 복원해 Creative Canvas를 렌더링하며, 상단 back action은 Campaign dashboard로 돌아간다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 기존 `app/features/plugins/model/plugin-representation.test.ts`의 `validateDashboardPluginConfiguration` export 누락과 implicit any 오류로 실패했다.
+
+## [2026-05-11] agent-plugin-port-validation | Sub-AC 5.3.1
+
+- agent 플러그인 표현에서 `AgentPluginManifest`, `AgentPluginDetails`, typed `AgentConfigurationField` 계약을 유지했다.
+- `validateAgentPluginConfiguration()`에 `agent.action` capability의 explicit port 검증을 추가했다.
+- agent action capability는 `action` JSON input port와 `result` event output port를 가져야 하며, 이는 사람/에이전트 canvas action을 같은 port 기반 실행 모델로 표현하기 위한 최소 계약이다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] dm-landing-plugin-representation | Sub-AC 5.4
+
+- `DirectMessagePluginManifest`와 `DirectMessagePluginDetails`를 추가해 DM channel, trigger, delivery mode, compliance review requirement를 공통 plugin manifest 위에 표현했다.
+- direct-message plugin은 하나 이상의 `channel.dm` capability, `delivery` event output port, 하나 이상의 typed direct-message configuration field를 요구한다.
+- `LandingPluginManifest`와 `LandingPluginDetails`를 추가해 page type, publish target, checkout support, immersion preservation을 공통 plugin manifest 위에 표현했다.
+- landing plugin은 하나 이상의 `landing.page` capability, `url` output port, 하나 이상의 typed landing configuration field를 요구한다.
+- `validateDirectMessagePluginConfiguration()`과 `validateLandingPluginConfiguration()`이 activation 전 required capability, explicit output port, duplicate key, unknown config type, incompatible field type, channel/page/publish mismatch, compliance/checkout/immersion requirements를 검증한다.
+
+## [2026-05-11] direct-message-plugin-validation | Sub-AC 5.3.3
+
+- DM plugin representation이 `DirectMessagePluginManifest`, `DirectMessagePluginDetails`, `DirectMessageConfigurationField` type contract로 고정되어 있음을 확인했다.
+- `validateDirectMessagePluginConfiguration()`이 `channel.dm` capability, `delivery` event output port, duplicate key, unknown `directMessageConfigType`, channel mismatch, field type mismatch, compliance requirement, numeric default 양수를 검증한다.
+- type-level contract는 invalid direct-message capability/configuration manifest를 `@ts-expect-error`로 막고, runtime test는 valid Instagram comment-to-DM plugin과 invalid rule violation sequence를 검증한다.
+- 검증: `node --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-kind-all-types-test-coverage | Sub-AC 5.4.4
+
+- plugin kind registration이 provider, commission, agent, dashboard, direct-message, landing, tracking, custom 전체 supported type을 빠짐없이 등록하고 각 kind title/capability/detail key를 구분하는 regression을 추가했다.
+- agent discovery fixture를 전체 supported plugin type별로 구성해 `listDiscoverablePluginsForAgent()`가 각 manifest를 고유한 `kind` metadata와 capability kind로 노출하는지 검증했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/routes/plugin-kind-api.test.ts`, `npm run typecheck`.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`와 wiki fallback을 사용했다.
+
+## [2026-05-11] landing-plugin-validation | Sub-AC 5.3.4
+
+- landing plugin representation이 `LandingPluginManifest`, `LandingPluginDetails`, `LandingConfigurationField` type contract로 고정되어 있음을 확인했다.
+- `validateLandingPluginConfiguration()`에 `landing.page` capability의 explicit port 검증을 보강했다.
+- landing page capability는 `creative` JSON input port와 `url` URL output port를 가져야 하며, 이는 canvas JSON source에서 만든 creative/content-commerce state를 landing destination으로 publish하고 conversion URL을 downstream DM/tracking flow에 연결하기 위한 최소 계약이다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`와 wiki fallback을 사용했다.
+
+## [2026-05-11] campaign-target-audience-fields | Sub-AC 2.1.1
+
+- Campaign data model에 `CAMPAIGN_TARGET_AUDIENCE_FIELDS`와 `CampaignTargetAudienceField`를 추가해 audience profile의 `age`, `gender`, `interests`, `behavior`, `region`, `platform` 필드 목록을 명시했다.
+- `createCampaignTargetAudience()` factory를 추가하고 blank Campaign 생성이 같은 factory를 사용하도록 연결해 JSON source-of-truth의 target audience 기본값과 typed field registry가 분리되지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-plugin-catalog-discovery | Sub-AC 6.1.1
+
+- `PluginCatalog`와 `AgentDiscoverablePlugin` summary contract를 추가해 registry/catalog에 있는 plugin manifest를 agent가 탐색할 수 있게 했다.
+- `listDiscoverablePluginsForAgent()`는 lifecycle이 `available`이고 `installableBy`에 `agent`가 포함된 plugin만 반환한다.
+- agent discovery summary는 identity, type, origin, metadata, permission mode, approval requirements, capability kinds, parallel/bulk 지원 여부만 노출하고 configuration secret/value는 노출하지 않는다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-kind-registry-api | Sub-AC 5.4.1
+
+- `PluginKindDefinition`, `PluginKindRegistry`, `CompletePluginKindRegistry`를 추가해 OwnCanvas가 지원하는 plugin kind/type을 독립 API로 표현하게 했다.
+- `registerPluginKind()`와 `createPluginKindRegistry()`가 immutable registry를 만들고 중복 kind 등록을 거부한다.
+- `DEFAULT_PLUGIN_KIND_REGISTRY`가 provider, commission, agent, dashboard, direct-message, landing, tracking, custom 전체 supported kind를 등록하며, `listPluginKindDefinitions()`, `getPluginKindDefinition()`, `isSupportedPluginType()`로 canvas/installer/agent가 조회할 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`.
+
+## [2026-05-11] campaign-target-audience-editing-ui | Sub-AC 2.1.2
+
+- Campaign canvas metadata panel의 Target audience 입력 UI를 `CAMPAIGN_TARGET_AUDIENCE_FIELDS` registry에서 렌더링하도록 연결했다.
+- `age`, `gender`, `interests`, `behavior`, `region`, `platform` 입력값이 Campaign JSON source-of-truth의 `targetAudience`에 반영되도록 유지했다.
+- `updatePersistedCampaignRecord()`를 추가해 canvas route에서 audience metadata edit을 `owncanvas.campaigns.v1` localStorage record에 저장하고 `updatedAt`을 갱신한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-target-audience-persistence | Sub-AC 2.1.3
+
+- persisted Campaign을 다시 조회해 viewing state로 열 때 `targetAudience`의 `age`, `gender`, `interests`, `behavior`, `region`, `platform` details가 그대로 반환되는 round-trip regression을 추가했다.
+- campaign title처럼 audience와 무관한 field를 edit/save하는 흐름에서도 기존 target audience details가 유지되는 것을 검증했다.
+- project-wide validation을 막던 plugin kind registry `capabilityKinds` literal inference를 `as const`로 고정해 `CompletePluginKindRegistry` contract와 type tests가 다시 통과하도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-offer-details-editing | Sub-AC 2.2.2
+
+- Campaign product offer 모델에 명시적인 `offer.terms` 필드를 추가해 pricing, discount, terms를 같은 JSON source-of-truth 안에서 저장할 수 있게 했다.
+- Creative Canvas metadata panel의 Offer 섹션에 Terms 입력 영역을 추가해 사용자가 가격/할인과 함께 조건, 만료일, 사용 제한을 편집할 수 있게 했다.
+- `campaign-product-offer-save-flow.test.ts`를 추가해 offer pricing, discount, terms가 localStorage 저장/조회 흐름에서 보존되는지 검증했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/creative-canvas/model/campaign-product-offer-save-flow.test.ts app/features/creative-canvas/model/campaign-target-audience-save-flow.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 command exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] plugin-kind-discovery-api | Sub-AC 5.4.2
+
+- `GET /api/plugin-kinds` resource route를 추가해 등록된 plugin kind 전체를 discovery schema, count, metadata와 함께 반환하도록 했다.
+- `GET /api/plugin-kinds/:pluginType` resource route를 추가해 특정 plugin kind metadata를 조회하고, 미등록 kind는 `plugin_kind.not_found` 404 JSON으로 반환하도록 했다.
+- API payload는 registry definition을 직접 노출하지 않고 `title`, `description`, `campaignRole`, `capabilityKinds`, origin 지원 여부, 기본 permission mode, required detail key만 안정적으로 직렬화한다.
+- 검증: `node --experimental-strip-types --test app/routes/plugin-kind-api.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`는 기존 `productOffer` 구조 기대값과 현재 기본값이 달라 실패했다.
+
+## [2026-05-11] agent-plugin-install-usability | Sub-AC 6.1.2
+
+- `installSelectedPluginForAgent()`를 추가해 agent가 catalog에서 선택한 `available` plugin을 immutable catalog update로 `installed` 상태로 전환할 수 있게 했다.
+- install flow는 plugin 존재 여부, `available -> installed` lifecycle 전환, `permissions.installableBy`의 agent 권한을 검증하고 `installedAt`/`updatedAt`을 기록한다.
+- `verifyAgentInstalledPluginUsable()`를 추가해 설치된 plugin이 agent configuration 권한, explicit input/output ports, type-specific configuration validation을 만족하는지 확인하고 usable capability summary를 반환한다.
+- default plugin kind registry는 frozen object를 유지하면서 literal type precision을 보존하도록 정리했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-plugin-discovery-api | Sub-AC 6.1.1
+
+- `GET /api/agent/plugins` resource route를 추가해 agents가 설치 후보 plugin catalog를 query할 수 있게 했다.
+- endpoint는 `listDiscoverablePluginsForAgent()`를 사용해 `available` 상태이고 `agent` 설치 권한이 있는 plugin만 반환한다.
+- discovery payload는 plugin identity, kind metadata, origin, permission mode, approval requirement, capability kinds, parallel/bulk 지원 여부를 포함하고 configuration field/secret 및 human-only plugin은 노출하지 않는다.
+- 검증: `node --experimental-strip-types --test app/routes/agent-plugin-api.test.ts app/routes/plugin-kind-api.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-product-structure | Sub-AC 2.2.1
+
+- Campaign `productOffer`를 flat string fields에서 `product`, `offer`, `attribution` 구조로 확장했다.
+- product detail은 id/title/brand/category/description/tags/canonicalUrl/media/variants를 담고, offer detail은 price amount/currency/display, discount, destination URL, CTA를 담는다.
+
+## [2026-05-11] agent-plugin-deactivation-api | Sub-AC 6.2.3
+
+- agent가 active installed plugin을 검증된 service/API 경로로 `inactive` 상태로 전환할 수 있게 했다.
+- `deactivateInstalledPluginForAgent()`는 plugin 존재 여부, active lifecycle 상태, agent deactivation 권한, `active -> inactive` lifecycle transition을 검증하고 `deactivatedAt`/`updatedAt`을 기록한다.
+- `POST /api/agent/plugins`는 `{ action: "deactivate", pluginId }` 요청을 받아 deactivation 전용 schema response를 반환하며 configuration/secret field를 노출하지 않는다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/routes/agent-plugin-api.test.ts`, `npm run typecheck`, `npm run build`.
+- attribution detail은 source/external id/affiliate network/commission rate/tracking URL을 포함해 이후 commission plugin과 conversion attribution 흐름에 연결할 수 있게 했다.
+- Creative Canvas metadata panel의 product offer inputs를 nested Campaign JSON source-of-truth에 맞춰 갱신했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-installed-workflow-capabilities | Sub-AC 6.2.1
+
+- `AgentSelectableWorkflowCapability`와 `listSelectableWorkflowCapabilitiesForAgent()`를 추가해 설치된 plugin capability를 agent가 workflow node 후보로 선택할 수 있게 했다.
+- selectable capability는 `installed`, `configured`, `active` lifecycle만 허용하고, agent configuration 권한, explicit input/output ports, type-specific validation을 통과한 plugin만 노출한다.
+- basic mode는 basic plugin만 반환하고 advanced mode는 advanced external tracking/provider 같은 고권한 capability도 선택 가능하게 해 permission/safety control을 유지했다.
+- agent selection payload는 `canvas.node.create`와 plugin/capability id를 포함해 사람의 canvas node 생성 UX와 같은 action surface로 연결된다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-installed-plugin-inventory | Sub-AC 6.2.1
+
+- `AgentInstalledPlugin`과 `listInstalledPluginsForAgent()`를 추가해 agent가 설치된 plugin inventory를 조회하고 각 plugin의 현재 activation/lifecycle state를 읽을 수 있게 했다.
+- installed inventory는 `installed`, `configured`, `active`, `inactive`, `error` 상태만 포함하고 `available`/`uninstalled` catalog 항목은 제외한다.
+- summary는 plugin identity, type, origin, permission mode, approval requirements, capability kinds, installed/configured/activated/deactivated timestamp, agent configuration 가능 여부를 노출한다.
+- `GET /api/agent/plugins?view=installed`가 `owncanvas.agent-installed-plugins.v1` 응답으로 설치된 plugin과 activation state를 반환하도록 연결했다.
+- configuration schema/value와 secret field는 agent inventory 응답에서 제외해 상태 조회와 credential 접근을 분리했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/routes/agent-plugin-api.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-structured-offer-fields | Sub-AC 2.2.2
+
+- Campaign data model에 `CAMPAIGN_PRODUCT_OFFER_FIELDS` registry를 추가해 `product`, `offer`, `attribution` section별 structured offer field 목록을 source-of-truth로 노출했다.
+- `CampaignProductOfferSection`, `CampaignProductOfferField`, `CampaignProductOfferInput` type을 추가해 humans/agents/UI가 부분 structured offer input을 제공해도 완성된 `CampaignProductOffer`로 정규화되게 했다.
+- `createCampaignProductOffer()`가 nested partial product, price, offer, attribution input을 default structure와 merge하도록 type contract를 완화했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-product-offer-editing-ui | Sub-AC 2.2.3
+
+- Campaign metadata panel이 product details, offer, commerce attribution section으로 나뉘어 `productOffer.product`, `productOffer.offer`, `productOffer.attribution` nested JSON을 직접 edit하도록 확장했다.
+- UI는 product id/title/brand/category/description/tags/canonical URL, offer headline/summary/discount/destination URL/CTA/price amount/display/currency, attribution source/external ID/network/commission rate/tracking URL을 capture한다.
+- product/offer/attribution details가 localStorage campaign record에 저장되고 이후 title/objective 같은 다른 campaign edit 후에도 보존되는 round-trip regression을 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] workflow-plugin-activation-persistence | Sub-AC 6.2.2
+
+- Campaign workflow `plugins`를 plain ID 목록에서 `CampaignWorkflowPluginConfiguration` 목록으로 확장해 plugin id/type, permission mode, capability IDs, scoped configuration values, secret refs, lifecycle activation state, actor, timestamps를 함께 저장한다.
+- `createCampaignWorkflowPluginConfiguration()`와 `setCampaignWorkflowPluginActivation()`를 추가해 human/agent activation/deactivation이 Campaign JSON source-of-truth에 기록되고 audit log/version entry로 남도록 했다.
+- persisted campaign round-trip test를 추가해 active plugin state와 configuration/secret refs가 campaign edit 이후에도 유지되는지 검증했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-product-offer-validation | Sub-AC 2.2.4
+
+- `validateCampaignProductOffer()`를 추가해 product title, canonical/media/tracking URL, variant/offer price, currency, CTA, destination URL, commission rate를 runtime validation result로 검사한다.
+- `updatePersistedCampaignRecord()`가 invalid `productOffer`를 localStorage campaign record에 저장하지 않고 validation code 목록과 함께 reject하도록 해 product/offer source-of-truth가 검증된 상태로 유지되게 했다.
+- blank campaign의 default empty `productOffer`는 draft creation/edit flow를 막지 않도록 valid empty state로 유지했다.
+- agent plugin discovery fixture의 landing plugin sample을 current landing schema(`hosted`, `domain`, `string`)에 맞춰 정리해 project-wide typecheck를 복구했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/agent-plugin-api.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-target-audience-form-verification | Sub-AC 2.1.2
+
+- Campaign creation/edit metadata panel이 `CAMPAIGN_TARGET_AUDIENCE_FIELDS` registry 기반으로 age, gender, interests, behavior, region, platform 입력을 모두 렌더링하고 `targetAudience` JSON source-of-truth에 저장하는 상태를 재검증했다.
+- `updatePersistedCampaignRecord()` 기반 저장/재조회 regression이 target audience details를 보존함을 확인했다.
+- project-wide typecheck를 막던 agent plugin discovery fixture의 landing sample을 current landing schema(`hosted`, `domain`, `checkout`, `string`/`select`)에 맞춰 보정했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/routes/agent-plugin-api.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-workflow-runtime-plugin-loading | Sub-AC 6.2.3
+
+- `loadActivatedPluginsIntoAgentWorkflowRuntime()`를 추가해 Campaign JSON source-of-truth의 active workflow plugin configuration과 catalog manifest를 결합해 agent runtime plugin 목록을 만든다.
+- runtime loader는 inactive plugin을 제외하고 manifest 누락, type mismatch, basic/advanced mode 차단, agent usability failure, missing capability ID를 구조화된 error로 반환한다.
+- loaded runtime plugin은 activation actor/time, scoped configuration values, secret refs, approval requirement, explicit input/output port, parallel/bulk capability metadata를 보존한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-activation-permission-validation | Sub-AC 6.2.4
+
+- `setCampaignWorkflowPluginActivation()`가 선택적으로 catalog manifest를 받아 activation 전에 manifest 존재, plugin type 일치, installed/configured/active lifecycle, actor activation permission을 검증하도록 보강했다.
+- agent/human actor 권한은 manifest의 `permissions.configurableBy`를 기준으로 확인하며, missing/available/uninstalled catalog plugin은 Campaign JSON source-of-truth를 active 상태로 바꾸기 전에 명확한 error로 거부한다.
+- workflow plugin은 campaign configuration이 `configured`, `inactive`, `active` 상태일 때만 활성화할 수 있어 installed-only campaign plugin을 바로 active로 올리는 흐름을 막는다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-default-configuration-schema | Sub-AC 6.3.1
+
+- `createPluginDefaultConfigurationSchema()`를 추가해 plugin manifest의 `configuration.fields`에서 installer/agent용 default configuration metadata를 파생한다.
+- schema는 plugin id/type, permission mode, configurable actors, field metadata, required keys, non-secret default values, secret refs를 분리해 제공한다.
+- secret field의 `defaultValue`는 반환하지 않고 `secretRef`만 `defaults.secretRefs`에 보존해 configuration discovery 중 credential value가 노출되지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-plugin-activation-api | Sub-AC 6.2.2
+
+- `activateInstalledPluginForAgent()`를 추가해 agent가 설치된 catalog plugin을 검증된 service path로 `active` 상태로 전환할 수 있게 했다.
+- activation은 plugin 존재 여부, installed/configured/active 계열 lifecycle, agent activation 권한, lifecycle transition, agent usability를 확인한 뒤 `activatedAt`/`updatedAt`을 기록한다.
+- install service가 plugin default configuration을 적용해 required 기본값/secret ref가 모두 충족된 plugin은 `configured` 상태로 설치하고, 누락된 required key는 `appliedConfiguration.missingRequiredKeys`에 남기도록 보강했다.
+- `POST /api/agent/plugins`에서 `{ action: "activate", pluginId }` 요청을 받아 `owncanvas.agent-plugin-activation-request.v1` 응답을 반환하도록 연결했다.
+- API activation 응답은 request id, actor, plugin id, approval requirement, lifecycle state/timestamp만 노출하고 configuration/secret field는 숨긴다.
+- 검증: `node --experimental-strip-types --test app/routes/agent-plugin-api.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-asset-metadata | Sub-AC 2.3.1
+
+- Campaign `assets`를 문자열 목록에서 typed asset metadata 목록으로 확장했다.
+- linked asset과 uploaded asset 모두 `source`, `mediaType`, `title`, `uri`, `usage`, rights owner/license/source, file metadata, created actor/time을 보존한다.
+- `createCampaignAsset()`, `addCampaignAsset()`, `validateCampaignAssets()`를 추가해 required metadata를 검증하고 Campaign logs/versions에 asset addition audit trail을 남긴다.
+- Creative Canvas metadata panel에 Campaign assets 섹션을 추가해 사람 사용자가 asset link를 추가하거나 파일을 선택해 Campaign JSON source-of-truth에 저장할 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-asset-list-and-detail-view | Sub-AC 2.3.2
+
+- `listCampaignAssets()`와 `getCampaignAssetDetails()`를 추가해 Campaign source-of-truth의 asset 목록을 요약 조회하고 asset id로 전체 metadata를 볼 수 있게 했다.
+- Creative Canvas metadata panel의 Campaign assets 영역을 selectable list와 selected asset detail view로 나눠 URI, rights, file metadata, alt text, 생성 actor/time을 확인할 수 있게 했다.
+- TDD red/green 검증으로 campaign asset summary/detail lookup regression을 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts` 통과, `npm run build` 통과.
+- 참고: 당시에는 plugin install-flow drift(`installed` vs `configured`, `appliedConfiguration` test type) 때문에 plugin test와 typecheck가 실패했으나, 이후 `agent-plugin-activation-api` 작업에서 default configuration 적용 경로를 정리해 해소했다.
+
+## [2026-05-11] plugin-install-default-configuration | Sub-AC 6.3.2
+
+- agent plugin installation이 manifest의 default configuration schema를 `appliedConfiguration`으로 적용하도록 추가했다.
+- non-secret `defaultValue`는 `values`에 저장하고, secret field는 실제 default 값을 복사하지 않고 `secretRefs`만 저장한다.
+- required configuration field가 default value 또는 secret ref로 모두 충족되면 설치 직후 lifecycle을 `configured`로 전환하고 `configuredAt`을 기록한다.
+- required default가 없는 field는 `missingRequiredKeys`에 남겨 후속 human/agent configuration flow가 이어받을 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts app/routes/agent-plugin-api.test.ts app/routes/plugin-kind-api.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, `.agents/product-marketing-context.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] agent-plugin-state-api | Sub-AC 6.4.3
+
+- agent-facing plugin API에 설치/활성화 상태와 함께 sanitized `configurationState`를 노출했다.
+- `configurationState`는 `configured`, `needs_configuration`, `not_configured` 상태와 required/configured/missing field count만 제공하고, raw configuration field, secret value, secret ref key, missing key 이름은 노출하지 않는다.
+- `POST /api/agent/plugins` 설치 응답과 `GET /api/agent/plugins?view=installed` 조회 응답에서 agent가 다음 action을 결정할 수 있게 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts app/routes/agent-plugin-api.test.ts app/routes/plugin-kind-api.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] campaign-asset-list-and-detail-view-verification | Sub-AC 2.3.2
+
+- Campaign asset list/detail behavior가 이미 `listCampaignAssets()`와 `getCampaignAssetDetails()` 및 Creative Canvas metadata panel selectable list/detail view로 구현되어 있음을 재검증했다.
+- asset edit/replace/remove regression fixture의 empty `logs`/`versions` inference를 `string[]`으로 명시해 repo-wide typecheck가 asset tests를 통과하도록 정리했다.
+- plugin lifecycle test에서 필요한 `deactivateInstalledPluginForAgent` import가 유지되도록 보정해 기존 plugin verification drift를 제거했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+- 참고: `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, `DESIGN.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] campaign-asset-edit-replace-remove | Sub-AC 2.3.3
+
+- `editCampaignAsset()`, `replaceCampaignAsset()`, `removeCampaignAsset()`를 추가해 Campaign JSON source-of-truth의 associated asset metadata, backing URI/source/file metadata, association removal을 asset id 기준으로 변경할 수 있게 했다.
+- 각 asset mutation은 Campaign `logs`와 `versions`에 `asset.edited`, `asset.replaced`, `asset.removed` audit entry를 남겨 이후 attribution/agent action replay가 추적할 수 있게 했다.
+- Creative Canvas metadata panel에 selected asset load/save edit, replace link, replace file, remove controls를 연결해 사람이 기존 asset을 추가뿐 아니라 수정/교체/삭제할 수 있게 했다.
+- plugin catalog storage test drift를 함께 정리해 secret default value가 persisted catalog JSON에 저장되지 않는 regression도 통과하도록 유지했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-installed-configuration-storage | Sub-AC 6.3.3
+
+- `PLUGIN_CATALOG_STORAGE_KEY`, `persistPluginCatalog()`, `getPersistedPluginCatalog()`, `installSelectedPluginForAgentInStorage()`를 추가해 설치 결과 catalog를 plugin storage layer에 저장하고 다시 읽을 수 있게 했다.
+- agent installation에서 생성되는 `appliedConfiguration`의 values, secretRefs, missingRequiredKeys가 persisted catalog에 남도록 regression test를 추가했다.
+- storage serialization은 secret configuration field의 `defaultValue`를 제거해 manifest에 실수로 들어간 secret 기본값이 plugin storage에 복사되지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts app/routes/agent-plugin-api.test.ts app/routes/plugin-kind-api.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] agent-plugin-deactivation-api-final | Sub-AC 6.2.3
+
+- agent active plugin deactivation 경로를 최종 검증했다.
+- `deactivateInstalledPluginForAgent()`와 `POST /api/agent/plugins`의 `{ action: "deactivate" }` API가 active installed plugin을 `inactive`으로 전환하고 `deactivatedAt`을 기록한다.
+- API response는 deactivation request metadata와 lifecycle state만 반환하며 configuration/secret field를 노출하지 않는다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts app/routes/agent-plugin-api.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-defaults-reload-regression | Sub-AC 6.3.4
+
+- persisted plugin catalog를 fresh storage에서 다시 읽었을 때 agent install default configuration이 유지되는 regression test를 추가했다.
+- test는 non-secret defaults(`model`, `maxParallel`)와 secret ref(`apiKey`)가 `appliedConfiguration`에 남고, plugin lifecycle이 `configured`로 reload되며, installed-plugin projection에서도 configured metadata가 보존되는지 확인한다.
+- secret field의 실제 `defaultValue`는 persisted JSON에 저장되지 않는다는 기존 보안 경계도 reload fixture에서 함께 검증했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts` 통과, `npm run build` 통과.
+- 참고: `npm run typecheck`는 `app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`의 기존 `saveCampaignPublishingConfiguration` missing export로 실패했다.
+
+## [2026-05-11] campaign-publishing-configuration-capture | Sub-AC 2.4
+
+- Campaign `channels`를 typed publishing configuration 목록으로 확장해 social, direct-message, landing, email, paid-ad, custom channel을 JSON source-of-truth에 저장할 수 있게 했다.
+- publishing channel은 provider plugin id, account id/handle, placement, destination URL, landing page id, schedule, UTM fields, conversion event, status를 보존한다.
+- `createCampaignPublishingChannel()`, `validateCampaignPublishingConfiguration()`, `saveCampaignPublishingConfiguration()` save flow를 추가하고 persisted campaign update validation에 publishing validation을 연결했다.
+- Creative Canvas metadata panel에 Publishing configuration 섹션을 추가해 사람이 channel destination, schedule, attribution, conversion event를 캡처하고 channel list에서 제거할 수 있게 했다.
+- plugin activation defaults fixture의 optional `appliedConfiguration` type annotation drift를 정리해 repo-wide typecheck가 통과하도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-publishing-create-update-persistence | Sub-AC 2.4.2
+
+- Campaign create workflow가 blank campaign에 empty publishing `channels`를 저장하고 다시 읽을 수 있음을 regression test로 고정했다.
+- generic `updatePersistedCampaignRecord()` 경로가 configured publishing channel 변경을 Campaign JSON source-of-truth에 저장하는 regression test를 추가했다.
+- draft publishing channel은 provider/account/landing/UTM/conversion readiness가 비어 있어도 저장 가능하게 하되, configured/scheduled/published/paused 상태에서는 기존 strict readiness validation을 유지했다.
+- `creative-canvas.test.ts`의 publishing validation fixture를 configured channel 기준으로 명시하고, blank campaign tracking 기대값에 기존 `measurementGoals: []` 필드를 반영했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`, `npm run skills:check`.
+- 참고: `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, wiki fallback을 사용했다.
+
+## [2026-05-11] campaign-measurement-goals-persistence | Sub-AC 2.5.1
+
+- Campaign `tracking`에 `measurementGoals`를 추가해 target metric, target value/unit, success criteria, reporting timeframe(start/end/timezone)을 JSON source-of-truth에 저장한다.
+- `createCampaignMeasurementGoal()`, `validateCampaignMeasurementGoals()`, `saveCampaignMeasurementGoals()`를 추가해 measurement goal save flow가 persisted campaign record를 갱신하고 invalid goal은 overwrite 없이 reject하도록 했다.
+- Creative Canvas metadata panel에 Measurement goals 섹션을 추가해 사람이 campaign edit flow에서 target metrics, success criteria, reporting window를 정의하고 제거할 수 있게 했다.
+- regression은 blank campaign default, validation error codes, save/reload, later campaign edit 이후 measurement goals 보존을 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-publishing-retrieval | Sub-AC 2.4.3
+
+- `listCampaignPublishingChannels()`와 `getCampaignPublishingChannelDetails()`를 추가해 persisted Campaign 조회 후 publishing configuration을 list/detail API 형태로 노출한다.
+- summary 조회는 channel type, platform, provider plugin, account handle, placement, destination URL, landing page id, schedule, UTM, conversion event, status를 포함한다.
+- regression은 persisted campaign read 이후 publishing summary와 full channel detail이 손실 없이 반환되는지 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] plugin-configuration-separate-storage | Sub-AC 6.4.2
+
+- plugin catalog persistence에서 `appliedConfiguration`을 catalog JSON에 직접 저장하지 않고 `PLUGIN_CONFIGURATION_STORAGE_KEY`에 plugin id별 설정으로 분리 저장하도록 변경했다.
+- `getPersistedPluginCatalog()`는 catalog storage와 configuration storage를 함께 읽어 caller에게는 기존 manifest view의 `appliedConfiguration`을 재구성한다.
+- regression test는 catalog storage에 `appliedConfiguration`이 남지 않고, configuration storage에는 lifecycle/runtime metadata 없이 설정 값과 secret ref만 남으며, reload 후 설정이 보존되는지 확인한다.
+
+## [2026-05-11] campaign-tracking-configuration-persistence | Sub-AC 2.5.2
+
+- Campaign `tracking`을 attribution parameter, pixel event, analytics destination까지 포함하는 구조화 configuration으로 확장했다.
+- `createCampaignTrackingConfiguration()`, `validateCampaignTrackingConfiguration()`, `saveCampaignTrackingConfiguration()`를 추가해 UTM, attribution parameters, pixel/event identifiers, analytics destinations, conversion events, attribution model/touchpoints를 persisted Campaign record에 저장한다.
+- invalid tracking configuration은 overwrite 없이 reject하며, conversion event가 있으면 attribution touchpoint를 요구하도록 해 conversion-first measurement loop의 최소 attribution context를 보존한다.
+- concurrent measurement metric test drift와 맞춰 `saveCampaignMeasurementMetrics()` 경로도 보존해 tracking metrics persistence가 typecheck를 막지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts app/features/creative-canvas/model/campaign-tracking-configuration-save-flow.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-asset-generation-job-schema | Sub-AC 3.1.1
+
+- Campaign `campaignSpec`에 `assetGenerationJobs`를 추가해 JSON source-of-truth가 image/video 생성 작업을 여러 개 선언할 수 있게 했다.
+- 각 asset generation job은 media type, provider plugin id, capability id, required input 목록, output target asset field 목록, execution status를 보존한다.
+- `createCampaignAssetGenerationJob()`와 `validateCampaignAssetGenerationJobs()`를 추가하고 persisted campaign update validation에 연결해 빈 input/output target 또는 중복 job id를 거부한다.
+- canvas node/edge edit flow는 기존 `assetGenerationJobs`를 유지하면서 `campaignSpec`과 `canvasState`의 nodes/edges 동기화를 보존한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-canvas-edit-json-validation | Sub-AC 4.1.2
+
+- Canvas edit JSON에 대한 `validateCampaignCanvasEdit()`를 추가해 node/edge 배열, node id/kind/position, duplicate id, dangling edge reference를 저장 전 검증한다.
+- `createCampaignCanvasEdit()`가 validated edit payload를 정규화해 partial JSON node/edge 입력도 canonical `CampaignCanvasBlock`/`CampaignCanvasEdge` 구조로 되돌리고, 기존 `assetGenerationJobs`를 유지한 채 `campaignSpec`과 `canvasState`를 동기화한다.
+- `applyCampaignCanvasEditAction()`을 추가해 node create/update/delete와 explicit port edge connect/disconnect 같은 human/agent canvas actions가 동일한 validation/normalization 경로를 사용하게 했다.
+- asset generation job lifecycle metadata는 optional schema field로 보존하되, 입력이 없으면 `undefined`로 남겨 기존 campaign spec 구조를 변형하지 않는다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] asset-generation-required-io-validation | Sub-AC 3.1.2
+
+- `validateCampaignAssetGenerationJobs()`가 raw JSON에서 `requiredInputs` 또는 `outputTargets` 배열 자체가 누락된 asset generation job도 crash 없이 validation error로 거부하도록 보강했다.
+- required input key/source와 output target asset id/field도 string 여부를 확인해 malformed workflow JSON이 persistence boundary를 통과하지 못하게 했다.
+- regression은 validator error payload와 `updatePersistedCampaignRecord()` overwrite 방지를 함께 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] landing-page-handoff-plugin-schema | Sub-AC 7.1.3
+
+- landing plugin manifest에 optional `handoffEventSchemas` interface를 추가해 landing plugin이 지원하는 handoff event contract를 광고할 수 있게 했다.
+- canonical `LANDING_PAGE_HANDOFF_EVENT_SCHEMA`와 `owncanvas.landing-page-handoff-event.v1` payload를 정의해 campaign id, source plugin/capability, destination URL, checkout URL, visitor/offer context, attribution fields를 landing handoff event로 표현한다.
+- `validateLandingPageHandoffEvent()`를 추가해 schema version, actor, source ids, http(s) landing/checkout URL, attribution campaign consistency를 검증한다.
+- landing plugin validation은 handoff schema가 광고하는 page type이 plugin의 supported page types에 포함되는지 확인한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] asset-generation-workflow-loading | Sub-AC 3.1.3
+
+- `loadCampaignAssetGenerationWorkflow()`를 추가해 Campaign `campaignSpec.assetGenerationJobs`를 downstream execution용 projection으로 로드한다.
+- 로드 결과는 원본 순서의 `jobs`와 별도 `imageJobs`/`videoJobs` 배열을 함께 제공해 image/video generation 선언이 하나의 bulk queue로 섞이지 않게 했다.
+- projection은 job, input/output target, image input, result metadata, lifecycle 객체를 clone해 executor가 loaded workflow를 변경해도 Campaign JSON source-of-truth를 직접 오염시키지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`, `npm run skills:check`.
+- 참고: `npm run skills:check`는 exit 0이지만 DDD/marketing 계열 외부 Codex skill 8개가 missing으로 보고되어, `CONTEXT.md`와 wiki fallback을 사용했다.
+
+## [2026-05-11] campaign-spec-live-json-edit-validation | Sub-AC 4.2.1
+
+- `parseCampaignSpecJsonEdit()`를 추가해 Campaign spec JSON editor 입력을 매 변경마다 parse하고, syntax/validation error가 있으면 기존 Campaign `canvasState`와 `campaignSpec`을 그대로 반환하게 했다.
+- valid JSON spec edit은 `nodes`/`edges`를 canonical canvas edit 경로로 정규화하고 `assetGenerationJobs`를 JSON source-of-truth에서 반영해 canvas와 spec을 함께 동기화한다.
+- Creative Canvas metadata panel에 canonical Campaign JSON spec editor와 validation error surface를 추가해 invalid JSON/invalid spec 상태에서는 canvas를 갱신하지 않게 했다.
+- `validateCampaignAssetGenerationJobs()`는 non-array raw JSON도 validation error로 처리해 live spec editing 중 crash 없이 오류를 노출한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] instagram-comment-trigger-condition-schema | Sub-AC 7.2.1
+
+- Instagram comment trigger configuration schema에 `conditionMatchers`를 추가해 comment text, commenter username, mentions, metadata 기반 조건 매칭을 표현하게 했다.
+- `INSTAGRAM_COMMENT_TRIGGER_SUPPORTED_OPERATORS`는 `equals`, `contains`, `starts_with`, `ends_with`, `regex`, `any_keyword`, `all_keywords`를 canonical operator로 광고한다.
+- canonical condition fields는 `text`, `commenter.username`, `mentions`, `metadata`이고, metadata condition은 `sourceNodeId`, `creativeAssetId`, `productOfferId`, `attributionTerm`만 허용한다.
+- 기존 campaign spec과 DM action fixture가 깨지지 않도록 legacy `keywordMatchers`도 계속 허용하되, 새 schema의 required field는 `conditionMatchers`로 전환했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts` 통과.
+- 참고: `npm run typecheck`와 `npm run build`는 현재 creative-canvas 쪽 기존 drift로 실패한다. `creative-canvas-screen.tsx`의 block icon mapping 누락과 `creative-canvas.ts`의 `executeCampaignImageAssetGenerationJobs` 중복 선언이 원인이다.
+
+## [2026-05-11] instagram-comment-to-dm-response-mapping | Sub-AC 7.2.1
+
+- Instagram DM action configuration schema에 `responseMappings` 계약을 추가해 comment trigger matcher id를 DM response template/text와 tracked landing URL에 연결할 수 있게 했다.
+- `INSTAGRAM_COMMENT_TO_DM_RESPONSE_MAPPING_SCHEMA_VERSION`와 action schema의 `responseMappingSchemaVersion`, `mappingFields`를 추가해 plugin이 comment-to-DM mapping contract를 광고한다.
+- `validateInstagramDmActionConfiguration()`은 새 mapping 형태에서는 top-level legacy `message`/`landingUrl` 없이도 통과시키고, 각 mapping의 id, trigger matcher reference, message text, http(s) landing URL을 검증한다.
+- 기존 single-message DM action fixture는 legacy fallback으로 계속 허용한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-spec-node-definition-mapping | Sub-AC 4.2.2
+
+- Campaign spec JSON node가 `kind`뿐 아니라 `type`으로도 canvas node type을 선언할 수 있게 하고, `llm`, `agent`, `dm`, `landing`, `custom` campaign node type을 canonical canvas block definitions에 추가했다.
+- valid JSON spec node definitions에서 `id`, `label`, `position`, `type`, `properties`를 normalized `canvasState`와 `campaignSpec`에 보존하도록 regression을 추가했다.
+- React Flow adapter가 explicit `sourcePort`/`targetPort`를 `sourceHandle`/`targetHandle`로 round-trip해 JSON spec과 canvas edge state가 port 정보를 잃지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] instagram-comment-trigger-post-reference-schema | Sub-AC 7.2.2
+
+- Instagram comment trigger configuration schema에 `matchedPosts`와 `postSelection`을 추가해 trigger가 대상 Instagram post를 명시적으로 모델링할 수 있게 했다.
+- matched post reference는 `mediaId`, `postId`, `shortcode`, `permalink`, caption text/source node/asset reference, per-post selection criteria를 보존한다.
+- post selection filter는 include/exclude mode, media id allowlist, permalink URL, caption keyword, hashtag, publishedAfter/publishedBefore window를 표현한다.
+- validator는 matched post identifier, http(s) permalink, caption reference, include/exclude mode, filter string, filter URL, timestamp를 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-spec-edge-definition-mapping | Sub-AC 4.2.3
+
+- Campaign spec JSON edge definitions now preserve semantic `type` and edge-specific `properties` alongside explicit `source`, `sourcePort`, `target`, `targetPort`, and `label`.
+- `normalizeCampaignCanvasEdge()` maps valid JSON spec edges into both `canvasState.edges` and `campaignSpec.edges` without dropping campaign attribution or generation metadata.
+- React Flow canvas edges keep the visual renderer as `smoothstep` while storing campaign edge type/properties in edge data so UI round-trips do not overwrite source-of-truth semantics.
+- Verification: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] image-generation-output-persistence | Sub-AC 3.2.2
+
+- Added `applyCampaignImageAssetGenerationExecutionResult()` to merge completed image generation job snapshots back into `campaignSpec.assetGenerationJobs`, preserving result metadata and provider output references in the Campaign JSON source of truth.
+- Added `saveCampaignImageAssetGenerationExecutionResult()` to persist the merged workflow through the existing campaign storage boundary.
+- Completed image result metadata now upserts generated image assets with URI, file name, MIME type, size, rights, actor, and generated timestamp metadata.
+- Verification: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] concurrent-asset-generation-orchestration | Sub-AC 3.2.1
+
+- `executeCampaignAssetGenerationJobs()` now runs executable image and video asset generation jobs through one shared bounded-concurrency scheduler while preserving Campaign workflow order in result snapshots.
+- `executeCampaignImageAssetGenerationJobs()` and `executeCampaignVideoAssetGenerationJobs()` use the same scheduler with media filters, so image-only and video-only provider flows keep their existing semantics.
+- Regression coverage verifies mixed image/video concurrent execution, video-only concurrent execution, skipped non-executable jobs, lifecycle/result metadata cloning, and unchanged original job declarations.
+- Verification: `node --test app/features/creative-canvas/model/creative-canvas.test.ts` and route API tests passed. `npm run typecheck` is still blocked by existing plugin DM test/type drift around `renderDmAutomationReply` and `InstagramDmResponseSelectionResult`.
+
+## [2026-05-11] campaign-spec-json-live-canvas-sync | Sub-AC 4.2.4
+
+- Added a React Flow adapter sync result that parses valid Campaign JSON spec edits and immediately projects the synced `canvasState` into rendered node/edge snapshots, including explicit source/target port handles.
+- Wired the campaign JSON editor through the top-level canvas component so valid JSON edits update local React Flow nodes and edges before waiting for parent campaign prop refresh.
+- Connected valid JSON parses to structural node/edge edit detection while preserving invalid JSON behavior that leaves the canvas unchanged.
+- Restored the existing parallel image/video generation executor exports needed by the creative canvas model test suite.
+- Verification: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- Note: `npm run typecheck` is still blocked by existing `app/features/plugins/model/plugin-representation.test.ts` DM automation drift (`renderDmAutomationReply`, `mappingId` narrowing, and one implicit `any`).
+
+## [2026-05-11] campaign-spec-json-schema-invalid-rejection | Sub-AC 4.3.1
+
+- `validateCampaignAssetGenerationJobs()`를 raw JSON 입력에 대해 더 방어적으로 만들어 non-object job, non-string id/provider/capability, primitive required input/output target을 throw 대신 validation error로 반환하게 했다.
+- `parseCampaignSpecJsonEdit()` 경로에 schema-invalid asset generation jobs regression을 추가해 invalid JSON spec edit이 기존 `canvasState`와 `campaignSpec`을 변경하지 않는 것을 검증했다.
+- 이전 작업에서 남아 있던 duplicate `executeCampaignImageAssetGenerationWorkflow` 선언을 정리해 creative canvas model test와 typecheck가 다시 실행 가능하게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] parallel-video-generation-workflow-persistence | Sub-AC 3.2.3
+
+- `executeCampaignVideoAssetGenerationWorkflow()`를 추가해 video-only workflow 실행이 기존 병렬 scheduler를 사용하고 완료 결과를 Campaign JSON source-of-truth에 바로 반영하게 했다.
+- `applyCampaignVideoAssetGenerationExecutionResult()`와 `saveCampaignVideoAssetGenerationExecutionResult()`를 추가해 completed video job snapshots, provider result metadata, generated video assets, audit logs, versions를 persisted Campaign에 저장한다.
+- generated video assets는 `mediaType: "video"`, 원본 URI 기반 file name, MIME type, size, rights, actor, generated timestamp를 보존하며 기존 asset id가 있으면 generated output metadata로 upsert한다.
+- regression은 video jobs의 병렬 실행, workflow-level persistence, video duration/frame/codec result metadata, storage reload 후 asset reference 보존을 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts app/routes/campaign-measurement-goals-api.test.ts app/routes/agent-plugin-api.test.ts app/routes/plugin-kind-api.test.ts`, `node --experimental-strip-types --test --test-concurrency=1 $(rg --files -g '*test.ts' app | rg -v 'plugin-representation.type-test.ts' | sort)`, `npm run typecheck`, `npm run build`, `npm run skills:check`.
+- 참고: `npm run skills:check`는 exit 0이지만 기존처럼 DDD/marketing 계열 외부 skill 8개가 missing으로 보고되어 `CONTEXT.md`와 wiki fallback을 사용했다. `plugin-representation.type-test.ts`는 Node 직접 실행 시 `~` alias를 resolve하지 못해 full Node test command에서 제외했고, typecheck 경로로 검증했다.
+
+## [2026-05-11] campaign-spec-json-incomplete-input-preservation | Sub-AC 4.3.2
+
+- React Flow sync adapter regression을 추가해 syntactically valid but incomplete Campaign spec JSON input이 들어와도 기존 rendered `nodes`/`edges` snapshot과 Campaign `canvasState`를 그대로 반환하는 것을 검증했다.
+- incomplete JSON spec이 새 node만 포함하고 required `edges` contract를 생략하는 경우, canvas projection이 partial input으로 덮어써지지 않고 기존 prompt-to-image graph와 explicit port handles를 유지한다.
+
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `npm run build`.
+- Note: `npm run typecheck`는 현재 creative canvas video persistence helper lookup/implicit any drift와 plugin DM automation export drift로 실패한다.
+
+## [2026-05-11] video-asset-storage-reference-persistence | Sub-AC 3.3.3
+
+- Completed video generation results now preserve object storage references alongside provider metadata, including provider, bucket, object key, public URI, and optional content hash.
+- Generated video campaign assets copy those storage references into both the top-level asset record and `generatedMetadata`, so agents can resolve persisted storage objects without rehydrating provider responses.
+- Job result serialization keeps `storageReferences` in `campaignSpec.assetGenerationJobs[].resultMetadata`, preserving the JSON source of truth through campaign storage reloads.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "completed video generation persists asset metadata" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run skills:check`.
+- 참고: `npm run typecheck`는 기존 범위 밖의 `dndnFE` missing dependency/path alias 문제와 `app/features/plugins/model/plugin-registration-template-routing.test.ts` fixture export drift로 실패한다.
+
+## [2026-05-11] instagram-dm-dispatch-adapter | Sub-AC 7.2.4
+
+- `createInstagramDmDispatchAdapter()`가 validated `InstagramDmActionExecutionRequest`를 Instagram DM transport payload로 변환해 account id, recipient id, message text, tracked landing URL, campaign/capability/execution metadata를 전달하도록 검증했다.
+- dispatch 성공 시 `delivered` execution response에 Instagram message id, landing URL, attribution, provider metadata를 보존한다.
+- request validation 실패와 Instagram provider/transport 예외는 throw하지 않고 `failed` execution response와 구조화된 error code/message로 반환해 audit trail과 canvas execution 상태가 끊기지 않게 했다.
+- 기존 DM reply generation drift도 함께 정리되어 mapped response가 tracked landing URL과 UTM attribution을 포함한 executable message로 생성된다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npm run typecheck`, `npm run skills:check`.
+- 참고: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.type-test.ts`는 raw Node 실행에서 기존 `~` import alias를 해석하지 못해 `ERR_MODULE_NOT_FOUND`로 실패한다. `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 missing을 보고하지만 exit 0이다.
+
+## [2026-05-11] plugin-registration-template-routing-fixtures | Sub-AC 7.3.4
+
+- comment-to-DM-to-landing workflow regression용 `plugin-workflow-fixtures.ts`를 추가해 direct-message, landing, tracking plugin kind registration fixture와 DM template personalization/landing route fixture를 재사용 가능하게 했다.
+- 새 `plugin-registration-template-routing.test.ts`가 plugin registration fixture, personalized DM reply rendering, tracked URL routing, 그리고 React Router route table의 plugin API/campaign canvas entry를 함께 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-registration-template-routing.test.ts app/features/plugins/model/plugin-representation.test.ts app/routes/plugin-kind-api.test.ts app/routes/agent-plugin-api.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] campaign-spec-json-streaming-partial-preservation | Sub-AC 4.3.3
+
+- `parseCampaignSpecJsonEdit()`에 `commit: false` 옵션을 추가해 streaming/incremental caller가 syntactically valid intermediate JSON frame을 검증 경로에 태우더라도 Campaign `campaignSpec`/`canvasState`를 커밋하지 않게 했다.
+- non-committed streaming frame은 `campaign_spec.json_incomplete` error로 반환되어 caller가 기존 Campaign snapshot을 유지하면서 final complete payload를 기다릴 수 있다.
+- React Flow sync adapter도 같은 commit option을 전달해 parseable partial frame이 rendered canvas nodes/edges를 빈 graph 등 corrupted intermediate state로 덮어쓰지 않도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `npm run typecheck`, `npm run build`.
+
+## [2026-05-11] landing-dm-referral-context-contract | Sub-AC 7.4.1
+
+- `LANDING_DM_REFERRAL_CONTEXT_SCHEMA_VERSION`, `LANDING_DM_REFERRAL_CONTEXT_SCHEMA`, `LandingDmReferralContext`, and `validateLandingDmReferralContext()`를 추가해 DM delivery에서 landing plugin으로 전달되는 referral context를 versioned contract로 정의했다.
+- Landing plugin registration은 `dmReferralContextSchemas`를 광고할 수 있고, 이 경우 `landing.page` capability가 `dmReferralContext` JSON input port를 함께 선언해야 한다.
+- Validator는 source DM plugin/capability/delivery event, tracked landing URL, visitor identity linkage, offer context, campaign-matched UTM attribution을 landing conversion flow 전에 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`.
+
+## [2026-05-11] campaign-spec-json-last-valid-restore | Sub-AC 4.3.3
+
+- React Flow sync adapter now accepts an explicit `lastValidCanvasSnapshot` and returns that rendered node/edge snapshot when Campaign spec JSON synchronization fails.
+- Creative Canvas JSON editing passes the current valid rendered canvas snapshot into the adapter and reapplies returned nodes/edges on invalid sync, so failed JSON synchronization restores the last valid canvas view without committing corrupted Campaign state.
+- Regression verifies invalid Campaign spec JSON restores a previous prompt-to-image canvas with explicit port handles even when the current Campaign object is blank.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "restores the last valid rendered canvas" app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 기존 `app/features/plugins/model/plugin-representation.test.ts` export drift와 `dndnFE` dependency/path alias 문제로 실패한다. `npm run build`도 같은 `dndnFE/expo-webview` missing Expo tsconfig warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] inline-short-form-continuation-template | Sub-AC 8.1.3
+
+- `CampaignInlineShortFormContinuationLandingPageTemplateModule`와 `createInlineShortFormContinuationLandingPageTemplateModule()`를 추가해 immersive landing template이 short-form source 뒤의 continuation을 별도 페이지 이동 없이 same-page inline surface로 표현할 수 있게 했다.
+- Inline continuation module은 `continuationBehavior.consumptionSurface: "same-page"`, `navigationPolicy: "inline-only"`, `requiresSeparatePage: false`, source embedded module id, continuation segments, CTA, conversion event, inline context preservation configuration을 JSON source-of-truth로 보존한다.
+- Landing template validator는 inline continuation이 같은 template 안의 source embed module을 참조하는지, same-page behavior를 유지하는지, segment와 CTA URL/conversion metadata가 유효한지 검증한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "inline continuation modules" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test --test-name-pattern "landing page template schema|immersive landing page block types" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview`의 missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다. `npm run skills:check`는 기존 8개 external DDD/marketing skill 누락을 계속 보고해 repo fallback docs를 사용했다.
+
+## [2026-05-11] video-asset-output-location-persistence | Sub-AC 3.3.2
+
+- Generated video assets now persist explicit `outputLocations` on the Campaign asset record, including primary video URI and optional thumbnail URI, so output locations are readable from the workflow asset model without rehydrating provider responses.
+- Generated video assets also persist `generatedMetadata` with job id, result id, provider plugin/capability, provider request id, model, prompt hash, seed, dimensions, duration, frame rate, codec, generation time, latency, cost, and finish reason.
+- `validateCampaignAssets()` now rejects invalid optional asset output-location URLs before a persisted Campaign update crosses the storage boundary.
+- Regression coverage verifies completed video generation writes provider result metadata to `campaignSpec.assetGenerationJobs`, upserts a generated video asset with output locations and metadata, and preserves those fields after storage reload.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts` 통과, `npm run build` 통과.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 drift로 실패한다. 대표 원인은 `dndnFE` dependency/path alias 누락과 `app/features/plugins/model/plugin-representation.test.ts`의 landing mapping export drift다.
+
+## [2026-05-11] campaign-spec-sync-validation-preservation | Sub-AC 4.3.2
+
+- `parseCampaignSpecJsonEdit()`와 React Flow sync adapter의 기존 regression을 재검증해 invalid JSON, schema-invalid asset generation jobs, canvas validation errors가 모두 `valid: false`와 구조화된 error로 반환되는 것을 확인했다.
+- invalid spec sync 결과는 기존 Campaign `canvasState`/`campaignSpec`와 rendered React Flow `nodes`/`edges` snapshot을 그대로 유지하므로 schema 또는 validation error가 canvas state에 적용되지 않는다.
+- 이번 sub-AC에는 추가 production 변경이 필요하지 않았다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`.
+
+## [2026-05-11] canvas-interaction-json-spec-sync-tests | Sub-AC 4.4.1
+
+- Added a React Flow adapter regression that simulates a moved canvas node plus an explicit source/target port connection, then verifies the resulting Campaign `canvasState` and canonical `campaignSpec` stay synchronized.
+- Added `syncCampaignFromCreativeCanvasInteraction()` as the shared adapter boundary for converting rendered React Flow node/edge snapshots back into Campaign JSON, and routed the canvas component's drag/edge-change updates through it.
+- Verification: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts` passed, `npm run build` passed.
+- Note: broader `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts` is currently blocked by unrelated media generation drift, and `npm run typecheck` is blocked by existing root drift in `dndnFE`, plugin helper symbols, and media generation typing.
+
+## [2026-05-11] landing-dm-referral-context-parsing | Sub-AC 7.4.2
+
+- `parseLandingDmReferralContext()`를 추가해 landing-flow plugin이 DM referral landing URL/query aliases와 optional payload fields를 canonical `LandingDmReferralContext`로 정규화할 수 있게 했다.
+- Parser는 `utm_*`, `oc_dm_*`, visitor identity, touchpoint, product/offer query fields를 읽고 channel/source/medium casing, campaign id, username, source DM ids를 landing attribution contract에 맞게 normalizes 한 뒤 기존 validator를 통과시킨다.
+- 누락되거나 unsafe한 referral context는 normalized draft와 `validateLandingDmReferralContext()` error list를 함께 반환해 landing plugin이 publish 전에 실패 사유를 audit할 수 있다.
+- 기존 landing-flow destination mapping export drift도 정리해 delivered DM response에서 landing destination metadata를 검증/매핑하는 plugin model tests가 다시 실행된다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/plugins/model/plugin-representation.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락과 creative-canvas type drift로 실패한다.
+
+## [2026-05-11] concurrent-video-generation-status-progress | Sub-AC 3.3.3
+
+- `CampaignAssetGenerationExecutorContext.reportProgress()`를 추가해 concurrent video generation executor가 running 중간 진행률을 workflow 실행 결과에 반영할 수 있게 했다.
+- `CampaignAssetGenerationExecutionResult.progressUpdates`는 running/progress/completed/failed snapshots를 발생 순서대로 보존하고, 최종 `jobStatuses`는 workflow order 기준 completed/failed 상태와 마지막 progress/error를 유지한다.
+- Regression은 병렬 video job 2개가 동시에 실행되는 동안 한 job은 35→82→completed, 다른 job은 35→60→failed로 기록되는지 검증한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "concurrent video generation reports running progress completion and failures" app/features/creative-canvas/model/creative-canvas.test.ts`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락으로 실패한다.
+
+## [2026-05-11] landing-above-fold-responsive-regions | Sub-AC 8.2.1
+
+- Campaign landing CSS에 `copy`/`media` grid region을 명시하고 desktop에서는 copy+media two-column, mobile에서는 media-first single-column 구조로 전환했다.
+- Short-form embed는 `100svh` 기반 block-size cap과 module aspect-ratio 기반 width cap을 사용해 mobile/desktop 첫 viewport 안에 source short-form content가 먼저 보이도록 했다.
+- Source-level regression test를 추가해 landing region mapping, mobile media-first ordering, viewport-bound embed sizing contract를 고정했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`, `node --experimental-strip-types --test --test-name-pattern "landing page render model|landing page renderer preserves" app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 8개 external DDD/marketing skills 누락을 보고해 repo fallback 문서를 사용했다. `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] repeated-canvas-json-sync-idempotence | Sub-AC 4.4.3
+
+- Canvas action으로 만든 explicit port edge 이후 JSON spec edit을 적용하고, canonical JSON을 다시 replay해도 `canvasState`와 `campaignSpec`가 같은 graph로 유지되는 regression을 추가했다.
+- `parseCampaignSpecJsonEdit()`는 normalized canvas/spec가 이미 현재 Campaign과 같으면 기존 Campaign object를 그대로 반환해 parent update loop나 stale replay를 만들지 않는다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "repeated canvas and JSON edits converge" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test --test-name-pattern "canvas|campaign spec JSON|repeated canvas" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `npm run build`.
+- 참고: 전체 `creative-canvas.test.ts`는 기존 `createAssetGenerationExecutionRecords` runtime drift로 media generation 관련 11개 테스트가 실패한다. `npm run typecheck`도 기존 `dndnFE` dependency/path alias 누락과 media generation type drift로 실패한다.
+
+## [2026-05-11] landing-conversion-event-api | Sub-AC 7.4.3
+
+- `LANDING_CONVERSION_EVENT_SCHEMA_VERSION`, `LANDING_CONVERSION_EVENT_SCHEMA`, `LandingConversionEvent`, `createLandingConversionEventFromFlow()`, and `validateLandingConversionEvent()`를 추가해 landing-flow plugin이 final conversion event를 versioned API로 노출할 수 있게 했다.
+- Conversion event validation은 landing plugin/capability/page/url, conversion event name/value/currency, campaign-matched UTM attribution, conversion KPI, attribution window, optional tracking destination metadata를 요구한다.
+- Landing plugin registration은 `conversionEventSchemas`를 광고할 수 있고, 이 경우 `landing.page` capability가 `conversionEvent` event output port를 함께 선언해야 한다.
+- 기본 agent plugin catalog의 Immersive Landing plugin도 conversion event schema와 `conversionEvent` output port를 노출한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/plugin-representation.test.ts app/routes/agent-plugin-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE/expo-webview` Expo tsconfig resolution 문제, `dndnFE` dependency/path alias 누락, `app/features/creative-canvas/model/creative-canvas.ts`의 `executionRecords` type drift로 실패한다.
+
+## [2026-05-11] parallel-asset-generation-execution-records | Sub-AC 3.4.1
+
+- `CampaignAssetGenerationExecutionRecord`와 `campaignSpec.assetGenerationExecutions`를 추가해 parallel image/video job execution 결과를 job definition/lifecycle과 독립된 실행 기록으로 보존한다.
+- Parallel runner는 실행된 각 asset job마다 deterministic execution record id, campaign/job/provider/capability ids, final status, actor, attempt, progress, timestamps, error, result ids, asset ids, provider request ids를 생성한다.
+- `apply/saveCampaignAssetGenerationExecutionResult()` 및 image/video 전용 save path가 execution records를 campaign spec에 append/replace merge해 storage reload 후에도 각 parallel job의 실행 기록이 유지된다.
+- Regression은 image success와 video failure가 동시에 실행된 뒤 두 execution record가 `executionResult`와 persisted Campaign JSON에 독립적으로 남는지 검증한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "parallel asset generation persists an independent execution record" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE/expo-webview` Expo tsconfig resolution 문제와 `dndnFE` dependency/path alias 누락으로 실패한다.
+
+## [2026-05-11] plugin-referral-conversion-fixtures | Sub-AC 7.4.4
+
+- `COMMENT_TO_DM_REFERRAL_CONVERSION_FIXTURE`를 추가해 comment-to-DM commerce workflow의 plugin registration kinds, DM referral context handoff parse input, landing mapping, and conversion event emission input을 한 fixture로 묶었다.
+- Regression은 fixture에서 direct-message/landing/tracking plugin registration을 재구성하고, referral landing URL을 canonical `LandingDmReferralContext`로 parse/validate한 뒤, landing mapping에서 final purchase conversion event를 생성/validate한다.
+- 기존 Instagram comment-to-DM fixture tests도 함께 실행해 plugin metadata, referral URL, DM dispatch, and landing destination mapping coverage가 깨지지 않는지 확인했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-registration-template-routing.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `app/features/creative-canvas/model/creative-canvas.test.ts` `canvas.node.reorder` type drift와 `dndnFE` dependency/path alias 누락으로 실패한다.
+
+## [2026-05-11] asset-generation-failure-details | Sub-AC 3.4.2
+
+- Parallel asset generation now captures structured `failureDetails` for failed jobs, including error name/message/stack, job id, media type, provider plugin, capability, attempt, and failure timestamp.
+- Failure details are exposed on job status snapshots, execution status events, persisted execution records, and the failed job lifecycle while sibling jobs continue to complete and report statuses independently.
+- Regression verifies a failed video job records structured failure details without blocking a parallel image job from completing.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `app/features/plugins/model/instagram-comment-dm-flow.test.ts` fixture export drift와 `dndnFE` dependency/path alias 누락으로 실패한다.
+
+## [2026-05-11] comment-dm-landing-workflow-configuration-fixture | Sub-AC 7.5.1
+
+- `commentToDmLandingWorkflowConfigurationFixture`를 추가해 Instagram comment trigger -> DM response -> immersive landing page -> purchase conversion tracking orchestration을 full Campaign workflow fixture로 제공한다.
+- Fixture는 canvas nodes/edges와 canonical `campaignSpec`을 동일한 explicit port graph로 유지하고, target audience, product offer, plugin activation/configuration, publishing channel, UTM, attribution touchpoints, conversion KPI를 포함한다.
+- Regression은 fixture canvas validation, explicit port edges, human/agent plugin install-activate metadata, conversion tracking, and campaign spec JSON round-trip sync를 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-registration-template-routing.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/plugins/model/instagram-comment-dm-flow.fixtures.ts app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-workflow-fixtures.ts app/features/plugins/model/plugin-registration-template-routing.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `app/features/creative-canvas/model/creative-canvas.test.ts` `statusEvents` drift와 `dndnFE` dependency/path alias 누락으로 계속 실패한다.
+
+## [2026-05-11] workflow-plugin-definition-fixtures | Sub-AC 7.5.2
+
+- `commentToDmLandingWorkflowPluginCatalogFixture`를 추가해 comment-to-DM workflow configuration이 참조하는 direct-message, landing, tracking plugin manifests를 함께 제공한다.
+- Landing example plugin은 DM referral context schema와 conversion event schema를 선언하고, tracking example plugin은 final purchase conversion capability를 제공해 workflow plugin configuration의 `pluginId`/`capabilityIds`가 agent runtime에서 해석된다.
+- Regression은 workflow configured plugins와 catalog manifests의 id/type/capability match를 검증하고 `loadActivatedPluginsIntoAgentWorkflowRuntime()`이 errors 없이 active plugins를 로드하는지 확인한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "plugin definitions required" app/features/plugins/model/instagram-comment-dm-flow.test.ts`, `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-registration-template-routing.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/plugins/model/instagram-comment-dm-flow.fixtures.ts app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 및 missing package 문제로 실패한다. `npm run build`는 같은 Expo tsconfig warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] campaign-api-asset-generation-progress-contract | Sub-AC 3.4.2
+
+- `GET /api/campaigns/:campaignId` 응답에 persisted workflow asset generation 상태를 노출하는 `assetGeneration` contract를 추가했다.
+- Contract는 summary(total/pending/running/completed/failed/percent/state), per-job progress/completion/error state, compact execution status events를 포함해 agents와 UI가 같은 API 응답으로 생성 진행률과 완료 상태를 읽을 수 있다.
+- Raw runtime stack trace는 API 응답에서 제외해 provider failure는 error/progress/status 중심으로 노출한다.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign.ts app/routes/campaign-api.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview`의 missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] asset-generation-completion-outputs | Sub-AC 3.4.3
+
+- `CampaignAssetGenerationExecutionRecord.outputs`를 추가해 completed image/video job의 provider result metadata를 각 job execution record에 독립적으로 저장한다.
+- Execution record 생성, clone, serialization path가 result id/asset id 요약뿐 아니라 URI, MIME, dimensions, video duration/thumbnail, provider request id, storage reference 등 completion output payload를 보존한다.
+- Regression은 parallel image/video generation 완료 후 각 job record와 persisted `campaignSpec.assetGenerationExecutions`에 서로 섞이지 않은 completion outputs가 남는지 검증한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "parallel asset generation stores completion outputs" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락과 `dndnFE/expo-webview` missing Expo tsconfig 문제로 실패한다.
+
+## [2026-05-11] landing-template-embedded-short-form-schema | Sub-AC 8.1.1
+
+- `owncanvas.landing-page-template.v1` schema contract를 추가해 immersive landing template이 embedded short-form content module을 JSON source-of-truth로 표현한다.
+- Embedded short-form module은 source asset/input/output ports, attribution role, configurable playback options, provider plugin kind/id, source platform/type/content id/source URL/embed mode metadata를 포함한다.
+- Existing immersive landing block definitions now expose content schema and configuration option metadata for both source short-form embeds and landing-native continuations.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "landing page template schema" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-inbound-session-url.test.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락과 `dndnFE/expo-webview` missing Expo tsconfig 문제로 실패한다. `npm run build`는 같은 warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] embedded-content-playback-interactions | Sub-AC 8.1.3
+
+- Embedded short-form landing render modules now expose `playbackControls` metadata for native controls, keyboard accessibility, captions, fullscreen, and picture-in-picture expectations.
+- Render modules also expose a `pageInteractionPolicy` that keeps native video controls interactive while requiring iframe embeds to activate on hover/focus so page-level scroll remains available.
+- `CampaignLandingPageRenderer` maps the policy into video controls, accessible labels, iframe focusability, and data attributes; landing CSS preserves page scroll by disabling iframe pointer capture until hover/focus and adds focus-visible outlines for embedded media.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "playback controls" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test --test-name-pattern "landing page" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락 및 `dndnFE/expo-webview` missing Expo tsconfig 문제로 실패한다.
+
+## [2026-05-11] published-link-utm-persistence | Sub-AC 9.1.4
+
+- `saveCampaignPublishedLink()`를 추가해 campaign/channel/context에서 UTM-enriched published link를 생성하고 channel `publishedLinks`에 persist하며 channel status를 `published`로 전환한다.
+- `listCampaignPublishedLinks()`를 추가해 persisted Campaign record에서 all-channel 또는 channel-filtered published links를 clone된 read model로 retrieve할 수 있게 했다.
+- `GET /api/campaigns/:campaignId` 응답에 `publishing.channels[].publishedLinks`를 포함해 UI/agent clients가 persisted UTM, Owncanvas attribution params, affiliate attribution params, and final published URL을 읽을 수 있다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, `npx tsc --noEmit --skipLibCheck --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --jsx react-jsx --types node app/features/creative-canvas/model/campaign-publishing-configuration-save-flow.test.ts app/routes/campaign-api.test.ts app/routes/api.campaign.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `app/routes/campaign-tracking-events-api.test.ts` missing route/eventLog drift와 `dndnFE` dependency/path alias 및 Expo tsconfig 문제로 실패한다.
+
+## [2026-05-11] campaign-tracking-event-ingestion-api | Sub-AC 9.2.2
+
+- `POST /api/campaigns/:campaignId/tracking/exposures`와 `POST /api/campaigns/:campaignId/tracking/clicks` endpoint를 추가해 server-side exposure/click tracking event ingestion을 지원한다.
+- Endpoint는 method, JSON body, persisted campaign existence, route campaign id match, endpoint-specific event type, existing tracking event schema validation을 수행하고, target metadata와 click destination에서 attribution summary를 반환한다.
+- `CampaignTracking.eventLog`와 `saveCampaignTrackingEvent()`를 추가해 ingested exposure/click events를 Campaign tracking state에 append하고 `tracking.events`에도 event type을 unique하게 반영한다.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts app/routes/campaign-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing external skills 8개 누락을 보고해 repo fallback 문서(`CONTEXT.md`, wiki)를 사용했다. `npm run build`는 기존 `dndnFE/expo-webview`의 missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-render-exposure-capture | Sub-AC 9.2.2
+
+- Landing render modules now expose explicit `data-exposure-surface`/`data-exposure-placement` impression markers and emit exposure events through the campaign surface tracking client on render.
+- Added `createCampaignLandingPageExposureEvent()` to construct validated landing module exposure events with session, UTM, channel, explicit `outputs.exposure` port, asset, product, offer, URL, and touchpoint attribution.
+- Campaign tracking persistence now writes queryable analytics event records/indexes so captured exposure/click events can be retrieved by campaign/session for attribution reporting.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락과 `dndnFE/expo-webview` missing Expo tsconfig 문제로 실패한다. `npm run build`는 같은 Expo tsconfig warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-behavior-mode-schema | Sub-AC 8.3.1
+
+- `owncanvas.landing-page-template.v1`에 `behavior` 설정을 추가해 landing destination이 `immersion-preserving` 또는 `traditional` behavior를 JSON source-of-truth에서 선택할 수 있게 했다.
+- Behavior schema는 `preserveInlineContext`와 `allowTraditionalRedirect`를 함께 검증해 immersion-preserving mode는 same-page context를 유지하고, traditional mode는 redirect-first landing behavior를 명시한다.
+- Render model은 normalized behavior를 항상 노출하며, 기존 template에는 `immersion-preserving` 기본값을 적용한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "landing page template schema selects" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview`의 missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-click-capture | Sub-AC 9.2.3
+
+- `captureCampaignSurfaceTrackedClick()`를 추가해 `data-campaign-track-click`가 붙은 landing 링크/CTA 클릭을 element metadata에서 campaign tracking click event로 변환한다.
+- Capture path는 session, UTM, channel, product, offer, explicit `outputs.click` port, CTA label, destination, content id/type attribution을 보존하고 local campaign tracking event log에 persist한다.
+- Landing renderer의 conversion element, commerce panel CTA, continuation CTA가 shared click capture path를 사용하도록 metadata attributes를 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test --test-name-pattern "click" app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: 전체 `app/routes/campaign-tracking-events-api.test.ts`는 현재 작업 범위 밖의 conversion endpoint expectation에서 실패한다. `npm run typecheck`는 기존 conversion tracking symbol drift와 `dndnFE` dependency/path alias 및 Expo tsconfig 문제로 실패한다. `npm run build`는 same Expo tsconfig warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] tracking-event-contextual-metadata-validation | Sub-AC 9.2.4
+
+- `validateCampaignTrackingEventCampaignMetadata()`를 추가해 captured tracking event가 persisted campaign의 channel, asset, product, offer attribution id, and configured UTM metadata와 맞는지 저장 전에 검증한다.
+- Tracking ingestion API는 shape validation과 route campaign id validation 이후 contextual campaign metadata validation을 수행하며, 실패 시 campaign `tracking.eventLog`와 analytics event store를 mutation하지 않는다.
+- Blank/default campaign ingestion은 기존처럼 허용하되, configured campaign metadata가 존재할 때만 mismatch를 거부해 기존 exposure/click/conversion ingestion path와 호환되게 했다.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`.
+
+## [2026-05-11] landing-playback-safe-chrome | Sub-AC 8.2.2
+
+- Landing renderer에 `createCampaignLandingChromeRenderPolicy()`를 추가해 template navigation/conversion 설정을 active short-form consumption을 방해하지 않는 render policy로 변환한다.
+- Immersion-preserving landing에서는 overlay navigation을 inline/manual/non-blocking으로, sticky/pause-on-activate conversion elements를 side-panel/after-playback-complete/non-blocking으로 demote하고 conversion activation은 `_blank`/`noopener noreferrer`로 현재 playback context를 유지한다.
+- Landing CSS는 playback-safe navigation/conversion chrome을 static in-flow media/copy regions에 배치해 short-form embed 위를 덮지 않도록 한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락과 `dndnFE/expo-webview` missing Expo tsconfig 문제로 실패한다. `npm run build`는 같은 Expo tsconfig warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] deterministic-conversion-attribution | Sub-AC 9.3.3
+
+- Conversion ingestion now selects one deterministic `attributionMatch` from prior campaign interactions instead of only returning the candidate history.
+- Rule order prioritizes latest click over exposure, same-session over same-user, and offer/product matches before broader identity matches, with a persisted compact match on each conversion record.
+- Analytics storage now indexes optional click ids through `byClickId`, so click-derived attribution identifiers can be queried directly by campaign agents and reporting surfaces.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing external skills 8개 누락을 보고해 repo fallback 문서(`CONTEXT.md`, `.agents/product-marketing-context.md`, wiki)를 사용했다.
+
+## [2026-05-11] conversion-event-record-persistence | Sub-AC 9.3.1
+
+- Conversion tracking ingestion now persists dedicated `CampaignConversionEventRecord` entries in `tracking.conversionRecords` in addition to the generic `eventLog`.
+- Each conversion record preserves required attribution and commerce metadata: event/session/campaign ids, timestamps, actor/user/permission context, conversion name/value/currency/order/quantity, content, UTM, target metadata, and normalized analytics attribution.
+- Conversion records are upserted by source event id so retried ingestion replaces the same conversion record instead of duplicating it.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "captures and persists conversion metadata" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing external skills 8개 누락을 보고해 repo fallback 문서를 사용했다. `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] agent-landing-behavior-action | Sub-AC 8.3.3
+
+- Agent campaign edit surface에 `campaign.landing.behavior.set` action을 추가해 agent-generated/agent-edited workflow가 human authoring control과 동일한 `immersion-preserving`/`traditional` landing behavior option을 설정할 수 있게 했다.
+- Action implementation은 기존 `setCampaignLandingPageBehaviorMode()`를 재사용해 campaign-level JSON spec과 existing landing template `behavior`를 같은 방식으로 동기화한다.
+- Agent plugin manifest action vocabulary에 `campaign.landing.behavior.set`을 추가해 agent plugins가 해당 landing behavior capability를 명시적으로 광고할 수 있게 했다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "agent canvas edit actions can set" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test --test-name-pattern "agent canvas edit actions can set|definePluginManifest preserves agent detail" app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts app/features/plugins/model/plugin-representation.ts app/features/plugins/model/plugin-representation.test.ts`, `npm run build`.
+- 참고: `npm run skills:check`는 기존처럼 DDD/marketing external skills 8개 누락을 보고해 repo fallback 문서(`CONTEXT.md`, `.agents/product-marketing-context.md`, wiki)를 사용했다. `npm run build`는 기존 `dndnFE/expo-webview`의 missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-behavior-render-application | Sub-AC 8.3.4
+
+- Landing page rendering now applies the selected campaign behavior mode when generating a default landing template and when rendering an existing template that omits its own behavior configuration.
+- Commerce panel conversion links now use the same behavior-derived render policy as landing chrome: immersion-preserving mode opens in an isolated new context, while traditional mode keeps the direct redirect behavior available.
+- Regression coverage in the landing renderer contract verifies generated template behavior resolution, existing-template fallback, and explicit commerce-panel render policy wiring.
+- 검증: `node --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`, `node --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npx tsc` targeted 직접 실행은 `~` path alias를 해석하지 못해 실패했다. `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-authoring-controls | Sub-AC 8.2.3
+
+- Campaign JSON spec에 `landingPageNavigation`과 `landingPageConversionElements` authoring state를 추가해 landing template 없이도 non-interruptive navigation/conversion behavior를 저장할 수 있게 했다.
+- `setCampaignLandingPageAuthoringControls()`와 getter helpers를 추가해 campaign-level controls와 existing landing template navigation/conversion configuration을 동기화한다.
+- Campaign editor의 Landing behavior section에 navigation visibility/placement/timing/interruption 및 conversion label/URL/placement/timing/interruption controls를 추가했고, default landing renderer가 campaign-level controls를 사용하도록 연결했다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "campaign landing page authoring controls|landing page render model defines navigation" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`, `npm run build`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 `dndnFE` dependency/path alias 누락과 `dndnFE/expo-webview` missing Expo tsconfig 문제로 실패한다. `npm run build`는 같은 warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] click-session-attribution-identifiers | Sub-AC 9.3.2
+
+- Campaign click tracking events now carry a stable `click.id` generated by the landing surface tracking client and returned in API attribution summaries as `clickId`.
+- Campaign analytics persistence stores normalized `clickId` attribution and maintains a `byClickId` index alongside campaign, session, and campaign-session indexes.
+- `getPersistedCampaignAnalyticsEvents()` can query by `clickId` alone or scoped with `campaignId`, allowing conversion attribution jobs to retrieve the exact click/session path needed for funnel attribution.
+- Existing engagement tracking client helpers were completed to keep the shared surface tracking client tests and typecheck aligned with the current tracking event model.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "campaign, session, and click attribution|surface tracking emits" app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-conversions.ts app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/client/campaign-surface-tracking.ts app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/features/creative-canvas/model/creative-canvas.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] exposure-click-metric-reporting-queries | Sub-AC 9.5.2
+
+- Added concrete GET metric reporting coverage for exposure and click tracking endpoints, including filtered summaries and grouped rows for placement/destination attribution.
+- `GET /api/campaigns/:campaignId/tracking/exposures` and `GET /api/campaigns/:campaignId/tracking/clicks` now return `owncanvas.campaign-metric-report.v1` payloads with count and unique-session rollups that agents or dashboards can query directly.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/routes/campaign-metric-query-contracts-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-clicks.ts app/routes/api.campaign-tracking-exposures.ts app/routes/api.campaign-tracking-metric-report.ts app/routes/campaign-tracking-events-api.test.ts app/routes/campaign-metric-query-contracts-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`, `npm run build`.
+- 참고: `npm run build` still emits the known nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] landing-preview-accessibility-validation | Sub-AC 8.2.4
+
+- `validateCampaignLandingPagePreviewAccessibility()`를 추가해 landing preview의 active short-form module, visible navigation, visible conversion elements가 접근 가능하고 playback-disruptive하지 않은지 검증한다.
+- Immersion-preserving landing에서는 overlay navigation을 preview `inline`/manual로, sticky conversion action을 `side-panel`/new-context activation으로 평가해 short-form consumption context를 유지한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "landing page preview validation" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-short-form-media-player-tracking | Sub-AC 8.3.1
+
+- Landing native short-form video players now emit playback engagement events for watch-depth milestones, completion, and replay through the campaign surface tracking client.
+- Watch depth emits stable `watch_depth` actions at 25/50/75 percent; completion emits `complete` at ended or near-complete playback; replay emits `replay` when looping or seeking from near-end back to the start.
+- Playback engagement events preserve landing node, output port, asset, product, offer, URL, session, UTM, and channel attribution and post to `/tracking/engagement` while retaining local campaign tracking persistence.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: targeted `npx tsc` direct-file 실행은 `~` path alias를 해석하지 못해 실패했다. `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] returning-attribution-identification | Sub-AC 9.4.1
+
+- `identifyReturningCampaignAttribution()`를 추가해 existing tracked session records와 persisted analytics event identifiers만으로 returning attribution subject를 판별한다.
+- Returning match는 `sessionId`, `userId`, `clickId`, URL attribution parameter(`click_id` 등)를 지원하며 각 match에 first/last seen timestamp를 반환한다.
+- Regression은 inbound `oc_session_id`/`click_id` 기반 returning session 및 tracking event `context.userId`/click id 기반 returning user detection을 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`.
+
+## [2026-05-11] session-fallback-conversion-attribution | Sub-AC 9.3.3
+
+- Conversion attribution now falls back to a tracked inbound campaign session when no prior click or exposure qualifies in the attribution window.
+- Session fallback preserves click/exposure priority, matches only the same campaign and session id, and records a deterministic `last-session-same-session` attribution match on the conversion record.
+- Reporting rows can identify session-attributed conversions through `attributedInteractionType: "session"` while retaining the session id as the attributed interaction identifier.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "attributes a conversion to its prior campaign session" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`.
+
+## [2026-05-11] attributed-conversion-export | Sub-AC 9.3.4
+
+- Conversion analytics now include a normalized `owncanvas.attributed-conversion-export.v1` payload beside the existing reporting rows.
+- The export payload carries enabled analytics destinations, campaign measurement goals, conversion commerce metadata, and the attributed click/exposure/session fields needed by dashboard/reporting plugins or downstream measurement jobs.
+- Regression coverage verifies that disabled analytics destinations are excluded and attributed click identifiers, UTM, target, port, product, and offer metadata remain available in export events.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "downstream attributed conversion export" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-conversions.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] returning-attribution-identification-verification | Sub-AC 9.4.1
+
+- Returning attribution identification remains backed by tracked campaign sessions plus persisted analytics event history for `sessionId`, `userId`, `clickId`, and URL attribution parameter matches.
+- Campaign surface tracking client type inference was tightened so revisit emission methods stay covered by the declared tracking client contract.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-inbound-session-url.test.ts app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` no longer reports errors in the OwnCanvas returning-session files, but still fails in the unrelated nested `dndnFE` tree due missing aliases/packages and Expo dependencies.
+
+## [2026-05-11] revisit-event-generation | Sub-AC 9.4.2
+
+- Campaign surface tracking now emits a first-class `revisit` tracking event when a returning session or known returning user is detected before the current visit updates the tracked session record.
+- Revisit events preserve campaign/session/user, UTM, landing node, channel, product, offer, URL, and matched returning attribution details, then post to `/tracking/revisits`.
+- Tracking ingestion validates and persists revisit events through the shared event API, and analytics storage continues to support campaign/session plus page/asset-scoped attribution queries.
+- 검증: `node --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/routes/campaign-tracking-events-api.test.ts`.
+- 참고: `npm run typecheck`는 현재 작업 범위 밖의 기존 nested `dndnFE` dependency/path alias 누락(`expo/tsconfig.base`, `radix-ui`, `@ssgoi/react`, Supabase, `~/...` aliases 등)으로 실패한다.
+
+## [2026-05-11] revisit-event-record-persistence | Sub-AC 9.4.3
+
+- Revisit ingestion now persists normalized `owncanvas.campaign-revisit-record.v1` records on `campaign.tracking.revisitRecords` in addition to the raw tracking event log.
+- Each revisit record preserves campaign id, session id, human/agent context including `userId`, event occurrence time, persistence time, UTM/content/target details, returning match timestamps, and normalized attribution metadata.
+- Analytics attribution for revisit events now carries `revisitFirstSeenAt`, `revisitLastSeenAt`, and `revisitMatchedBy`, so campaign/session queries retain the returning attribution metadata needed for downstream analysis.
+- Revisit batch ingestion now validates revisit payloads instead of falling through to engagement validation.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "revisits ingests returning session attribution events" app/routes/campaign-tracking-events-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/features/creative-canvas/model/campaign-inbound-session-url.test.ts`, `npm run build`.
+- 참고: `npm run build`는 기존 `dndnFE/expo-webview` missing `expo/tsconfig.base` warning을 출력하지만 exit 0으로 완료된다.
+
+## [2026-05-11] landing-immersion-analytics | Sub-AC 8.3.4
+
+- Added campaign landing immersion analytics aggregation over persisted engagement events, grouped by landing page and asset.
+- The aggregate exposes watch depth samples/average/max, completion rate, replay rate/count, total interaction count, per-action interaction counts, and playback/scroll interaction counts.
+- Added `GET /api/campaigns/:campaignId/tracking/immersion` for reporting surfaces, dashboards, and agents to retrieve the aggregated payload.
+- Regression coverage ingests watch-depth, completion, replay, control, and scroll engagement events, then verifies the landing page aggregate response.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/features/creative-canvas/model/creative-canvas.ts app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` no longer reports errors in the changed OwnCanvas files, but still fails in the unrelated nested `dndnFE` tree due missing aliases/packages and Expo dependencies.
+
+## [2026-05-11] publishing-preview-short-form-immersion-rules | Sub-AC 8.4.1
+
+- Added a first-class publishing preview validation rule catalog for short-form landing immersion: source context, inline behavior, non-blocking page chrome, same-page continuation, and accessible conversion path.
+- Added `validateCampaignLandingPagePublishingPreview()` to compose existing preview accessibility checks with stricter publish-time immersion rules that reject traditional redirects and blocking navigation/conversion controls.
+- Regression coverage verifies the rule ids, a valid immersive preview, and a failing preview that breaks inline context or blocks active short-form playback.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "publishing preview validation|landing page preview validation|landing page render model defines navigation" app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] publishing-preview-mobile-immersion-validation | Sub-AC 8.4.2
+
+- Added a `mobile-immersive-layout` publishing preview rule so mobile landing previews must preserve short-form immersion with a touch-first single-column layout, inline context, and reachable sticky conversion actions.
+- `validateCampaignLandingPagePublishingPreview()` now inspects each rendered short-form module's mobile responsive layout and interaction requirements, returning `landing-preview.mobile_layout_not_immersive` for previews that drop the mobile contract.
+- Tightened campaign metric grouping for `currency` to read normalized `conversionCurrency`, clearing the focused model TypeScript check after nearby analytics drift.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "publishing preview validation validates mobile short-form immersion layout|publishing preview validation defines short-form landing immersion rules" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC on duplicate `loader` declarations in `app/routes/api.campaign-tracking-clicks.ts` and the existing nested `dndnFE` missing aliases/packages and Expo dependencies. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] publishing-preview-desktop-immersion-validation | Sub-AC 8.4.3
+
+- Added a `desktop-immersive-layout` publishing preview rule so desktop landing previews must keep short-form playback in the primary media region with adjacent continuation and side-panel conversion actions.
+- `validateCampaignLandingPagePublishingPreview()` now inspects each rendered short-form module's desktop responsive layout and interaction requirements, returning `landing-preview.desktop_layout_not_immersive` when previews collapse into non-immersive desktop layouts.
+- Regression coverage verifies a valid desktop immersive publishing preview and a failing desktop preview that drops adjacent continuation, side-panel conversion, pointer playback, and inline context requirements.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "publishing preview validation" app/features/creative-canvas/model/creative-canvas.test.ts`, `node --test app/features/creative-canvas/components/landing-page-responsive-layout.test.ts`, `node --experimental-strip-types --test --test-name-pattern "landing page render model|landing page preview validation|publishing preview validation" app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC in the nested `dndnFE` tree due missing aliases/packages and Expo dependencies. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] publishing-preview-immersion-failure-guidance | Sub-AC 8.4.4
+
+- Publishing preview validation errors now include actionable `guidance` with a layout scope, summary, and concrete repair actions for immersion failures.
+- Desktop and mobile layout failures return layout-specific recommendations for restoring immersive-desktop side-panel/adjacent-rail behavior or touch-first single-column sticky conversion behavior.
+- Non-layout immersion failures also receive guidance for source context, inline behavior, non-blocking page chrome, same-page continuation, and conversion path repair.
+- Regression coverage verifies that desktop and mobile immersion failures report their layout-specific guidance in the publishing preview report.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC on missing `loader` export in `app/routes/api.campaign-tracking-revisits.ts` plus the existing nested `dndnFE` dependency/path alias and Expo dependency issues. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] conversion-metric-reporting-output | Sub-AC 9.5.3
+
+- `GET /api/campaigns/:campaignId/tracking/conversions?metric=conversion` now returns a metric report payload for conversion dashboards instead of only the attributed conversion analytics payload.
+- Conversion reports support the shared metric filters and grouping dimensions, including `conversionEventName`, `orderId`, `currency`, campaign/channel/product/offer/page/asset, and date ranges.
+- Conversion report summaries and grouped rows now include `totalValue` alongside `count` and `uniqueSessions`, so reporting surfaces can query purchase conversion volume and value in one response.
+- The default `GET /tracking/conversions` response remains the attributed conversion analytics/export payload for existing reporting consumers.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts app/routes/campaign-metric-query-contracts-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/routes/api.campaign-tracking-conversions.ts app/routes/api.campaign-tracking-metric-report.ts app/routes/campaign-tracking-events-api.test.ts app/routes/campaign-metric-query-contracts-api.test.ts app/features/creative-canvas/model/creative-canvas.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC in the nested `dndnFE` tree due missing aliases/packages and Expo dependencies. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] campaign-evaluation-primary-success-metric | Sub-AC 10.1
+
+- Added `CampaignEvaluationModel` to campaign tracking with `purchase_conversion_rate` on the `purchase` event as the primary success metric.
+- Blank campaigns and tracking configuration defaults now carry the evaluation model in JSON, keeping conversion-first campaign evaluation explicit for humans and agents.
+- Regression coverage verifies the default evaluation model and blank campaign tracking state.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-measurement-goals-save-flow.test.ts app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-tracking-configuration-save-flow.test.ts app/routes/campaign-api.test.ts app/routes/campaign-measurement-goals-api.test.ts`, focused `npx tsc --noEmit` checks for the changed model and API files.
+- 참고: `npm run skills:check` still reports the known 8 missing external DDD/marketing skills, so the repo fallback docs were used.
+
+## [2026-05-11] purchase-conversion-required-attribution | Sub-AC 10.2.1
+
+- Purchase conversion validation now requires purchaser user id, session id, event timestamp, order id, canvas node id, purchase input port id, channel id, product id, and offer id before ingestion can persist the event.
+- The validator accepts normalized identifiers from either event content or target metadata where appropriate, preserving the existing content/target attribution model.
+- Regression coverage verifies missing purchase metadata and attribution identifiers are rejected while existing conversion ingestion and reporting flows continue to pass.
+- Route coverage confirms successful purchase capture persists event log entries, normalized conversion records, analytics attribution, order id, user id, session id, event timestamp, and persistence timestamp.
+- 검증: `node --test app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts`, `node --test app/routes/campaign-tracking-events-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/features/creative-canvas/model/creative-canvas.ts app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts app/routes/api.campaign-tracking-events.ts app/routes/campaign-tracking-events-api.test.ts`.
+- 참고: `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] persisted-checkout-attribution-identifiers | Sub-AC 10.2.2
+
+- Campaign surface tracking now persists the active landing attribution session in campaign storage as well as browser `sessionStorage`, so a later browser session can recover `sessionId`, `userId`, channel, touchpoint, UTM, and custom attribution parameters.
+- Checkout/conversion-bound clicks now carry attribution identifiers forward in the destination URL, including `oc_campaign_id`, `oc_session_id`, optional `oc_user_id`, channel/touchpoint ids, UTM parameters, and non-reserved custom parameters such as coupons.
+- Recovered sessions keep their original `firstSeenAt` and update `lastSeenAt`, preserving returning-session attribution while allowing checkout success or webhook flows to correlate the purchase to the campaign session.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "persists attribution identifiers" app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-surface-tracking.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/features/creative-canvas/client/campaign-surface-tracking.ts app/features/creative-canvas/client/campaign-surface-tracking.test.ts app/features/creative-canvas/model/creative-canvas.ts`.
+
+## [2026-05-11] purchase-conversion-analytics-projection | Sub-AC 10.2.2
+
+- Analytics storage now persists a dedicated `owncanvas.campaign-purchase-conversion-event.v1` projection for purchase conversion events alongside the generic tracking event records.
+- Purchase projection rows preserve order id, value, currency, quantity, purchaser user id, UTM fields, canvas node/input port, channel, product, offer, target URL/label, conversion metadata, target metadata, and deterministic attribution-match metadata when available.
+- Added `getPersistedCampaignPurchaseConversionEvents()` so dashboards, agents, and export jobs can query purchase conversions by campaign, session, order id, event name, and time range without re-normalizing raw events.
+- Regression coverage verifies the `/tracking/conversions` ingestion path writes the purchase projection and keeps the existing campaign conversion record and analytics attribution intact.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC on existing plugin fixture `tracking.evaluation` drift and nested `dndnFE` missing aliases/packages/Expo dependencies. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] purchase-conversion-campaign-attribution-rules | Sub-AC 10.2.3
+
+- Purchase conversion ingestion now resolves the attributed campaign before persistence when an existing prior click/exposure/session touchpoint in another campaign has a stronger attribution-rule match than the posted route campaign.
+- Added `linkPurchaseConversionEventToAttributedCampaign()` to evaluate persisted campaigns with the same last-click, last-exposure, and last-session rule priority used for conversion attribution, then rewrite the purchase event campaign id to the selected campaign.
+- The conversion route permits this campaign reroute only for purchase conversions with a computed attribution match; ordinary type and campaign mismatch validation remains unchanged.
+- Regression coverage verifies a purchase posted to the wrong campaign route is persisted under the campaign with the prior same-session offer click and that the dedicated purchase conversion projection carries the selected campaign id and attribution rule.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "links purchase events to the campaign selected by attribution rules" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test --test-name-pattern "associates the conversion|links purchase events|attributes a conversion|rejects invalid payloads" app/routes/campaign-tracking-events-api.test.ts`.
+- 참고: full `app/routes/campaign-tracking-events-api.test.ts` still has existing expectation drift for `contentId`/`contentType` and `origin` analytics fields outside this Sub-AC. `npm run typecheck` still fails outside this Sub-AC on existing plugin fixture `tracking.evaluation` drift and nested `dndnFE` missing aliases/packages/Expo dependencies; no changed-file type errors were reported after the route narrowing fix.
+
+## [2026-05-11] purchase-conversion-origin-projection | Sub-AC 10.2.3
+
+- Attributed conversion analytics rows and downstream export events now include a normalized `origin` object linking each purchase conversion to campaign id, workflow id, content id/type, content variant id, canvas node/port, page/asset, product/offer, source conversion event, and attributed interaction event when present.
+- Tracking attribution now reads optional `workflowId` and `contentVariantId` from first-class content/target fields or nested metadata, while leaving generic attribution records stable for existing consumers.
+- Regression coverage verifies a purchase conversion from a short-form content variant resolves to the originating campaign workflow and content variant, and existing conversion reporting/export expectations include the origin projection.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "resolves purchase conversion origin" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test --test-name-pattern "conversion" app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-tracking-events-api.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-tracking-event-schema.test.ts app/routes/campaign-metric-query-contracts-api.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC on existing plugin fixture `tracking.evaluation` drift and nested `dndnFE` missing aliases/packages/Expo dependencies. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] purchase-conversion-reporting-metrics-api | Sub-AC 10.2.4
+
+- `GET /api/campaigns/:campaignId/tracking/metrics` now exposes a `conversionMetrics` report alongside metric contracts and rows, so dashboards and agents can read purchase conversion KPI data directly from the analytics API.
+- The report includes exposure/click/conversion/purchase funnel counts, unique session counts, click-through rates, purchase conversion rates, total purchase value, average order value, revenue per click, revenue per click session, and currency breakdowns.
+- Conversion metrics honor the same metric query filters as the existing reporting API, including campaign, page, asset, channel, product, offer, conversion event, order, currency, and time-range filters.
+- Regression coverage verifies the conversion reporting payload and updates the metric contract response shape to include the new KPI block.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-metric-query-contracts-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC on existing plugin fixture `tracking.evaluation` drift plus nested `dndnFE` missing aliases/packages/Expo dependencies. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] campaign-reporting-primary-purchase-conversion | Sub-AC 10.3.1
+
+- Added a campaign reporting route at `/campaigns/:campaignId/reporting` that reads the existing conversion metrics report from local campaign storage.
+- The reporting view displays purchase conversion as the primary success metric, with purchases, purchase value, revenue per click, and click-through rate as secondary metrics.
+- Added a canvas top-bar Reporting action so operators can move from canvas editing to KPI review for the same campaign.
+- Updated the Instagram comment-to-DM fixture to include the current campaign evaluation model required by the tracking schema.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-reporting-view.test.ts`, `node --experimental-strip-types --test app/routes/campaign-metric-query-contracts-api.test.ts app/routes/campaign-reporting-view.test.ts app/features/plugins/model/instagram-comment-dm-flow.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC in the nested `dndnFE` tree due missing packages/path aliases and Expo dependencies. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] campaign-reporting-summary-purchase-conversion | Sub-AC 10.4.2
+
+- Campaign reporting view models now expose ordered summary sections with purchase conversion first as the primary success metric.
+- The reporting route renders summary sections for purchase conversion, purchase value, and traffic quality instead of a flat secondary metric strip, keeping conversion-first reporting explicit.
+- Regression coverage verifies summary section ordering and that the first section carries `purchase_conversion_rate`.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-reporting-view.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/routes/campaign-reporting-view-model.ts app/routes/campaign-reporting-view.test.ts`, `npm run build`.
+- 참고: `npm run skills:check` still reports the known 8 missing external DDD/marketing skills, so the repo fallback docs were used. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] measurement-based-improvement-status | Sub-AC 11.2.1
+
+- Added `CampaignMeasurementBasedImprovementStatus` and `getCampaignMeasurementBasedImprovementStatus()` so campaigns expose whether a completed measurement cycle has led to at least one completed measurement-based improvement action.
+- `GET`/`PATCH /api/campaigns/:campaignId` now include top-level `improvementStatus`, giving humans and agents a campaign-level conversion-loop state without re-deriving it from tracking internals.
+- Regression coverage verifies completed improvement status derivation and the API projection alongside measurement results.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts app/routes/campaign-api.test.ts`, focused `npx tsc --noEmit ...` for the changed model/API files, `npm run build`.
+- 참고: `npm run skills:check` still reports the known 8 missing external DDD/marketing skills, so the repo fallback docs were used. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] campaign-measurement-cycle-completion-response | Sub-AC 11.2.3
+
+- `GET`/`PATCH /api/campaigns/:campaignId` now include top-level `measurementCycleCompletion`, exposing the existing measurement-cycle completion contract in campaign read/query responses.
+- The response reports whether any completed measurement cycle exists, the completed cycle count, and the latest completed measurement cycle when present.
+- Regression coverage verifies campaign reads expose the completed measurement cycle status after post-publication measurement and updates full campaign API response contract assertions.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC in the nested `dndnFE` tree due missing packages/path aliases and Expo dependencies; no OwnCanvas campaign API type errors remained after the test expectation fix.
+
+## [2026-05-11] completion-gating-reasons-api | Sub-AC 11.3.3
+
+- Campaign completion 400 responses now include `completionGatingReasons`, so humans and agents can see whether completion is blocked by a missing measurement cycle or by a missing measurement-based improvement cycle.
+- The same error response includes `completionState.measurementCycleCompletion` and `completionState.improvementStatus`, preserving the underlying gate state that explains the blocker.
+- Regression coverage verifies the improvement-gate response exposes a machine-readable gate, required action, and current measurement/improvement state.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "surfaces completion gating reasons" app/routes/campaign-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --jsx react-jsx --strict app/routes/api.campaign.ts app/routes/campaign-api.test.ts`, `npm run build`.
+- 참고: `npm run skills:check` still reports the known 8 missing external DDD/marketing skills, so the repo fallback docs were used. `npm run build` still prints the existing nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] campaign-measurement-improvement-lifecycle-tests | Sub-AC 11.2.4
+
+- Added campaign API regression coverage for the three measurement-loop states required by the acceptance criterion: before measurement, after measurement only, and after a completed measurement-based improvement cycle.
+- The before-measurement case verifies `measurementCycleCompletion` is incomplete, `improvementStatus` is `pending`, and no measurement results block is exposed.
+- The measurement-only case verifies completed measurement cycles produce a `proposed` improvement status without marking the improvement loop complete.
+- The completed-cycle case verifies a campaign can move to `completed` only after an improvement action uses the source measurement result, and the API reports the completed measurement-based improvement status.
+- Updated existing completion-gating assertions to include the current `completionGatingReasons` and `completionState` response contract.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC in the nested `dndnFE` tree due missing packages/path aliases and Expo dependencies; no OwnCanvas campaign API test type errors remained after the test typing fix.
+
+## [2026-05-11] campaign-completion-measurement-criteria-eligibility | Sub-AC 11.3.1
+
+- Campaign completion validation now requires completed measurement evidence to be tied to configured measurement goals, preventing unscoped measurement cycles from making a campaign completion-eligible.
+- Added `hasCampaignCompletedMeasurementCycleWithCriteria()` and the `campaign_completion.measurement_criteria_required` validation error for humans and agents that need to inspect the exact completion blocker.
+- `PATCH /api/campaigns/:campaignId` now maps the new blocker to `completionGatingReasons` with the `measurement_criteria` gate and `configure_required_measurement_criteria` action.
+- Regression coverage verifies both model validation and API completion rejection keep the campaign in draft when measurement cycles are not tied to required criteria.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run typecheck` still fails outside this Sub-AC in the nested `dndnFE` tree due missing packages/path aliases and Expo dependencies.
+
+## [2026-05-11] campaign-completion-improvement-criteria-eligibility | Sub-AC 11.3.2
+
+- Campaign completion validation now requires a completed improvement action to be tied to the same configured measurement criteria as its completed source measurement cycle.
+- Added `hasCampaignCompletedImprovementWithCriteria()` and the `campaign_completion.improvement_criteria_required` validation error so humans and agents can distinguish missing improvement records from improvement records that do not satisfy required loop criteria.
+- `PATCH /api/campaigns/:campaignId` maps the new blocker to `completionGatingReasons` with the `improvement_criteria` gate and `complete_required_improvement_criteria` action.
+- Regression coverage verifies model validation and API completion rejection keep the campaign in draft when a completed improvement uses measurement results but omits the required criteria link.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
+- 참고: `npm run build` still prints the known nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.

@@ -1,29 +1,46 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
+  applyEdgeChanges,
+  applyNodeChanges,
   Background,
   BackgroundVariant,
   Handle,
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useEdgesState,
   useNodesState,
+  type EdgeChange,
+  type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
 import {
+  Archive,
   ArrowLeft,
   Blocks,
+  Bot,
+  Captions,
   Clock3,
+  Globe2,
   Grid2X2,
   Hand,
   ImageIcon,
+  Link2,
   MessageSquare,
   Mic2,
   MousePointer2,
+  Pause,
   Play,
+  Plug,
   Redo2,
+  ShoppingBag,
   Sparkles,
+  Target,
   Trash2,
   Type,
+  Upload,
+  Volume2,
   Undo2,
   Video,
 } from "lucide-react";
@@ -31,50 +48,379 @@ import {
 import { cn } from "~/core/lib/cn";
 import {
   createGenerationFlowNode,
-  initialCreativeFlowEdges,
-  initialCreativeFlowNodes,
+  createCreativeCanvasSnapshotFromCampaignSpecJsonEdit,
+  syncCampaignFromCreativeCanvasInteraction,
+  toCreativeFlowEdges,
+  toCreativeFlowNodes,
+  type CreativeCanvasSpecJsonSyncResult,
+  type CreativeFlowEdge,
   type CreativeFlowNode,
 } from "~/features/creative-canvas/adapters/react-flow-canvas";
 import {
+  CAMPAIGN_TARGET_AUDIENCE_FIELDS,
+  CAMPAIGN_LANDING_PAGE_CONVERSION_PLACEMENT_OPTIONS,
+  CAMPAIGN_LANDING_PAGE_ELEMENT_TIMING_OPTIONS,
+  CAMPAIGN_LANDING_PAGE_ELEMENT_VISIBILITY_OPTIONS,
+  CAMPAIGN_LANDING_PAGE_BEHAVIOR_MODES,
+  CAMPAIGN_LANDING_PAGE_NAVIGATION_PLACEMENT_OPTIONS,
+  CAMPAIGN_LANDING_PAGE_PLAYBACK_INTERRUPTION_OPTIONS,
+  addCampaignAsset,
+  archiveCampaignAsset,
+  createCampaignAsset,
+  createCampaignMeasurementGoal,
+  createCampaignPublishingChannel,
+  editCampaignAsset,
+  getCampaignAssetDetails,
+  getCampaignLandingPageBehaviorConfiguration,
+  getCampaignLandingPageConversionElements,
+  getCampaignLandingPageNavigationConfiguration,
+  createCampaignShortFormContentControlModel,
   generationPalette,
+  listCampaignAssets,
+  removeCampaignAsset,
+  replaceCampaignAsset,
+  serializeCampaignSpecJson,
+  setCampaignLandingPageAuthoringControls,
+  setCampaignLandingPageBehaviorMode,
+  type CampaignAssetMediaType,
+  type CampaignAssetStatus,
+  type CampaignAssetUsage,
+  type CampaignLandingPageConversionElementConfiguration,
+  type CampaignLandingPageConversionElementPlacement,
+  type CampaignLandingPageBehaviorMode,
+  type CampaignLandingPageElementTiming,
+  type CampaignLandingPageElementVisibility,
+  type CampaignDraft,
+  type CampaignMeasurementGoal,
+  type CampaignLandingPageNavigationPlacement,
+  type CampaignLandingPagePlaybackInterruptionBehavior,
+  type CampaignProductOffer,
+  type CampaignPublishingChannelType,
+  type CampaignPublishingStatus,
+  type CampaignShortFormContentControlModel,
+  type CampaignSpecJsonEditValidationError,
+  type CampaignTargetAudienceField,
   type GenerationBlockKind,
   type GenerationBlockTone,
 } from "~/features/creative-canvas/model/creative-canvas";
 
 const blockIcons = {
   text: Type,
+  llm: Sparkles,
   image: ImageIcon,
   video: Video,
   voice: Mic2,
+  agent: Bot,
+  dm: MessageSquare,
+  landing: Globe2,
+  custom: Plug,
 } satisfies Record<GenerationBlockKind, typeof Type>;
 
-export function CreativeCanvasScreen() {
-  const [nodes, setNodes, onNodesChange] =
-    useNodesState<CreativeFlowNode>(initialCreativeFlowNodes);
+function formatCampaignSpecJson(
+  campaign: Pick<CampaignDraft, "campaignSpec">,
+) {
+  return serializeCampaignSpecJson(campaign);
+}
+
+const audienceFieldLabels = {
+  age: "Age",
+  gender: "Gender",
+  interests: "Interests",
+  behavior: "Behavior",
+  region: "Region",
+  platform: "Platform",
+} satisfies Record<CampaignTargetAudienceField, string>;
+
+const audienceFieldPlaceholders = {
+  age: "25-34",
+  gender: "All genders",
+  interests: "AI tools, skincare, creator commerce",
+  behavior: "Comments on short-form product demos",
+  region: "United States",
+  platform: "Instagram",
+} satisfies Record<CampaignTargetAudienceField, string>;
+
+const productFieldLabels = {
+  id: "Product ID",
+  title: "Product title",
+  brand: "Brand",
+  category: "Category",
+  canonicalUrl: "Canonical URL",
+} satisfies Record<
+  Extract<
+    keyof CampaignProductOffer["product"],
+    "id" | "title" | "brand" | "category" | "canonicalUrl"
+  >,
+  string
+>;
+
+const offerFieldLabels = {
+  headline: "Offer headline",
+  summary: "Offer summary",
+  discount: "Discount",
+  terms: "Terms",
+  destinationUrl: "Destination URL",
+  callToAction: "Call to action",
+} satisfies Record<
+  Extract<
+    keyof CampaignProductOffer["offer"],
+    | "headline"
+    | "summary"
+    | "discount"
+    | "terms"
+    | "destinationUrl"
+    | "callToAction"
+  >,
+  string
+>;
+
+const attributionFieldLabels = {
+  source: "Offer source",
+  externalId: "External ID",
+  affiliateNetwork: "Affiliate network",
+  trackingUrl: "Tracking URL",
+} satisfies Record<
+  Extract<
+    keyof CampaignProductOffer["attribution"],
+    "source" | "externalId" | "affiliateNetwork" | "trackingUrl"
+  >,
+  string
+>;
+
+const assetMediaTypeOptions = [
+  "image",
+  "video",
+  "audio",
+  "document",
+  "text",
+  "other",
+] satisfies CampaignAssetMediaType[];
+
+const assetUsageOptions = [
+  "product",
+  "reference",
+  "generated",
+  "ad",
+  "landing",
+] satisfies CampaignAssetUsage[];
+
+const assetStatusOptions = [
+  "draft",
+  "ready",
+  "approved",
+  "archived",
+] satisfies CampaignAssetStatus[];
+
+const publishingChannelTypeOptions = [
+  "social",
+  "direct-message",
+  "landing",
+  "email",
+  "paid-ad",
+  "custom",
+] satisfies CampaignPublishingChannelType[];
+
+const publishingStatusOptions = [
+  "draft",
+  "configured",
+  "scheduled",
+  "published",
+  "paused",
+] satisfies CampaignPublishingStatus[];
+
+const publishingScheduleModeOptions = [
+  "manual",
+  "scheduled",
+  "recurring",
+] as const;
+
+function createDefaultLandingPageConversionElement(
+  campaign: CampaignDraft,
+): CampaignLandingPageConversionElementConfiguration {
+  return {
+    id: "conversion_primary_offer",
+    label: campaign.productOffer.offer.callToAction.trim() || "Open offer",
+    conversionEventName:
+      campaign.channels[0]?.tracking.conversionEvent.trim() || "purchase",
+    destinationUrl:
+      campaign.productOffer.offer.destinationUrl.trim() ||
+      "https://example.com/checkout",
+    visibility: "visible",
+    placement: "side-panel",
+    timing: "after-playback-complete",
+    interruptionBehavior: "non-blocking",
+  };
+}
+
+export function CreativeCanvasScreen({
+  campaign,
+  onCampaignChange,
+  onBackToDashboard,
+  onOpenReporting,
+}: {
+  campaign?: CampaignDraft;
+  onCampaignChange?: (campaign: CampaignDraft) => void;
+  onBackToDashboard?: () => void;
+  onOpenReporting?: () => void;
+}) {
+  const initialNodes = campaign
+    ? toCreativeFlowNodes(campaign.canvasState.nodes)
+    : [];
+  const initialEdges = campaign
+    ? toCreativeFlowEdges(campaign.canvasState.edges)
+    : [];
+  const [nodes, setNodes] = useNodesState<CreativeFlowNode>(
+    initialNodes,
+  );
+  const [edges, setEdges] = useEdgesState<CreativeFlowEdge>(initialEdges);
   const [activeTool, setActiveTool] = useState("select");
+  const campaignRef = useRef(campaign);
+  const canvasSnapshotRef = useRef<{
+    nodes: CreativeFlowNode[];
+    edges: CreativeFlowEdge[];
+  }>({
+    nodes: initialNodes,
+    edges: initialEdges,
+  });
   const visibleBlocks = useMemo(() => nodes.length, [nodes.length]);
 
+  useEffect(() => {
+    campaignRef.current = campaign;
+
+    if (!campaign) {
+      canvasSnapshotRef.current = {
+        nodes: [],
+        edges: [],
+      };
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+
+    canvasSnapshotRef.current = {
+      nodes: toCreativeFlowNodes(campaign.canvasState.nodes),
+      edges: toCreativeFlowEdges(campaign.canvasState.edges),
+    };
+    setNodes(canvasSnapshotRef.current.nodes);
+    setEdges(canvasSnapshotRef.current.edges);
+  }, [campaign, setEdges, setNodes]);
+
+  const updateCampaignCanvas = useCallback((
+    nextNodes: CreativeFlowNode[],
+    nextEdges: CreativeFlowEdge[],
+  ) => {
+    canvasSnapshotRef.current = {
+      nodes: nextNodes,
+      edges: nextEdges,
+    };
+
+    const currentCampaign = campaignRef.current;
+
+    if (!currentCampaign) {
+      return;
+    }
+
+    const nextCampaign = syncCampaignFromCreativeCanvasInteraction(
+      currentCampaign,
+      nextNodes,
+      nextEdges,
+    );
+
+    campaignRef.current = nextCampaign;
+    onCampaignChange?.(nextCampaign);
+  }, [onCampaignChange]);
+
+  const handleNodesChange = (changes: NodeChange<CreativeFlowNode>[]) => {
+    setNodes((currentNodes) => {
+      const nextNodes = applyNodeChanges(changes, currentNodes);
+      updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      return nextNodes;
+    });
+  };
+
+  const handleEdgesChange = (changes: EdgeChange[]) => {
+    setEdges((currentEdges) => {
+      const nextEdges = applyEdgeChanges(changes, currentEdges);
+      updateCampaignCanvas(canvasSnapshotRef.current.nodes, nextEdges);
+      return nextEdges;
+    });
+  };
+
   const addGenerationBlock = (kind: GenerationBlockKind) => {
-    setNodes((current) => [
-      ...current,
-      createGenerationFlowNode(kind, current.length),
-    ]);
+    setNodes((current) => {
+      const nextNodes = [
+        ...current,
+        createGenerationFlowNode(kind, current.length),
+      ];
+
+      updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+
+      return nextNodes;
+    });
+  };
+
+  const applyCampaignSpecJsonEdit = (
+    value: string,
+  ): CreativeCanvasSpecJsonSyncResult => {
+    const currentCampaign = campaignRef.current;
+
+    if (!currentCampaign) {
+      throw new Error("Cannot apply campaign spec JSON without a campaign.");
+    }
+
+    const result = createCreativeCanvasSnapshotFromCampaignSpecJsonEdit(
+      currentCampaign,
+      value,
+      { lastValidCanvasSnapshot: canvasSnapshotRef.current },
+    );
+
+    if (!result.valid) {
+      setNodes(result.nodes);
+      setEdges(result.edges);
+      return result;
+    }
+
+    canvasSnapshotRef.current = {
+      nodes: result.nodes,
+      edges: result.edges,
+    };
+    setNodes(result.nodes);
+    setEdges(result.edges);
+    campaignRef.current = result.campaign;
+
+    return result;
   };
 
   return (
-    <main className="min-h-dvh bg-[#fbfaf7] text-[#171717]">
+    <main className="canvas-shell min-h-dvh bg-[#fbfaf7] text-[#171717]">
       <AppSidebar />
-      <TopBar />
-      <FloatingToolbar activeTool={activeTool} onToolChange={setActiveTool} />
-      <GenerationPalette onAddBlock={addGenerationBlock} />
+      <TopBar
+        campaignTitle={campaign?.title ?? "OwnCanvas · Launch creative pack"}
+        onBackToDashboard={onBackToDashboard}
+        onOpenReporting={onOpenReporting}
+      />
 
-      <section className="fixed inset-0 left-12 top-[53px]">
+      <div className="canvas-overlays">
+        <FloatingToolbar activeTool={activeTool} onToolChange={setActiveTool} />
+        <GenerationPalette onAddBlock={addGenerationBlock} />
+        {campaign ? (
+          <CampaignMetadataPanel
+            campaign={campaign}
+            onCampaignChange={onCampaignChange}
+            onCampaignSpecJsonEdit={applyCampaignSpecJsonEdit}
+          />
+        ) : null}
+        {campaign ? <PersistentShortFormPlayer campaign={campaign} /> : null}
+      </div>
+
+      <section className="canvas-stage">
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodes}
-            edges={initialCreativeFlowEdges}
+            edges={edges}
             nodeTypes={creativeNodeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
             fitView
             fitViewOptions={{ padding: 0.24 }}
             minZoom={0.45}
@@ -98,9 +444,1889 @@ export function CreativeCanvasScreen() {
   );
 }
 
+function PersistentShortFormPlayer({
+  campaign,
+}: {
+  campaign: CampaignDraft;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const controlModel = useMemo(
+    () => createCampaignShortFormContentControlModel(campaign),
+    [campaign],
+  );
+
+  if (controlModel === null) {
+    return null;
+  }
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    if (video.paused) {
+      void video.play();
+      setIsPlaying(true);
+      return;
+    }
+
+    video.pause();
+    setIsPlaying(false);
+  };
+
+  const toggleMuted = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+
+    if (videoRef.current) {
+      videoRef.current.muted = nextMuted;
+    }
+  };
+
+  const toggleCaptions = () => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    Array.from(video.textTracks).forEach((track) => {
+      track.mode = track.mode === "showing" ? "hidden" : "showing";
+    });
+  };
+
+  return (
+    <aside
+      className="campaign-short-form-player"
+      aria-label={controlModel.accessibility.ariaLabel}
+      data-available-while={controlModel.availableWhileBrowsing.join(" ")}
+    >
+      <div className="campaign-short-form-preview">
+        <video
+          ref={videoRef}
+          src={controlModel.activeAsset.uri}
+          controls={controlModel.playback.nativeControls}
+          muted={isMuted}
+          loop={controlModel.playback.loop}
+          playsInline
+          preload="metadata"
+          controlsList="nodownload"
+          aria-label={controlModel.activeAsset.title}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+        />
+      </div>
+      <div className="campaign-short-form-player-copy">
+        <span>SHORT-FORM PREVIEW</span>
+        <strong>{controlModel.activeAsset.title}</strong>
+        <small>
+          {formatDuration(controlModel)} /{" "}
+          {controlModel.commerceContext.productTitle}
+        </small>
+      </div>
+      <div
+        className="campaign-short-form-controls"
+        aria-label="Short-form playback and campaign controls"
+      >
+        <button
+          type="button"
+          onClick={togglePlayback}
+          aria-label={controlModel.actions[0].ariaLabel}
+        >
+          {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
+          <span>{isPlaying ? "Pause" : "Play"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={toggleMuted}
+          aria-label={controlModel.actions[1].ariaLabel}
+        >
+          <Volume2 className="size-4" />
+          <span>{isMuted ? "Muted" : "Sound"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={toggleCaptions}
+          aria-label={controlModel.actions[2].ariaLabel}
+        >
+          <Captions className="size-4" />
+          <span>Captions</span>
+        </button>
+        <a
+          href={controlModel.commerceContext.destinationUrl || undefined}
+          aria-label={controlModel.actions[3].ariaLabel}
+        >
+          <ShoppingBag className="size-4" />
+          <span>{controlModel.commerceContext.callToAction}</span>
+        </a>
+        <span className="campaign-short-form-action-chip">
+          {controlModel.campaignActionContext.primaryChannelLabel}
+        </span>
+      </div>
+    </aside>
+  );
+}
+
+function formatDuration(controlModel: CampaignShortFormContentControlModel) {
+  const durationSeconds =
+    controlModel.activeAsset.generatedMetadata?.durationSeconds;
+
+  if (durationSeconds === undefined || durationSeconds <= 0) {
+    return "Playable";
+  }
+
+  return `${Math.round(durationSeconds)}s`;
+}
+
+function CampaignMetadataPanel({
+  campaign,
+  onCampaignChange,
+  onCampaignSpecJsonEdit,
+}: {
+  campaign: CampaignDraft;
+  onCampaignChange?: (campaign: CampaignDraft) => void;
+  onCampaignSpecJsonEdit: (value: string) => CreativeCanvasSpecJsonSyncResult;
+}) {
+  const [assetDraft, setAssetDraft] = useState({
+    title: "",
+    uri: "",
+    mediaType: "image" as CampaignAssetMediaType,
+    usage: "reference" as CampaignAssetUsage,
+    status: "draft" as CampaignAssetStatus,
+    altText: "",
+    rightsOwner: "",
+    rightsLicense: "",
+    rightsSourceUrl: "",
+  });
+  const [publishingDraft, setPublishingDraft] = useState({
+    type: "direct-message" as CampaignPublishingChannelType,
+    platform: "instagram",
+    label: "",
+    providerPluginId: "",
+    accountId: "",
+    accountHandle: "",
+    placement: "comment-trigger",
+    destinationUrl: "",
+    landingPageId: "",
+    scheduleMode: "manual" as (typeof publishingScheduleModeOptions)[number],
+    startsAt: "",
+    timezone: "UTC",
+    utmSource: "instagram",
+    utmMedium: "dm",
+    utmCampaign: "",
+    utmContent: "",
+    conversionEvent: "purchase",
+    status: "draft" as CampaignPublishingStatus,
+  });
+  const [measurementGoalDraft, setMeasurementGoalDraft] = useState({
+    name: "Purchase conversion rate",
+    target: "",
+    unit: "percent",
+    successCriteria: "",
+    startsAt: "",
+    endsAt: "",
+    timezone: "UTC",
+  });
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedMeasurementGoalId, setSelectedMeasurementGoalId] = useState<
+    string | null
+  >(null);
+  const [campaignSpecJson, setCampaignSpecJson] = useState(() =>
+    formatCampaignSpecJson(campaign),
+  );
+  const [
+    campaignSpecValidationErrors,
+    setCampaignSpecValidationErrors,
+  ] = useState<CampaignSpecJsonEditValidationError[]>([]);
+  const assetSummaries = useMemo(
+    () => listCampaignAssets(campaign),
+    [campaign],
+  );
+  const activeAssetId = selectedAssetId ?? assetSummaries[0]?.id ?? null;
+  const selectedAsset = activeAssetId
+    ? getCampaignAssetDetails(campaign, activeAssetId)
+    : null;
+  const measurementGoals = campaign.tracking.measurementGoals ?? [];
+  const selectedMeasurementGoal =
+    measurementGoals.find((goal) => goal.id === selectedMeasurementGoalId) ??
+    null;
+  const landingPageBehavior = getCampaignLandingPageBehaviorConfiguration(
+    campaign,
+  );
+  const landingPageNavigation = getCampaignLandingPageNavigationConfiguration(
+    campaign,
+  );
+  const landingPageConversionElement =
+    getCampaignLandingPageConversionElements(campaign)[0] ??
+    createDefaultLandingPageConversionElement(campaign);
+
+  useEffect(() => {
+    if (campaignSpecValidationErrors.length > 0) {
+      return;
+    }
+
+    setCampaignSpecJson(formatCampaignSpecJson(campaign));
+  }, [campaign, campaignSpecValidationErrors.length]);
+
+  const updateCampaignField = (
+    field: "title" | "objective",
+    value: string,
+  ) => {
+    onCampaignChange?.({
+      ...campaign,
+      [field]: value,
+    });
+  };
+
+  const updateAudienceField = (
+    field: keyof CampaignDraft["targetAudience"],
+    value: string,
+  ) => {
+    onCampaignChange?.({
+      ...campaign,
+      targetAudience: {
+        ...campaign.targetAudience,
+        [field]: value,
+      },
+    });
+  };
+
+  const updateProductField = (
+    field: keyof Pick<
+      CampaignProductOffer["product"],
+      "id" | "title" | "brand" | "category" | "description" | "canonicalUrl"
+    >,
+    value: string,
+  ) => {
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        product: {
+          ...campaign.productOffer.product,
+          [field]: value,
+        },
+      },
+    });
+  };
+
+  const updateOfferField = (
+    field: keyof Omit<CampaignProductOffer["offer"], "price">,
+    value: string,
+  ) => {
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        offer: {
+          ...campaign.productOffer.offer,
+          [field]: value,
+        },
+      },
+    });
+  };
+
+  const updateProductTags = (value: string) => {
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        product: {
+          ...campaign.productOffer.product,
+          tags: value
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        },
+      },
+    });
+  };
+
+  const updateOfferPriceDisplay = (value: string) => {
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        offer: {
+          ...campaign.productOffer.offer,
+          price: {
+            ...campaign.productOffer.offer.price,
+            display: value,
+          },
+        },
+      },
+    });
+  };
+
+  const updateOfferPriceAmount = (value: string) => {
+    const normalizedValue = value.trim();
+    const parsedValue = Number(normalizedValue);
+
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        offer: {
+          ...campaign.productOffer.offer,
+          price: {
+            ...campaign.productOffer.offer.price,
+            amount:
+              normalizedValue === "" || !Number.isFinite(parsedValue)
+                ? null
+                : parsedValue,
+          },
+        },
+      },
+    });
+  };
+
+  const updateOfferPriceCurrency = (value: string) => {
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        offer: {
+          ...campaign.productOffer.offer,
+          price: {
+            ...campaign.productOffer.offer.price,
+            currency: value.toUpperCase(),
+          },
+        },
+      },
+    });
+  };
+
+  const updateAttributionField = (
+    field: keyof Pick<
+      CampaignProductOffer["attribution"],
+      "source" | "externalId" | "affiliateNetwork" | "trackingUrl"
+    >,
+    value: string,
+  ) => {
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        attribution: {
+          ...campaign.productOffer.attribution,
+          [field]: value,
+        },
+      },
+    });
+  };
+
+  const updateCommissionRate = (value: string) => {
+    const normalizedValue = value.trim();
+    const parsedValue = Number(normalizedValue);
+
+    onCampaignChange?.({
+      ...campaign,
+      productOffer: {
+        ...campaign.productOffer,
+        attribution: {
+          ...campaign.productOffer.attribution,
+          commissionRate:
+            normalizedValue === "" || !Number.isFinite(parsedValue)
+              ? null
+              : parsedValue,
+        },
+      },
+    });
+  };
+
+  const addAssetToCampaign = (assetInput: {
+    source: "upload" | "link";
+    uri: string;
+    fileName?: string;
+    mimeType?: string;
+    sizeBytes?: number | null;
+  }) => {
+    const asset = createCampaignAsset({
+      id: `asset_${Date.now()}`,
+      source: assetInput.source,
+      mediaType: assetDraft.mediaType,
+      title: assetDraft.title.trim() || assetInput.fileName || "Campaign asset",
+      uri: assetInput.uri,
+      usage: assetDraft.usage,
+      status: assetDraft.status,
+      altText: assetDraft.altText,
+      fileName: assetInput.fileName,
+      mimeType: assetInput.mimeType,
+      sizeBytes: assetInput.sizeBytes,
+      rights: {
+        owner: assetDraft.rightsOwner.trim() || "Unknown owner",
+        license: assetDraft.rightsLicense,
+        ...(assetDraft.rightsSourceUrl.trim() === ""
+          ? {}
+          : { sourceUrl: assetDraft.rightsSourceUrl }),
+      },
+      createdBy: "human",
+    });
+
+    onCampaignChange?.(addCampaignAsset(campaign, asset));
+    setSelectedAssetId(asset.id);
+    setAssetDraft((currentDraft) => ({
+      ...currentDraft,
+      title: "",
+      uri: "",
+      altText: "",
+    }));
+  };
+
+  const addLinkedAsset = () => {
+    if (assetDraft.uri.trim() === "") {
+      return;
+    }
+
+    addAssetToCampaign({
+      source: "link",
+      uri: assetDraft.uri,
+    });
+  };
+
+  const addUploadedAsset = (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    addAssetToCampaign({
+      source: "upload",
+      uri:
+        typeof URL === "undefined" || !URL.createObjectURL
+          ? `upload:${file.name}`
+          : URL.createObjectURL(file),
+      fileName: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+    });
+  };
+
+  const loadSelectedAssetForEditing = () => {
+    if (!selectedAsset) {
+      return;
+    }
+
+    setAssetDraft({
+      title: selectedAsset.title,
+      uri: selectedAsset.uri,
+      mediaType: selectedAsset.mediaType,
+      usage: selectedAsset.usage,
+      status: selectedAsset.status ?? "draft",
+      altText: selectedAsset.altText,
+      rightsOwner: selectedAsset.rights.owner,
+      rightsLicense: selectedAsset.rights.license,
+      rightsSourceUrl: selectedAsset.rights.sourceUrl ?? "",
+    });
+  };
+
+  const saveSelectedAssetEdits = () => {
+    if (!selectedAsset) {
+      return;
+    }
+
+    onCampaignChange?.(
+      editCampaignAsset(campaign, selectedAsset.id, {
+        title: assetDraft.title.trim() || selectedAsset.title,
+        mediaType: assetDraft.mediaType,
+        usage: assetDraft.usage,
+        status: assetDraft.status,
+        altText: assetDraft.altText,
+        rights: {
+          owner: assetDraft.rightsOwner.trim() || selectedAsset.rights.owner,
+          license: assetDraft.rightsLicense,
+          sourceUrl: assetDraft.rightsSourceUrl,
+        },
+      }),
+    );
+  };
+
+  const replaceSelectedLinkedAsset = () => {
+    if (!selectedAsset || assetDraft.uri.trim() === "") {
+      return;
+    }
+
+    onCampaignChange?.(
+      replaceCampaignAsset(campaign, selectedAsset.id, {
+        source: "link",
+        uri: assetDraft.uri,
+        mediaType: assetDraft.mediaType,
+        title: assetDraft.title.trim() || selectedAsset.title,
+        usage: assetDraft.usage,
+        status: assetDraft.status,
+        altText: assetDraft.altText,
+        rights: {
+          owner: assetDraft.rightsOwner.trim() || selectedAsset.rights.owner,
+          license: assetDraft.rightsLicense,
+          sourceUrl: assetDraft.rightsSourceUrl,
+        },
+      }),
+    );
+  };
+
+  const replaceSelectedUploadedAsset = (file: File | null) => {
+    if (!selectedAsset || !file) {
+      return;
+    }
+
+    onCampaignChange?.(
+      replaceCampaignAsset(campaign, selectedAsset.id, {
+        source: "upload",
+        uri:
+          typeof URL === "undefined" || !URL.createObjectURL
+            ? `upload:${file.name}`
+            : URL.createObjectURL(file),
+        mediaType: assetDraft.mediaType,
+        title: assetDraft.title.trim() || file.name,
+        usage: assetDraft.usage,
+        status: assetDraft.status,
+        altText: assetDraft.altText,
+        fileName: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        rights: {
+          owner: assetDraft.rightsOwner.trim() || selectedAsset.rights.owner,
+          license: assetDraft.rightsLicense,
+          sourceUrl: assetDraft.rightsSourceUrl,
+        },
+      }),
+    );
+  };
+
+  const removeSelectedAsset = () => {
+    if (!selectedAsset) {
+      return;
+    }
+
+    onCampaignChange?.(removeCampaignAsset(campaign, selectedAsset.id));
+    setSelectedAssetId(null);
+  };
+
+  const archiveSelectedAsset = () => {
+    if (!selectedAsset) {
+      return;
+    }
+
+    onCampaignChange?.(archiveCampaignAsset(campaign, selectedAsset.id));
+  };
+
+  const addPublishingChannel = () => {
+    if (
+      publishingDraft.label.trim() === "" ||
+      publishingDraft.destinationUrl.trim() === ""
+    ) {
+      return;
+    }
+
+    const channel = createCampaignPublishingChannel({
+      id: `channel_${Date.now()}`,
+      type: publishingDraft.type,
+      platform: publishingDraft.platform,
+      label: publishingDraft.label,
+      providerPluginId: publishingDraft.providerPluginId,
+      account: {
+        id: publishingDraft.accountId,
+        handle: publishingDraft.accountHandle,
+      },
+      placement: publishingDraft.placement,
+      destinationUrl: publishingDraft.destinationUrl,
+      landingPageId: publishingDraft.landingPageId,
+      schedule: {
+        mode: publishingDraft.scheduleMode,
+        startsAt: publishingDraft.startsAt,
+        timezone: publishingDraft.timezone,
+      },
+      tracking: {
+        utmSource: publishingDraft.utmSource,
+        utmMedium: publishingDraft.utmMedium,
+        utmCampaign: publishingDraft.utmCampaign,
+        utmContent: publishingDraft.utmContent,
+        conversionEvent: publishingDraft.conversionEvent,
+      },
+      status: publishingDraft.status,
+    });
+
+    onCampaignChange?.({
+      ...campaign,
+      channels: [...campaign.channels, channel],
+    });
+    setPublishingDraft((currentDraft) => ({
+      ...currentDraft,
+      label: "",
+      destinationUrl: "",
+      landingPageId: "",
+      utmCampaign: "",
+      utmContent: "",
+      startsAt: "",
+    }));
+  };
+
+  const removePublishingChannel = (channelId: string) => {
+    onCampaignChange?.({
+      ...campaign,
+      channels: campaign.channels.filter((channel) => channel.id !== channelId),
+    });
+  };
+
+  const updateLandingPageBehaviorMode = (
+    mode: CampaignLandingPageBehaviorMode,
+  ) => {
+    onCampaignChange?.(setCampaignLandingPageBehaviorMode(campaign, mode));
+  };
+
+  const updateLandingPageNavigation = (
+    patch: Partial<typeof landingPageNavigation>,
+  ) => {
+    onCampaignChange?.(
+      setCampaignLandingPageAuthoringControls(campaign, {
+        navigation: {
+          ...landingPageNavigation,
+          ...patch,
+        },
+      }),
+    );
+  };
+
+  const updateLandingPageConversionElement = (
+    patch: Partial<CampaignLandingPageConversionElementConfiguration>,
+  ) => {
+    onCampaignChange?.(
+      setCampaignLandingPageAuthoringControls(campaign, {
+        conversionElements: [
+          {
+            ...landingPageConversionElement,
+            ...patch,
+          },
+        ],
+      }),
+    );
+  };
+
+  const addMeasurementGoal = () => {
+    if (
+      measurementGoalDraft.name.trim() === "" ||
+      measurementGoalDraft.successCriteria.trim() === "" ||
+      measurementGoalDraft.startsAt.trim() === "" ||
+      measurementGoalDraft.endsAt.trim() === ""
+    ) {
+      return;
+    }
+
+    const normalizedTarget = measurementGoalDraft.target.trim();
+    const parsedTarget = Number(normalizedTarget);
+    const goal = createCampaignMeasurementGoal({
+      id: `measurement_goal_${Date.now()}`,
+      name: measurementGoalDraft.name,
+      target:
+        normalizedTarget === "" || !Number.isFinite(parsedTarget)
+          ? null
+          : parsedTarget,
+      unit: measurementGoalDraft.unit,
+      successCriteria: measurementGoalDraft.successCriteria,
+      reportingTimeframe: {
+        startsAt: measurementGoalDraft.startsAt,
+        endsAt: measurementGoalDraft.endsAt,
+        timezone: measurementGoalDraft.timezone,
+      },
+    });
+
+    onCampaignChange?.({
+      ...campaign,
+      tracking: {
+        ...campaign.tracking,
+        measurementGoals: [...measurementGoals, goal],
+      },
+    });
+    setMeasurementGoalDraft((currentDraft) => ({
+      ...currentDraft,
+      target: "",
+      successCriteria: "",
+    }));
+    setSelectedMeasurementGoalId(goal.id);
+  };
+
+  const loadMeasurementGoalForEditing = (goal: CampaignMeasurementGoal) => {
+    setSelectedMeasurementGoalId(goal.id);
+    setMeasurementGoalDraft({
+      name: goal.name,
+      target: goal.target?.toString() ?? "",
+      unit: goal.unit,
+      successCriteria: goal.successCriteria,
+      startsAt: goal.reportingTimeframe.startsAt,
+      endsAt: goal.reportingTimeframe.endsAt,
+      timezone: goal.reportingTimeframe.timezone,
+    });
+  };
+
+  const saveSelectedMeasurementGoalEdits = () => {
+    if (!selectedMeasurementGoal) {
+      return;
+    }
+
+    const normalizedTarget = measurementGoalDraft.target.trim();
+    const parsedTarget = Number(normalizedTarget);
+
+    onCampaignChange?.({
+      ...campaign,
+      tracking: {
+        ...campaign.tracking,
+        measurementGoals: measurementGoals.map((goal) =>
+          goal.id === selectedMeasurementGoal.id
+            ? {
+                ...goal,
+                name: measurementGoalDraft.name.trim() || goal.name,
+                target:
+                  normalizedTarget === "" ||
+                  !Number.isFinite(parsedTarget)
+                    ? null
+                    : parsedTarget,
+                unit: measurementGoalDraft.unit.trim() || goal.unit,
+                successCriteria:
+                  measurementGoalDraft.successCriteria.trim() ||
+                  goal.successCriteria,
+                reportingTimeframe: {
+                  startsAt:
+                    measurementGoalDraft.startsAt.trim() ||
+                    goal.reportingTimeframe.startsAt,
+                  endsAt:
+                    measurementGoalDraft.endsAt.trim() ||
+                    goal.reportingTimeframe.endsAt,
+                  timezone:
+                    measurementGoalDraft.timezone.trim() ||
+                    goal.reportingTimeframe.timezone,
+                },
+              }
+            : goal,
+        ),
+      },
+    });
+  };
+
+  const removeMeasurementGoal = (goalId: CampaignMeasurementGoal["id"]) => {
+    onCampaignChange?.({
+      ...campaign,
+      tracking: {
+        ...campaign.tracking,
+        measurementGoals: measurementGoals.filter((goal) => goal.id !== goalId),
+      },
+    });
+    if (selectedMeasurementGoalId === goalId) {
+      setSelectedMeasurementGoalId(null);
+    }
+  };
+
+  const updateCampaignSpecJson = (value: string) => {
+    setCampaignSpecJson(value);
+
+    const result = onCampaignSpecJsonEdit(value);
+
+    if (!result.valid) {
+      setCampaignSpecValidationErrors(result.errors);
+      return;
+    }
+
+    setCampaignSpecValidationErrors([]);
+    onCampaignChange?.(result.campaign);
+  };
+
+  return (
+    <aside className="campaign-metadata-panel" aria-label="Campaign metadata">
+      <div className="metadata-panel-header">
+        <span>CAMPAIGN SETUP</span>
+        <strong>Required metadata</strong>
+      </div>
+
+      <div className="metadata-field-stack">
+        <MetadataTextField
+          id="campaign-title"
+          label="Campaign title"
+          value={campaign.title}
+          onChange={(value) => updateCampaignField("title", value)}
+          required
+        />
+        <MetadataTextArea
+          id="campaign-objective"
+          label="Objective"
+          value={campaign.objective}
+          onChange={(value) => updateCampaignField("objective", value)}
+          placeholder="Define the conversion goal and campaign outcome"
+          required
+        />
+      </div>
+
+      <MetadataSection title="Target audience">
+        {CAMPAIGN_TARGET_AUDIENCE_FIELDS.map((field) => (
+          <MetadataTextField
+            key={field}
+            id={`audience-${field}`}
+            label={audienceFieldLabels[field]}
+            value={campaign.targetAudience[field]}
+            onChange={(value) => updateAudienceField(field, value)}
+            placeholder={audienceFieldPlaceholders[field]}
+          />
+        ))}
+      </MetadataSection>
+
+      <MetadataSection title="Product details">
+        {(Object.keys(productFieldLabels) as Array<keyof typeof productFieldLabels>).map(
+          (field) => (
+            <MetadataTextField
+              key={field}
+              id={`product-${field}`}
+              label={productFieldLabels[field]}
+              value={campaign.productOffer.product[field]}
+              onChange={(value) => updateProductField(field, value)}
+              placeholder={
+                field === "canonicalUrl"
+                  ? "https://shop.example.com/products/kit"
+                  : undefined
+              }
+            />
+          ),
+        )}
+        <MetadataTextArea
+          id="product-description"
+          label="Product description"
+          value={campaign.productOffer.product.description}
+          onChange={(value) => updateProductField("description", value)}
+          placeholder="Product details, bundle contents, and buyer promise"
+        />
+        <MetadataTextField
+          id="product-tags"
+          label="Product tags"
+          value={campaign.productOffer.product.tags.join(", ")}
+          onChange={updateProductTags}
+          placeholder="ugc, skincare, starter"
+        />
+      </MetadataSection>
+
+      <MetadataSection title="Offer">
+        {(Object.keys(offerFieldLabels) as Array<keyof typeof offerFieldLabels>).map(
+          (field) =>
+            field === "summary" || field === "terms" ? (
+              <MetadataTextArea
+                key={field}
+                id={`offer-${field}`}
+                label={offerFieldLabels[field]}
+                value={campaign.productOffer.offer[field]}
+                onChange={(value) => updateOfferField(field, value)}
+                placeholder={
+                  field === "terms"
+                    ? "Eligibility, expiration, redemption limits, and exclusions"
+                    : "Terms, urgency, and why this offer fits the audience"
+                }
+              />
+            ) : (
+              <MetadataTextField
+                key={field}
+                id={`offer-${field}`}
+                label={offerFieldLabels[field]}
+                value={campaign.productOffer.offer[field]}
+                onChange={(value) => updateOfferField(field, value)}
+                placeholder={
+                  field === "destinationUrl"
+                    ? "https://shop.example.com/offer?utm_campaign=..."
+                    : undefined
+                }
+              />
+            ),
+        )}
+        <MetadataTextField
+          id="offer-price-display"
+          label="Price display"
+          value={campaign.productOffer.offer.price.display}
+          onChange={updateOfferPriceDisplay}
+        />
+        <MetadataTextField
+          id="offer-price-amount"
+          label="Price amount"
+          type="number"
+          value={campaign.productOffer.offer.price.amount?.toString() ?? ""}
+          onChange={updateOfferPriceAmount}
+          placeholder="4900"
+        />
+        <MetadataTextField
+          id="offer-price-currency"
+          label="Currency"
+          value={campaign.productOffer.offer.price.currency}
+          onChange={updateOfferPriceCurrency}
+          placeholder="USD"
+        />
+      </MetadataSection>
+
+      <MetadataSection title="Commerce attribution">
+        {(
+          Object.keys(attributionFieldLabels) as Array<
+            keyof typeof attributionFieldLabels
+          >
+        ).map((field) => (
+          <MetadataTextField
+            key={field}
+            id={`attribution-${field}`}
+            label={attributionFieldLabels[field]}
+            value={campaign.productOffer.attribution[field]}
+            onChange={(value) => updateAttributionField(field, value)}
+          />
+        ))}
+        <MetadataTextField
+          id="attribution-commission-rate"
+          label="Commission rate"
+          type="number"
+          value={campaign.productOffer.attribution.commissionRate?.toString() ?? ""}
+          onChange={updateCommissionRate}
+          placeholder="12.5"
+        />
+      </MetadataSection>
+
+      <MetadataSection title="Publishing configuration">
+        <MetadataSelect
+          id="publishing-type"
+          label="Channel type"
+          value={publishingDraft.type}
+          options={publishingChannelTypeOptions}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              type: value as CampaignPublishingChannelType,
+            }))
+          }
+        />
+        <MetadataSelect
+          id="publishing-status"
+          label="Status"
+          value={publishingDraft.status}
+          options={publishingStatusOptions}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              status: value as CampaignPublishingStatus,
+            }))
+          }
+        />
+        <MetadataTextField
+          id="publishing-platform"
+          label="Platform"
+          value={publishingDraft.platform}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              platform: value,
+            }))
+          }
+          placeholder="instagram"
+          required
+        />
+        <MetadataTextField
+          id="publishing-label"
+          label="Channel label"
+          value={publishingDraft.label}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              label: value,
+            }))
+          }
+          placeholder="Instagram comment to DM"
+          required
+        />
+        <MetadataTextField
+          id="publishing-provider-plugin-id"
+          label="Provider plugin"
+          value={publishingDraft.providerPluginId}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              providerPluginId: value,
+            }))
+          }
+          placeholder="plugin.dm.instagram"
+        />
+        <MetadataTextField
+          id="publishing-account-handle"
+          label="Account handle"
+          value={publishingDraft.accountHandle}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              accountHandle: value,
+            }))
+          }
+          placeholder="@owncanvas"
+        />
+        <MetadataTextField
+          id="publishing-account-id"
+          label="Account ID"
+          value={publishingDraft.accountId}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              accountId: value,
+            }))
+          }
+        />
+        <MetadataTextField
+          id="publishing-placement"
+          label="Placement"
+          value={publishingDraft.placement}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              placement: value,
+            }))
+          }
+          placeholder="comment-trigger"
+          required
+        />
+        <MetadataTextField
+          id="publishing-destination-url"
+          label="Destination URL"
+          value={publishingDraft.destinationUrl}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              destinationUrl: value,
+            }))
+          }
+          placeholder="https://go.example.com/creator-kit"
+          required
+        />
+        <MetadataTextField
+          id="publishing-landing-page-id"
+          label="Landing page ID"
+          value={publishingDraft.landingPageId}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              landingPageId: value,
+            }))
+          }
+          placeholder="landing_creator_kit"
+        />
+        <MetadataSelect
+          id="publishing-schedule-mode"
+          label="Schedule"
+          value={publishingDraft.scheduleMode}
+          options={publishingScheduleModeOptions}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              scheduleMode: value as (typeof publishingScheduleModeOptions)[number],
+            }))
+          }
+        />
+        <MetadataTextField
+          id="publishing-starts-at"
+          label="Starts at"
+          value={publishingDraft.startsAt}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              startsAt: value,
+            }))
+          }
+          placeholder="2026-05-12T15:00:00.000Z"
+        />
+        <MetadataTextField
+          id="publishing-timezone"
+          label="Timezone"
+          value={publishingDraft.timezone}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              timezone: value,
+            }))
+          }
+          placeholder="America/Los_Angeles"
+        />
+        <MetadataTextField
+          id="publishing-utm-source"
+          label="UTM source"
+          value={publishingDraft.utmSource}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              utmSource: value,
+            }))
+          }
+          required
+        />
+        <MetadataTextField
+          id="publishing-utm-medium"
+          label="UTM medium"
+          value={publishingDraft.utmMedium}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              utmMedium: value,
+            }))
+          }
+          required
+        />
+        <MetadataTextField
+          id="publishing-utm-campaign"
+          label="UTM campaign"
+          value={publishingDraft.utmCampaign}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              utmCampaign: value,
+            }))
+          }
+          required
+        />
+        <MetadataTextField
+          id="publishing-utm-content"
+          label="UTM content"
+          value={publishingDraft.utmContent}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              utmContent: value,
+            }))
+          }
+        />
+        <MetadataTextField
+          id="publishing-conversion-event"
+          label="Conversion event"
+          value={publishingDraft.conversionEvent}
+          onChange={(value) =>
+            setPublishingDraft((currentDraft) => ({
+              ...currentDraft,
+              conversionEvent: value,
+            }))
+          }
+          required
+        />
+        <div className="metadata-asset-actions metadata-field-wide">
+          <button type="button" onClick={addPublishingChannel}>
+            <Link2 className="size-4" />
+            Add channel
+          </button>
+        </div>
+        <div className="metadata-asset-list metadata-field-wide">
+          {campaign.channels.length === 0 ? (
+            <span>No publishing channels</span>
+          ) : (
+            campaign.channels.map((channel) => (
+              <div key={channel.id} className="metadata-asset-row">
+                <strong>{channel.label}</strong>
+                <small>
+                  {channel.platform} / {channel.type} / {channel.placement}
+                </small>
+                <small>
+                  {channel.tracking.utmSource} / {channel.tracking.utmMedium} /{" "}
+                  {channel.tracking.conversionEvent}
+                </small>
+                <button
+                  type="button"
+                  onClick={() => removePublishingChannel(channel.id)}
+                >
+                  <Trash2 className="size-4" />
+                  Remove
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </MetadataSection>
+
+      <MetadataSection title="Landing behavior">
+        <MetadataSelect
+          id="landing-behavior-mode"
+          label="Mode"
+          value={landingPageBehavior.mode}
+          options={CAMPAIGN_LANDING_PAGE_BEHAVIOR_MODES}
+          onChange={(value) =>
+            updateLandingPageBehaviorMode(
+              value as CampaignLandingPageBehaviorMode,
+            )
+          }
+        />
+        <div className="metadata-mode-summary metadata-field-wide">
+          <span
+            data-active={landingPageBehavior.preserveInlineContext}
+          >
+            Inline context
+          </span>
+          <span
+            data-active={landingPageBehavior.allowTraditionalRedirect}
+          >
+            Redirect allowed
+          </span>
+        </div>
+        <MetadataSelect
+          id="landing-navigation-visibility"
+          label="Navigation visibility"
+          value={landingPageNavigation.visibility}
+          options={CAMPAIGN_LANDING_PAGE_ELEMENT_VISIBILITY_OPTIONS}
+          onChange={(value) =>
+            updateLandingPageNavigation({
+              visibility: value as CampaignLandingPageElementVisibility,
+            })
+          }
+        />
+        <MetadataSelect
+          id="landing-navigation-placement"
+          label="Navigation placement"
+          value={landingPageNavigation.placement}
+          options={CAMPAIGN_LANDING_PAGE_NAVIGATION_PLACEMENT_OPTIONS}
+          onChange={(value) =>
+            updateLandingPageNavigation({
+              placement: value as CampaignLandingPageNavigationPlacement,
+            })
+          }
+        />
+        <MetadataSelect
+          id="landing-navigation-timing"
+          label="Navigation timing"
+          value={landingPageNavigation.timing}
+          options={CAMPAIGN_LANDING_PAGE_ELEMENT_TIMING_OPTIONS}
+          onChange={(value) =>
+            updateLandingPageNavigation({
+              timing: value as CampaignLandingPageElementTiming,
+            })
+          }
+        />
+        <MetadataSelect
+          id="landing-navigation-interruption"
+          label="Navigation interruption"
+          value={landingPageNavigation.interruptionBehavior}
+          options={CAMPAIGN_LANDING_PAGE_PLAYBACK_INTERRUPTION_OPTIONS}
+          onChange={(value) =>
+            updateLandingPageNavigation({
+              interruptionBehavior:
+                value as CampaignLandingPagePlaybackInterruptionBehavior,
+            })
+          }
+        />
+        <MetadataTextField
+          id="landing-conversion-label"
+          label="Conversion label"
+          value={landingPageConversionElement.label}
+          onChange={(value) =>
+            updateLandingPageConversionElement({ label: value })
+          }
+          placeholder="Open offer"
+        />
+        <MetadataTextField
+          id="landing-conversion-url"
+          label="Conversion URL"
+          value={landingPageConversionElement.destinationUrl}
+          onChange={(value) =>
+            updateLandingPageConversionElement({ destinationUrl: value })
+          }
+          placeholder="https://shop.example.com/checkout"
+        />
+        <MetadataSelect
+          id="landing-conversion-placement"
+          label="Conversion placement"
+          value={landingPageConversionElement.placement}
+          options={CAMPAIGN_LANDING_PAGE_CONVERSION_PLACEMENT_OPTIONS}
+          onChange={(value) =>
+            updateLandingPageConversionElement({
+              placement: value as CampaignLandingPageConversionElementPlacement,
+            })
+          }
+        />
+        <MetadataSelect
+          id="landing-conversion-timing"
+          label="Conversion timing"
+          value={landingPageConversionElement.timing}
+          options={CAMPAIGN_LANDING_PAGE_ELEMENT_TIMING_OPTIONS}
+          onChange={(value) =>
+            updateLandingPageConversionElement({
+              timing: value as CampaignLandingPageElementTiming,
+            })
+          }
+        />
+        <MetadataSelect
+          id="landing-conversion-interruption"
+          label="Conversion interruption"
+          value={landingPageConversionElement.interruptionBehavior}
+          options={CAMPAIGN_LANDING_PAGE_PLAYBACK_INTERRUPTION_OPTIONS}
+          onChange={(value) =>
+            updateLandingPageConversionElement({
+              interruptionBehavior:
+                value as CampaignLandingPagePlaybackInterruptionBehavior,
+            })
+          }
+        />
+      </MetadataSection>
+
+      <MetadataSection title="Measurement goals">
+        <MetadataTextField
+          id="measurement-target-metric"
+          label="Metric name"
+          value={measurementGoalDraft.name}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              name: value,
+            }))
+          }
+          placeholder="Purchase conversion rate"
+          required
+        />
+        <MetadataTextField
+          id="measurement-target-value"
+          label="Target"
+          type="number"
+          value={measurementGoalDraft.target}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              target: value,
+            }))
+          }
+          placeholder="3.5"
+        />
+        <MetadataTextField
+          id="measurement-unit"
+          label="Unit"
+          value={measurementGoalDraft.unit}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              unit: value,
+            }))
+          }
+          placeholder="percent"
+          required
+        />
+        <MetadataTextField
+          id="measurement-starts-at"
+          label="Reporting starts"
+          value={measurementGoalDraft.startsAt}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              startsAt: value,
+            }))
+          }
+          placeholder="2026-05-12T00:00:00.000Z"
+          required
+        />
+        <MetadataTextField
+          id="measurement-ends-at"
+          label="Reporting ends"
+          value={measurementGoalDraft.endsAt}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              endsAt: value,
+            }))
+          }
+          placeholder="2026-05-19T00:00:00.000Z"
+          required
+        />
+        <MetadataTextField
+          id="measurement-timezone"
+          label="Timezone"
+          value={measurementGoalDraft.timezone}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              timezone: value,
+            }))
+          }
+          placeholder="America/Los_Angeles"
+          required
+        />
+        <MetadataTextArea
+          id="measurement-success-criteria"
+          label="Success criteria"
+          value={measurementGoalDraft.successCriteria}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              successCriteria: value,
+            }))
+          }
+          placeholder="Purchase conversion rate reaches the target with tracked checkout attribution"
+          required
+        />
+        <div className="metadata-asset-actions metadata-field-wide">
+          <button type="button" onClick={addMeasurementGoal}>
+            <Target className="size-4" />
+            Add goal
+          </button>
+          <button
+            type="button"
+            onClick={saveSelectedMeasurementGoalEdits}
+            disabled={!selectedMeasurementGoal}
+          >
+            <Target className="size-4" />
+            Save goal
+          </button>
+        </div>
+        <div className="metadata-asset-list metadata-field-wide">
+          {measurementGoals.length === 0 ? (
+            <span>No measurement goals</span>
+          ) : (
+            measurementGoals.map((goal) => (
+              <div key={goal.id} className="metadata-asset-row">
+                <strong>{goal.name}</strong>
+                <small>
+                  {goal.target ?? "No target"} {goal.unit} /{" "}
+                  {goal.reportingTimeframe.startsAt} to{" "}
+                  {goal.reportingTimeframe.endsAt}
+                </small>
+                <small>{goal.successCriteria}</small>
+                <button
+                  type="button"
+                  onClick={() => loadMeasurementGoalForEditing(goal)}
+                >
+                  <Target className="size-4" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeMeasurementGoal(goal.id)}
+                >
+                  <Trash2 className="size-4" />
+                  Remove
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </MetadataSection>
+
+      <MetadataSection title="Campaign JSON spec">
+        <MetadataJsonArea
+          id="campaign-spec-json"
+          label="Canonical spec"
+          value={campaignSpecJson}
+          onChange={updateCampaignSpecJson}
+          invalid={campaignSpecValidationErrors.length > 0}
+        />
+        {campaignSpecValidationErrors.length > 0 ? (
+          <div
+            className="metadata-validation-errors metadata-field-wide"
+            role="status"
+            aria-live="polite"
+          >
+            {campaignSpecValidationErrors.map((error) => (
+              <p key={`${error.path}-${error.code}`}>
+                <strong>{error.path}</strong>
+                <span>{error.message}</span>
+              </p>
+            ))}
+          </div>
+        ) : null}
+      </MetadataSection>
+
+      <MetadataSection title="Campaign assets">
+        <MetadataTextField
+          id="asset-title"
+          label="Asset title"
+          value={assetDraft.title}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              title: value,
+            }))
+          }
+          placeholder="Primary product shot"
+          required
+        />
+        <MetadataTextField
+          id="asset-uri"
+          label="Asset link"
+          value={assetDraft.uri}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              uri: value,
+            }))
+          }
+          placeholder="https://cdn.example.com/asset.jpg"
+        />
+        <MetadataSelect
+          id="asset-media-type"
+          label="Media type"
+          value={assetDraft.mediaType}
+          options={assetMediaTypeOptions}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              mediaType: value as CampaignAssetMediaType,
+            }))
+          }
+        />
+        <MetadataSelect
+          id="asset-usage"
+          label="Usage"
+          value={assetDraft.usage}
+          options={assetUsageOptions}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              usage: value as CampaignAssetUsage,
+            }))
+          }
+        />
+        <MetadataSelect
+          id="asset-status"
+          label="Status"
+          value={assetDraft.status}
+          options={assetStatusOptions}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              status: value as CampaignAssetStatus,
+            }))
+          }
+        />
+        <MetadataTextField
+          id="asset-rights-owner"
+          label="Rights owner"
+          value={assetDraft.rightsOwner}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              rightsOwner: value,
+            }))
+          }
+          placeholder="Brand, creator, or studio"
+          required
+        />
+        <MetadataTextField
+          id="asset-rights-license"
+          label="License"
+          value={assetDraft.rightsLicense}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              rightsLicense: value,
+            }))
+          }
+          placeholder="brand-owned"
+        />
+        <MetadataTextField
+          id="asset-rights-source-url"
+          label="Rights source"
+          value={assetDraft.rightsSourceUrl}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              rightsSourceUrl: value,
+            }))
+          }
+          placeholder="https://shop.example.com/product"
+        />
+        <MetadataTextArea
+          id="asset-alt-text"
+          label="Alt text"
+          value={assetDraft.altText}
+          onChange={(value) =>
+            setAssetDraft((currentDraft) => ({
+              ...currentDraft,
+              altText: value,
+            }))
+          }
+          placeholder="Describe the asset for generation and accessibility"
+        />
+        <div className="metadata-asset-actions metadata-field-wide">
+          <button type="button" onClick={addLinkedAsset}>
+            <Link2 className="size-4" />
+            Add link
+          </button>
+          <label>
+            <Upload className="size-4" />
+            Upload file
+            <input
+              type="file"
+              accept="image/*,video/*,audio/*,.pdf,.txt"
+              onChange={(event) =>
+                addUploadedAsset(event.target.files?.[0] ?? null)
+              }
+            />
+          </label>
+          <button
+            type="button"
+            onClick={loadSelectedAssetForEditing}
+            disabled={!selectedAsset}
+          >
+            <Undo2 className="size-4" />
+            Load selected
+          </button>
+          <button
+            type="button"
+            onClick={saveSelectedAssetEdits}
+            disabled={!selectedAsset}
+          >
+            <Sparkles className="size-4" />
+            Save edits
+          </button>
+          <button
+            type="button"
+            onClick={replaceSelectedLinkedAsset}
+            disabled={!selectedAsset}
+          >
+            <Link2 className="size-4" />
+            Replace link
+          </button>
+          <label className={!selectedAsset ? "disabled" : undefined}>
+            <Upload className="size-4" />
+            Replace file
+            <input
+              type="file"
+              accept="image/*,video/*,audio/*,.pdf,.txt"
+              disabled={!selectedAsset}
+              onChange={(event) =>
+                replaceSelectedUploadedAsset(event.target.files?.[0] ?? null)
+              }
+            />
+          </label>
+          <button
+            type="button"
+            onClick={removeSelectedAsset}
+            disabled={!selectedAsset}
+          >
+            <Trash2 className="size-4" />
+            Remove
+          </button>
+          <button
+            type="button"
+            onClick={archiveSelectedAsset}
+            disabled={!selectedAsset || selectedAsset.status === "archived"}
+          >
+            <Archive className="size-4" />
+            Archive
+          </button>
+        </div>
+        <div className="metadata-asset-list metadata-field-wide">
+          {assetSummaries.length === 0 ? (
+            <span>No campaign assets</span>
+          ) : (
+            assetSummaries.map((asset) => (
+              <button
+                key={asset.id}
+                type="button"
+                className={cn(
+                  "metadata-asset-row",
+                  activeAssetId === asset.id && "active",
+                )}
+                onClick={() => setSelectedAssetId(asset.id)}
+              >
+                <strong>{asset.title}</strong>
+                <small>
+                  {asset.source} / {asset.mediaType} / {asset.usage}
+                </small>
+                <small>
+                  {asset.status} / {asset.createdBy} / {asset.rightsOwner}
+                </small>
+              </button>
+            ))
+          )}
+        </div>
+        {selectedAsset ? (
+          <div className="metadata-asset-details metadata-field-wide">
+            <div>
+              <span>Status</span>
+              <strong>{selectedAsset.status ?? "draft"}</strong>
+            </div>
+            <div>
+              <span>URI</span>
+              <a href={selectedAsset.uri} target="_blank" rel="noreferrer">
+                {selectedAsset.uri}
+              </a>
+            </div>
+            <div>
+              <span>Rights</span>
+              <strong>
+                {selectedAsset.rights.owner} / {selectedAsset.rights.license || "No license"}
+              </strong>
+            </div>
+            {selectedAsset.rights.sourceUrl ? (
+              <div>
+                <span>Rights source</span>
+                <a
+                  href={selectedAsset.rights.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {selectedAsset.rights.sourceUrl}
+                </a>
+              </div>
+            ) : null}
+            <div>
+              <span>File</span>
+              <strong>
+                {selectedAsset.fileName || "Linked asset"}
+                {selectedAsset.mimeType ? ` / ${selectedAsset.mimeType}` : ""}
+                {selectedAsset.sizeBytes === null
+                  ? ""
+                  : ` / ${selectedAsset.sizeBytes} bytes`}
+              </strong>
+            </div>
+            {selectedAsset.altText ? (
+              <div>
+                <span>Alt text</span>
+                <p>{selectedAsset.altText}</p>
+              </div>
+            ) : null}
+            <div>
+              <span>Created</span>
+              <strong>
+                {selectedAsset.createdBy} / {selectedAsset.createdAt}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+      </MetadataSection>
+    </aside>
+  );
+}
+
+function MetadataSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="metadata-section">
+      <h2>{title}</h2>
+      <div className="metadata-field-grid">{children}</div>
+    </section>
+  );
+}
+
+function MetadataTextField({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+  type = "text",
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  type?: "text" | "number";
+}) {
+  return (
+    <label className="metadata-field" htmlFor={id}>
+      <span>
+        {label}
+        {required ? <em>Required</em> : null}
+      </span>
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function MetadataSelect({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="metadata-field" htmlFor={id}>
+      <span>{label}</span>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function MetadataTextArea({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="metadata-field metadata-field-wide" htmlFor={id}>
+      <span>
+        {label}
+        {required ? <em>Required</em> : null}
+      </span>
+      <textarea
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={3}
+      />
+    </label>
+  );
+}
+
+function MetadataJsonArea({
+  id,
+  label,
+  value,
+  onChange,
+  invalid,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  invalid?: boolean;
+}) {
+  return (
+    <label className="metadata-field metadata-field-wide" htmlFor={id}>
+      <span>{label}</span>
+      <textarea
+        id={id}
+        className="metadata-json-editor"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={12}
+        spellCheck={false}
+        aria-invalid={invalid ? "true" : "false"}
+      />
+    </label>
+  );
+}
+
 function AppSidebar() {
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex w-12 flex-col items-center bg-[#11101a] text-white">
+    <aside className="canvas-sidebar fixed inset-y-0 left-0 z-30 flex w-12 flex-col items-center bg-[#11101a] text-white">
       <div className="grid h-[53px] w-full place-items-center border-b border-white/10">
         <div className="grid size-8 place-items-center rounded-lg bg-white">
           <div className="grid size-6 place-items-center rounded-md bg-[#7c2cff] text-white">
@@ -127,20 +2353,43 @@ function AppSidebar() {
   );
 }
 
-function TopBar() {
+function TopBar({
+  campaignTitle,
+  onBackToDashboard,
+  onOpenReporting,
+}: {
+  campaignTitle: string;
+  onBackToDashboard?: () => void;
+  onOpenReporting?: () => void;
+}) {
   return (
-    <header className="fixed left-12 right-0 top-0 z-20 flex h-[53px] items-center justify-between border-b border-[#e6e1d7] bg-[#fbfaf7] px-7">
-      <div className="flex min-w-0 items-center gap-4 text-sm font-semibold text-[#6f687a]">
-        <ArrowLeft className="size-4" />
+    <header className="canvas-topbar fixed left-12 right-0 top-0 z-20 flex h-[53px] items-center justify-between border-b border-[#e6e1d7] bg-[#fbfaf7] px-7">
+      <div className="canvas-topbar-breadcrumbs flex min-w-0 items-center gap-4 text-sm font-semibold text-[#6f687a]">
+        <button
+          className="breadcrumb-icon-button"
+          type="button"
+          aria-label="Back to campaigns"
+          onClick={onBackToDashboard}
+        >
+          <ArrowLeft className="size-4" />
+        </button>
         <span>Campaigns</span>
         <span>/</span>
         <span className="max-w-[320px] truncate text-[#25212b]">
-          OwnCanvas · Launch creative pack
+          {campaignTitle}
         </span>
         <span>/</span>
         <span>Canvas</span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="canvas-topbar-actions flex items-center gap-2">
+        <button
+          className="topbar-button soft"
+          type="button"
+          onClick={onOpenReporting}
+        >
+          <Target className="size-4" />
+          Reporting
+        </button>
         <button className="topbar-button neutral" type="button">
           Save campaign
         </button>
@@ -172,8 +2421,8 @@ function FloatingToolbar({
   ];
 
   return (
-    <div className="fixed left-[76px] top-[66px] z-20 rounded-full border border-[#ebe6dc] bg-white p-2 shadow-[0_18px_40px_rgba(42,31,18,0.08)]">
-      <div className="flex flex-col items-center gap-2">
+    <div className="canvas-toolbar fixed left-[76px] top-[66px] z-20 rounded-full border border-[#ebe6dc] bg-white p-2 shadow-[0_18px_40px_rgba(42,31,18,0.08)]">
+      <div className="canvas-toolbar-inner flex flex-col items-center gap-2">
         {tools.map((tool) => (
           <button
             key={tool.id}
@@ -196,7 +2445,7 @@ function GenerationPalette({
   onAddBlock: (kind: GenerationBlockKind) => void;
 }) {
   return (
-    <section className="generation-palette" aria-label="Generation Palette">
+    <section className="generation-palette canvas-generation-palette" aria-label="Generation Palette">
       <div className="palette-header">
         <span className="palette-kicker">GENERATION PALETTE</span>
         <strong>Campaign blocks</strong>
@@ -230,7 +2479,7 @@ function GenerationPalette({
 
 function CanvasStatus({ visibleBlocks }: { visibleBlocks: number }) {
   return (
-    <div className="pointer-events-none fixed bottom-6 right-5 z-20 flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm shadow-[0_14px_34px_rgba(40,32,20,0.08)]">
+    <div className="canvas-status pointer-events-none fixed bottom-6 right-5 z-20 flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm shadow-[0_14px_34px_rgba(40,32,20,0.08)]">
       <span className="font-semibold text-[#2f2937]">Campaign draft</span>
       <span className="text-[#b6ad9e]">/</span>
       <span className="font-semibold text-[#6c6474]">Focus</span>
