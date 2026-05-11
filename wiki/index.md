@@ -12,6 +12,7 @@ OwnCanvas 위키의 내용 중심 색인이다. 작업자는 먼저 이 파일�
 
 ## Concepts
 
+- [커밋 범위 정책 | Commit Scope Policy](../docs/commit-scope-policy.md): Campaign core, UI, storage, plugin 변경을 작은 단위 커밋 제목으로 드러내는 규칙.
 - [위키 우선 에이전트 메모리 | Wiki-First Agent Memory](concepts/wiki-first-agent-memory.md): OwnCanvas의 기본 작업 기록을 `plans/`/`context/`에서 `wiki/` 중심으로 전환하는 운영 원칙.
 - [플러그인 확장 표현 | Plugin Extension Representation](concepts/plugin-extension-representation.md): 플러그인 타입별 역할을 공통 manifest, capability, port, configuration 모델로 확장하는 원칙.
 

@@ -2,6 +2,118 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-11] campaign-core-plugin-history-separation | Sub-AC 3.4.3
+
+- Campaign commit history에서 `campaign-core:` 계약 커밋과 `plugin:` 변경 커밋이 별도 커밋으로 드러나는지 검증하는 `assertCampaignCorePluginCommitHistoryIsSeparated()`를 추가했다.
+- 이 검증은 Campaign model contract 파일과 plugin adapter/provider/automation/extension 파일이 같은 커밋에 섞이면 실패하고, plugin 변경이 prior core 계약 커밋 뒤에 별도 `plugin:` 커밋으로 오는지 확인한다.
+- `docs/commit-scope-policy.md`에 커밋 히스토리 스캔만으로 core 계약 커밋과 plugin 커밋의 분리가 보여야 한다는 규칙을 보강했다.
+- 실제 `.git` index는 건드리지 않고 임시 index/object store에서 plugin 후보 커밋 `62c08562534bfec2ae26b639c1d7177779b52b9f`를 만들었고, 포함 파일이 plugin policy 파일 두 개뿐임을 확인했다. docs 보강은 별도 후보 커밋 `7f5677d5cbe3c9513a6b31ec9c77d8a218e08003`로 `docs/commit-scope-policy.md`만 포함함을 확인했다.
+- 검증: failing-first `node --experimental-strip-types --test app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, passing same command, all scope-policy `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts app/features/creative-canvas/model/campaign-core-verification-policy.ts`, `node --test scripts/check-commit-title.test.mjs`, `npm run commit:title -- "plugin: verify campaign core plugin history"`, `git diff --check`, temp index `git diff-tree --no-commit-id --name-only -r 62c08562534bfec2ae26b639c1d7177779b52b9f`, temp index `git diff-tree --no-commit-id --name-only -r 7f5677d5cbe3c9513a6b31ec9c77d8a218e08003`.
+
+## [2026-05-11] campaign-plugin-after-core-contract-commit | Sub-AC 3.4.2
+
+- Campaign plugin 관련 파일 변경이 prior `campaign-core:` 계약 커밋 뒤의 별도 `plugin:` 커밋에만 포함되도록 plugin adapter scope regression을 보강했다.
+- Creative-canvas adapter glue 중 `plugin` 문자열이 없는 provider, automation, extension adapter 파일도 plugin 변경으로 판정해 core 계약 커밋이나 선행 커밋에 섞이지 않게 했다.
+- `docs/commit-scope-policy.md`에 external provider, automation, extension, agent/plugin route adapter 변경은 core 계약 이후 별도 `plugin:` 커밋이어야 한다고 명시했다.
+- 실제 `.git` index는 건드리지 않고 임시 index/object store에서 core 계약 커밋 `5fe8e8d0dcaf6850d305f5fa36ae9d8050ba6acf` 뒤에 `plugin: adapt campaign provider contract` 후보 커밋 `9c8d6a31837874f7f8b8fe398e59bbc79657aa61`를 만들었고, 포함 파일이 plugin 정책 파일 두 개뿐이며 Campaign model 파일 매칭이 비어 있음을 확인했다.
+- 검증: failing-first `node --experimental-strip-types --test --test-name-pattern "provider automation and extension" app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, passing same command, `node --experimental-strip-types --test app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, all scope-policy `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts app/features/creative-canvas/model/campaign-core-verification-policy.ts`, `node --test scripts/check-commit-title.test.mjs`, `npm run commit:title -- "plugin: adapt campaign provider contract"`, `git diff --check`, temp index `git diff-tree --no-commit-id --name-only -r 9c8d6a31837874f7f8b8fe398e59bbc79657aa61`.
+
+## [2026-05-11] campaign-explainable-intermediate-states | AC 6
+
+- Campaign commit sequence가 giant one-shot diff 없이 각 중간 상태를 설명할 수 있도록 `assertCampaignCommitSequenceHasExplainableIntermediateStates()` regression을 추가했다.
+- 각 state는 단일 boundary, 독립 review 설명, 검증 명령, 다음 boundary를 반환하며 mixed Campaign areas는 “no explainable intermediate state” 오류로 거부한다.
+- `docs/commit-scope-policy.md`에 intermediate Campaign commit이 diff 없이 설명해야 하는 항목을 명시했다.
+- 검증: failing-first `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, passing same command.
+
+## [2026-05-11] campaign-core-leading-contract-files-only | Sub-AC 3.4.1
+
+- `createCampaignCoreContractCommitPlan()`과 `isCampaignCoreContractPath()`를 추가해 선행 `campaign-core:` 계약 커밋이 `app/features/creative-canvas/model/` Campaign model contract 파일과 focused model test만 포함하도록 명시했다.
+- `assertCampaignCoreContractCommitExistsFirst()`가 이제 같은 core-only 계약을 사용해 API route, UI component/page/style, storage/client, plugin adapter 파일이 섞인 core 계약 커밋을 거부한다.
+- `docs/commit-scope-policy.md`에 첫 Campaign contract commit에서 API/UI/storage/plugin/docs/tooling 파일을 제외한다고 보강했다.
+- 실제 `.git` index는 건드리지 않고 임시 index/object store에서 `campaign-core: keep leading contract files core-only` 후보 커밋 `de909e25789c8c44de3913db7b03c10bfedd5531`를 만들었고, 포함 파일이 model policy 파일 두 개뿐임을 확인했다.
+- 검증: failing-first `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, passing same command, all scope-policy `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/campaign-core-verification-policy.ts app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, `node --test scripts/check-commit-title.test.mjs`, `npm run commit:title -- "campaign-core: keep leading contract files core-only"`, `git diff --check`, temp index `git diff-tree --no-commit-id --name-only -r de909e25789c8c44de3913db7b03c10bfedd5531`.
+
+## [2026-05-11] campaign-storage-after-core-contract-commit | Sub-AC 3.3
+
+- Campaign storage 변경 커밋이 prior `campaign-core:` 계약 커밋 뒤에 별도 `storage:` 커밋으로 와야 한다는 전용 정책을 확인했다.
+- Storage scope는 creative-canvas client persistence surface, model persistence mapping, route storage/compatibility 파일만 허용하고, UI component/page, Campaign core model, plugin adapter 파일이 섞이면 실패한다.
+- `assertCampaignStorageCommitsFollowCoreContract()`가 storage-before-core, storage title 누락, mixed storage/plugin 파일을 거부해 storage 변경이 core 계약 이후의 별도 커밋에만 포함되도록 검증한다.
+- 실제 `.git` index는 건드리지 않고 임시 index/object store에서 `storage: persist campaign core contract mapping` 후보 커밋 `8d5ad55f30fa20fa5602b4d71f11ea3e37e033d9`를 만들었고, 포함 파일은 storage policy 파일 두 개뿐임을 확인했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts`, `npm run commit:title -- "storage: persist campaign core contract mapping"`, temp index `git diff-tree --no-commit-id --name-only -r 8d5ad55f30fa20fa5602b4d71f11ea3e37e033d9`.
+
+## [2026-05-11] campaign-plugin-adapter-separated-commit | Sub-AC 4.5
+
+- Campaign plugin adapter 변경은 `plugin:` 커밋으로만 분리하고 Campaign core model 변경을 포함하지 않는지 재검증했다.
+- Plugin adapter 정책 파일은 core 정책을 재정의하지 않고 `campaign-core-verification-policy`의 경로 분류 계약을 소비한다.
+- 실제 브랜치 index는 건드리지 않고 임시 index/object store에서 core 계약 커밋 `56a105eb7597a391901de8a8a99474ebb001d384` 뒤에 `plugin: separate campaign provider adapters` 커밋 객체 `6ecae2bd0022b5eb5baa1c96fcaa1d0a16a03783`를 만들었다.
+- `git diff-tree --no-commit-id --name-only -r 6ecae2bd0022b5eb5baa1c96fcaa1d0a16a03783` 결과가 plugin 정책 파일 두 개뿐이고 `app/features/creative-canvas/model/` 매칭이 비어 있음을 확인했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts app/features/creative-canvas/model/campaign-core-verification-policy.ts`, `node --test scripts/check-commit-title.test.mjs`, `node scripts/check-commit-title.mjs "plugin: separate campaign provider adapters"`, `git diff --check`.
+
+## [2026-05-11] campaign-ui-after-core-contract-commit | Sub-AC 3.2.2
+
+- Campaign UI 변경 커밋이 prior `campaign-core:` 계약 커밋 뒤에 별도 `ui:` 커밋으로 와야 한다는 전용 regression을 확장했다.
+- UI scope는 creative-canvas component뿐 아니라 Campaign page route rendering surface와 stylesheet 파일을 포함하고, API route contract, core model, storage, plugin 파일은 계속 거부한다.
+- `docs/commit-scope-policy.md`에 UI work가 core 계약 커밋 이후 별도 `ui:` 커밋이어야 한다는 규칙을 명시했다.
+- 실제 `.git` index는 건드리지 않고 임시 index/object store에서 `campaign-core: add first contract commit sequence` 후보 커밋 `eef856697461243629755adff01459c869acdf42` 뒤에 `ui: render campaign contract surfaces` 후보 커밋 `167d2f32c89f65b2ab787642155641149fb4b08d`를 만들었고, UI 후보 커밋에는 component policy 파일 두 개만 포함됨을 확인했다.
+- 검증: failing-first `node --experimental-strip-types --test app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts`, passing same command, all scope-policy `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/components/campaign-ui-commit-scope-policy.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/model/campaign-core-verification-policy.ts`, `npm run commit:title -- "ui: render campaign contract surfaces"`, temp index `git diff-tree --no-commit-id --name-only -r 167d2f32c89f65b2ab787642155641149fb4b08d`, `git diff --check`.
+
+## [2026-05-11] campaign-core-ui-free-contract-commit | Sub-AC 3.2.1
+
+- Campaign core 계약 커밋에 UI 관련 파일이 섞이지 않도록 `assertCampaignCoreContractCommitsAreUiFree()` regression coverage를 확장했다.
+- React component/UI page route뿐 아니라 stylesheet 파일도 `ui` 영역으로 분류해 `campaign-core:` 커밋에 `app/app.css` 같은 UI 파일이 포함되면 실패한다.
+- `docs/commit-scope-policy.md`에 core contract commit이 React surface, page layout route, stylesheet 파일을 포함하지 않는다는 규칙을 명시했다.
+- 검증: failing-first `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, passing same command, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/campaign-core-verification-policy.ts app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, all scope-policy `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, `npm run commit:title -- "campaign-core: reject presentation files in contract commits"`, temp index `git diff --cached --name-only` showed only the two model policy files, `git diff --check`.
+
+## [2026-05-11] campaign-api-route-commit-scope-policy | Sub-AC 4.2
+
+- Campaign route/API 변경을 `api:` 커밋으로 분리하기 위한 `campaign-core-route-scope-policy`를 정렬했다.
+- API scope는 `app/routes/api.campaign*.ts`와 focused Campaign API route contract test만 허용하고, page/UI route, Campaign core model, storage persistence/client, plugin adapter 파일이 섞이면 실패한다.
+- Regression coverage가 `campaign-reporting.tsx` 같은 UI page route와 `api.agent-plugins.ts` 같은 plugin adapter route를 API commit scope에서 제외한다.
+- 실제 `.git` index는 `index.lock` 권한 문제로 갱신하지 못해 브랜치 커밋은 만들지 못했다. 대신 임시 index/object directory에서 `api: separate campaign route contract scope` 커밋 객체 `edeb0c6112ddc840664d9d8292de722fdd815c62`를 생성했고, 포함 파일은 `app/routes/campaign-core-route-scope-policy.ts`, `app/routes/campaign-core-route-scope-policy.test.ts` 두 개뿐임을 확인했다.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-core-route-scope-policy.test.ts`, `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/routes/campaign-core-route-scope-policy.ts app/routes/campaign-core-route-scope-policy.test.ts`, `node --test scripts/check-commit-title.test.mjs`, `npm run commit:title -- "api: expose campaign completion blockers"`.
+
+## [2026-05-11] campaign-core-first-contract-commit-sequence | Sub-AC 3.1
+
+- `assertCampaignCoreContractCommitExistsFirst()`를 추가해 Campaign core 계약 커밋이 UI, storage, route/API, plugin consumer 커밋보다 먼저 존재해야 함을 model policy에서 검증한다.
+- Campaign core 계약 커밋은 `campaign-core:` 제목과 `app/features/creative-canvas/model/` 파일만 허용하며, consumer 파일이 섞이면 독립 커밋 위반으로 실패한다.
+- `docs/commit-scope-policy.md`에 첫 Campaign contract commit의 독립성과 downstream consumer 순서 규칙을 명시했다.
+- 실제 `.git` index 업데이트는 이전 실행과 같은 권한 제약을 피하기 위해 수행하지 않았고, 임시 index/object store로 `campaign-core: add first contract commit sequence` 후보 커밋 객체 `9f5a3605a6d614f73127d132d0a76ec0395089cb`가 두 model 파일만 포함함을 확인했다.
+- 검증: failing-first `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, passing same command, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/campaign-core-verification-policy.ts app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, all scope-policy `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, `npm run commit:title -- "campaign-core: add first contract commit sequence"`, temp index `git diff --cached --name-only`, temp object `git show --name-only 9f5a3605a6d614f73127d132d0a76ec0395089cb`.
+
+## [2026-05-11] campaign-core-focused-model-test-policy | AC 2
+
+- Campaign core 변경은 `campaign_core` model slice로 분류되고, 첫 검증 증거가 focused model test여야 한다는 정책을 `app/features/creative-canvas/model/campaign-core-verification-policy.ts`에 추가했다.
+- 정책 테스트는 core model path만 허용하고 route/UI/storage/plugin path가 섞이면 거부해 Campaign core 계약 변경이 다른 영역 변경과 같은 검증 단위로 섞이지 않게 한다.
+- 검증: failing-first `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, passing same command, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/campaign-core-verification-policy.ts app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`.
+
+## [2026-05-11] commit-title-scope-policy | AC 1
+
+- Campaign core, UI, storage, plugin, API, tests, docs, tooling 변경 범위가 커밋 제목 첫 토큰에 드러나도록 `docs/commit-scope-policy.md` 정책을 추가했다.
+- `scripts/check-commit-title.mjs`와 `npm run commit:title`을 추가해 `<scope>: <summary>` 형식, 단일 scope, 72자 제한을 검증하게 했다.
+- 검증: `npm run commit:title:test`; `npm run commit:title -- "campaign-core: add completion transition guard"`; `npm run commit:title -- "update campaign completion"` 실패 확인.
+
+## [2026-05-11] campaign-ui-commit-scope-policy | Sub-AC 4.2
+
+- Campaign UI 변경을 `ui:` 커밋으로 분리하기 위한 `campaign-ui-commit-scope-policy`를 추가했다.
+- UI scope는 creative-canvas 컴포넌트와 캠페인 page route 렌더링 표면만 허용하고, Campaign core model, API/core route contract, storage, plugin, docs 파일이 섞이면 실패한다.
+- Regression coverage가 component/UI 변경이 core model/route 변경과 같은 커밋에 들어가지 못하도록 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts`, `node --test scripts/check-commit-title.test.mjs`, `npm run commit:title -- "ui: separate campaign page rendering"`.
+
+## [2026-05-11] campaign-plugin-adapter-commit-scope-policy | Sub-AC 4.4
+
+- Campaign plugin adapter 변경을 `plugin:` 커밋으로 분리하기 위한 `campaign-plugin-adapter-commit-scope-policy`를 추가했다.
+- Plugin scope는 `app/features/plugins/`, creative-canvas plugin adapter glue, agent/plugin API route만 허용하고 Campaign core model, UI, storage, campaign API route, docs 파일이 섞이면 실패한다.
+- Regression coverage가 plugin adapter 변경이 core, UI, storage, API 변경과 같은 커밋에 들어가지 못하도록 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts app/routes/campaign-core-route-scope-policy.test.ts app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts app/features/creative-canvas/client/campaign-storage-commit-scope-policy.test.ts app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, `node --test scripts/check-commit-title.test.mjs`, `npm run commit:title -- "plugin: separate campaign provider adapters"`.
+
+## [2026-05-11] campaign-core-commit-scope-verification | Sub-AC 3.1
+
+- Campaign core 계약 변경을 `app/features/creative-canvas/model/` 아래 정책 파일과 focused model test로만 구성했다.
+- core verification policy는 Campaign core 변경 경로가 UI, storage, route, plugin, other 경로와 섞이면 실패하도록 분류한다.
+- 실제 `.git` 디렉터리는 macOS `com.apple.provenance` 권한으로 `index.lock` 생성이 막혀 브랜치 ref 업데이트는 수행하지 못했다.
+- 같은 index/object 흐름을 임시 object directory로 검증해 `campaign-core: add verification scope policy` 커밋 객체 `428093a346e805ce9318f6aa6401306e664ae864`가 두 model 파일만 포함함을 확인했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, temp index `git diff --cached --name-only`, temp object `git show --name-only 428093a346e805ce9318f6aa6401306e664ae864`.
+
 ## [2026-05-11] campaign-completion-action-structured-failure-reasons | Sub-AC 11.3.3
 
 - `updatePersistedCampaignRecord()` now throws `CampaignCompletionActionError` when a campaign completion action fails eligibility validation, preserving the existing error message while exposing structured `reasons` and `completionState`.
@@ -1639,3 +1751,25 @@
 - Regression coverage verifies model validation and API completion rejection keep the campaign in draft when a completed improvement uses measurement results but omits the required criteria link.
 - 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-api.test.ts`, focused `npx tsc --noEmit ...`, `npm run build`.
 - 참고: `npm run build` still prints the known nested `dndnFE/expo-webview` missing `expo/tsconfig.base` warning, but exits 0.
+
+## [2026-05-11] campaign-ui-core-contract-commit-order | Sub-AC 2.2
+
+- Campaign UI commit scope policy now consumes the Campaign core verification policy when validating commit sequences.
+- UI commits must use `ui:`, remain limited to UI surfaces, and appear after a prior `campaign-core:` contract commit without mixing Campaign core model files.
+- The sequence check also rejects later Campaign core contract commits after UI commits in the same review sequence, keeping Campaign core first.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/campaign-ui-commit-scope-policy.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, focused `npx tsc --noEmit ...`.
+
+## [2026-05-11] campaign-plugin-core-contract-commit-order | Sub-AC 3.4
+
+- Campaign plugin adapter commit scope policy now validates commit sequence as well as file scope.
+- Plugin commits must use `plugin:`, remain limited to provider/automation/plugin glue, and appear after a prior independent `campaign-core:` contract commit.
+- The sequence check rejects plugin commits before core and mixed Campaign core/plugin commits, preserving the Campaign core contract boundary.
+- 실제 `.git` index는 건드리지 않고 임시 index/object store에서 `campaign-core: add first contract sequence` 커밋 객체 `c962d3c9497da44621d5ca1c8eb4b4a60c794d1b`를 부모로 하는 `plugin: enforce campaign adapter commit order` 커밋 객체 `3363745ae50d13bcf471f78a8748441d8eaa31a5`를 생성했다. Plugin commit diff는 plugin 정책 파일 두 개뿐임을 `git show --name-only`로 확인했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/campaign-plugin-adapter-commit-scope-policy.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, `npm run commit:title:test`.
+
+## [2026-05-11] campaign-revertible-commit-units | AC 5
+
+- Campaign commit sequence policy now exposes `createRevertibleCampaignCommitPlan()` so each Campaign-related commit maps to exactly one revert unit: `campaign_core`, `route`, `ui`, `storage`, or `plugin`.
+- The revert plan rejects commits that mix Campaign boundaries and rejects title scopes that do not match the changed area, preserving `git revert <commit>` as a one-boundary operation.
+- Commit scope docs now state the revert rule explicitly for reviewers.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, `git diff --check`.

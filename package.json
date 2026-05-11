@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "react-router build",
+    "commit:title": "node scripts/check-commit-title.mjs",
+    "commit:title:test": "node --test scripts/check-commit-title.test.mjs",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "skills:check": "node scripts/check-skills.mjs",
