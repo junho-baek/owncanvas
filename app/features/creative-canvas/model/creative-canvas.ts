@@ -4926,7 +4926,7 @@ const generationBlockDefinitions = {
       { label: "MODEL", value: "OpenAI / Replicate / Freepik-style provider", state: "BYO" },
       { label: "OUTPUT", value: "Image assets + metadata + cost usage", state: "READY" },
     ],
-    properties: createImageGenerationNodeProperties(),
+    properties: createImageGenerationNodeProperties({ providerId: "freepik-compatible" }),
   },
   video: {
     kind: "video",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import {
   applyEdgeChanges,
   applyNodeChanges,
@@ -85,6 +85,7 @@ import {
   type CampaignAssetMediaType,
   type CampaignAssetStatus,
   type CampaignAssetUsage,
+  type CampaignCanvasBlock,
   type CampaignLandingPageConversionElementConfiguration,
   type CampaignLandingPageConversionElementPlacement,
   type CampaignLandingPageBehaviorMode,
@@ -2505,31 +2506,38 @@ function GenerationBlockNode({
     ? data.properties
     : null;
 
-  return (
-    <article
-      className={cn(
-        "generation-node",
-        data.tone,
-        imageGeneration && "image-generation-node",
-        selected && "selected",
-      )}
-    >
-      {imageGeneration === null ? (
-        <>
-          <Handle
-            type="target"
-            position={Position.Left}
-            className={cn("canvas-handle", `${data.tone}-handle`)}
-          />
-          <Handle
-            type="source"
-            position={Position.Right}
-            className={cn("canvas-handle", `${data.tone}-handle`)}
-          />
-        </>
-      ) : (
+  if (imageGeneration) {
+    return (
+      <article
+        className={cn(
+          "generation-node",
+          data.tone,
+          "image-generation-node",
+          selected && "selected",
+        )}
+      >
         <ImageGenerationPortHandles imageGeneration={imageGeneration} tone={data.tone} />
-      )}
+        <FreepikReferenceImageNode
+          data={data}
+          details={imageGeneration}
+          Icon={Icon}
+        />
+      </article>
+    );
+  }
+
+  return (
+    <article className={cn("generation-node", data.tone, selected && "selected")}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        className={cn("canvas-handle", `${data.tone}-handle`)}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className={cn("canvas-handle", `${data.tone}-handle`)}
+      />
 
       <header className="generation-node-header">
         <span className={cn("generation-node-icon", data.tone)}>
@@ -2559,15 +2567,109 @@ function GenerationBlockNode({
         ))}
       </div>
 
-      {imageGeneration ? <ImageGenerationNodeDetails details={imageGeneration} /> : null}
-
       <footer className="generation-node-footer">
-        <span>{imageGeneration ? `Batch x${imageGeneration.batchCount} · MVP fixed` : "BYO provider"}</span>
+        <span>BYO provider</span>
         <button className="run-button" type="button">
-          {imageGeneration ? "Queue mock run" : "Run block"}
+          Run block
         </button>
       </footer>
     </article>
+  );
+}
+
+const freepikPreviewThumbs = [
+  "/assets/image-node/freepik-preview-1.jpg",
+  "/assets/image-node/freepik-preview-2.jpg",
+  "/assets/image-node/freepik-preview-3.jpg",
+  "/assets/image-node/freepik-preview-4.jpg",
+  "/assets/image-node/freepik-preview-5.jpg",
+] as const;
+
+function FreepikReferenceImageNode({
+  data,
+  details,
+  Icon,
+}: {
+  data: CampaignCanvasBlock;
+  details: ImageGenerationNodeProperties;
+  Icon: ComponentType<{ className?: string }>;
+}) {
+  const activeProvider = details.providerPresets.find(
+    (provider) => provider.providerId === details.providerId,
+  );
+  return (
+    <div className="freepik-node-shell">
+      <header className="freepik-node-header">
+        <span className="freepik-node-icon">
+          <Icon className="size-4" />
+        </span>
+        <div className="freepik-node-title">
+          <span>Image generator</span>
+          <strong>{activeProvider?.label ?? "Freepik-style"}</strong>
+        </div>
+        <span className="freepik-node-status">{data.status}</span>
+      </header>
+
+      <div className="freepik-node-body">
+        <section className="freepik-control-panel" aria-label="Freepik-style image controls">
+          <div className="freepik-prompt-box" role="textbox" aria-label="Prompt" aria-readonly="true">
+            <span>Prompt</span>
+            <strong>Describe the image you want to create...</strong>
+            <em>Connected from text block</em>
+          </div>
+
+          <button className="freepik-reference-row" type="button">
+            <span>Reference</span>
+            <strong>Drop image</strong>
+            <em>optional</em>
+          </button>
+
+          <div className="freepik-option-group">
+            <span>Style</span>
+            <div>
+              <button type="button">Photo</button>
+              <button type="button">Product</button>
+              <button type="button">Campaign</button>
+            </div>
+          </div>
+
+          <div className="freepik-option-grid">
+            <button type="button">
+              <small>Model</small>
+              <strong>{activeProvider?.label ?? details.providerId}</strong>
+            </button>
+            <button type="button">
+              <small>Aspect</small>
+              <strong>1:1</strong>
+            </button>
+            <button type="button">
+              <small>Images</small>
+              <strong>x{details.batchCount}</strong>
+            </button>
+            <button type="button">
+              <small>Mode</small>
+              <strong>Fast</strong>
+            </button>
+          </div>
+
+          <button className="freepik-generate-button" type="button">
+            Generate
+          </button>
+        </section>
+
+        <section className="freepik-preview-panel" aria-label="Generated image previews">
+          <div className="freepik-preview-toolbar">
+            <span>Generated images</span>
+            <strong>{details.batchCount} results</strong>
+          </div>
+          <div className="freepik-preview-grid">
+            {freepikPreviewThumbs.slice(0, details.batchCount).map((src, index) => (
+              <img key={src} src={src} alt={`Generated preview ${index + 1}`} />
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -2608,52 +2710,6 @@ function ImageGenerationPortHandles({
         />
       ))}
     </>
-  );
-}
-
-function ImageGenerationNodeDetails({
-  details,
-}: {
-  details: ImageGenerationNodeProperties;
-}) {
-  const activeProvider = details.providerPresets.find(
-    (provider) => provider.providerId === details.providerId,
-  );
-
-  return (
-    <section className="image-generation-details" aria-label="Image generation node contract">
-      <div className="image-generation-summary">
-        <span>Provider-agnostic core</span>
-        <strong>Active provider · {activeProvider?.label ?? details.providerId}</strong>
-      </div>
-      <div className="image-generation-port-grid">
-        <div>
-          <span className="image-generation-port-title">Inputs</span>
-          {details.inputs.map((port) => (
-            <span key={port.id} className="image-generation-port-chip input">
-              {port.label}
-            </span>
-          ))}
-        </div>
-        <div>
-          <span className="image-generation-port-title">Outputs</span>
-          {details.outputs.map((port) => (
-            <span key={port.id} className="image-generation-port-chip output">
-              {port.label}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div className="image-generation-storage-row">
-        <span>JSON source of truth</span>
-        <strong>
-          {details.storage.canvasJsonPath} · {details.storage.assetDirectory} · {details.storage.runHistory}
-        </strong>
-      </div>
-      <p className="image-generation-secret-note">
-        Secrets stay in env/local secret store. canvas.json only stores provider id, ports, prompts, refs, and run refs.
-      </p>
-    </section>
   );
 }
 

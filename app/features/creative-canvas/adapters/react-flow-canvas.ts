@@ -151,7 +151,9 @@ export function createGenerationFlowNode(
   kind: GenerationBlockKind,
   index: number,
 ): CreativeFlowNode {
-  return toFlowNode(createCampaignBlock(kind, index));
+  const position = kind === "image" ? { x: 220, y: 140 + Math.max(index - 1, 0) * 40 } : undefined;
+
+  return toFlowNode(createCampaignBlock(kind, index, position));
 }
 
 function toFlowNode(block: CampaignCanvasBlock): CreativeFlowNode {
