@@ -1,0 +1,196 @@
+metadata:
+  id: seed_image_generation_node_port_affordance_fix
+  title: Fix Image Generation Node Connection Affordances
+  kind: implementation_seed
+  created_for: OwnCanvas Image Block Spaces-style node correction
+  repository: /tmp/owncanvas-image-node
+  branch: main
+  approval_gate: screenshot_before_commit_or_push
+
+goal: >
+  Correct the OwnCanvas Image Block UI so connection affordances match the provided
+  Spaces-style image generation node specification. Remove the default-looking
+  circular edge handles from the selected node border. The connection points must be
+  represented by the floating left-side T/text and image/reference controls, plus the
+  right-side output affordance, not by generic circles attached to the blue outline.
+
+constraints:
+  - Do not convert the node back into a page-like generator.
+  - Do not add preview grids.
+  - Do not show JSON, secrets, storage, provider debugging, or technical schema text in the visible node UI.
+  - Do not commit.
+  - Do not push.
+  - Preserve existing seed/plan files and existing compact node direction.
+  - Preserve source-of-truth model fields for aspectRatio and frame.
+  - Preserve resize behavior and selected-state blue outline.
+  - API keys, tokens, passwords, connection strings, and secret values must not be added anywhere.
+  - The blue outline is selection feedback only; it must not carry visible circular connection dots.
+  - Line connections must visually attach to floating affordances, not random border dots.
+
+context:
+  product: OwnCanvas creative canvas
+  component: Image Block / owncanvas.image-generation.v1
+  current_state:
+    - The Image Block has already been redesigned from a page-like generator into a Spaces-style canvas node.
+    - Browser visual review passed except the user identified incorrect circular connection dots on the node border.
+    - Those dots came from React Flow Handle rendering on the node edge.
+    - The user clarified that line connections should attach to the floating T/text and image affordances, not border dots.
+  user_correction: >
+    The blue outline is only selection feedback. The border should not show circular connection dots.
+    Input connections should be visually attached to the floating T/text and image controls.
+    The output connection should be a floating output affordance, not a generic border dot.
+
+target_files:
+  likely:
+    - app/features/creative-canvas/components/creative-canvas-screen.tsx
+    - app/app.css
+  maybe:
+    - app/features/creative-canvas/adapters/react-flow-canvas.ts
+    - app/features/creative-canvas/model/image-generation-node.ts
+    - app/features/creative-canvas/model/image-generation-node.test.ts
+
+ontology_schema:
+  name: ImageGenerationNodeConnectionAffordance
+  description: >
+    UI model for connection affordances on a Spaces-style image generation node.
+    It distinguishes selection outline, visible floating connection affordances,
+    real React Flow handles, and resize affordances.
+  fields:
+    - name: selected_outline
+      type: visual_state
+      description: Blue card outline shown only when the node is selected.
+    - name: prompt_input_affordance
+      type: floating_connection_control
+      description: Left-side T/text affordance that visually owns the prompt input connection target.
+    - name: reference_image_affordance
+      type: floating_connection_control
+      description: Left-side image affordance that visually owns the reference image connection target.
+    - name: generated_output_affordance
+      type: floating_connection_control
+      description: Right-side affordance that visually owns the generated image output source.
+    - name: react_flow_handle
+      type: implementation_detail
+      description: Real connectable Handle element, hidden or embedded so it aligns with the visible floating affordance.
+    - name: resize_handle
+      type: resize_affordance
+      description: Lower-right resize affordance, distinct from connection controls.
+
+requirements:
+  visual:
+    - The selected image node keeps a blue outline around the card.
+    - No generic circular React Flow handle dots appear on the blue outline or card border.
+    - The left floating T/text affordance visually represents the prompt/text input connection.
+    - The left floating image/reference affordance visually represents the reference image connection.
+    - The right output affordance visually represents the generated image output connection.
+    - Connection affordances may be small floating pills/buttons/icons, but must not look like accidental border dots.
+    - The resize handle remains visible at the lower-right corner when selected.
+    - Top-right floating action toolbar remains visible.
+    - Bottom chips remain visible: x1, model selector, 16:9, 1K, settings.
+    - Bottom-right circular run button remains visible.
+    - The node still reads as a compact canvas node, not a page.
+  interaction:
+    - React Flow connections should still have real Handle targets/sources if needed.
+    - If React Flow Handle elements are required for functionality, visually integrate or hide them inside/behind the floating affordance controls.
+    - The clickable/connectable area should correspond to the floating T/text, image/reference, and output affordances.
+    - Do not leave invisible handles in places that make connection behavior feel detached from the visible affordance.
+    - Do not break node selection, dragging, resizing, or button click behavior.
+  implementation:
+    - Replace or reposition ImageGenerationPortHandles so their handles align with the floating affordances.
+    - Prefer embedding the real Handle elements inside the floating affordance containers.
+    - Remove standalone .image-port-handle circles from the card border.
+    - Add clear class names for prompt floating connection affordance, reference image floating connection affordance, and output floating connection affordance.
+    - Keep metadata/cost_usage/style_template_vars as model-level ports if needed, but do not render them as visible connection dots in this UI.
+    - Ensure selected state is still what controls blue outline visibility.
+
+acceptance_criteria:
+  - "AC1: Browser screenshot shows zero circular connection dots sitting directly on the selected blue border."
+  - "AC2: Browser screenshot shows the left floating T/text affordance as the visible prompt/text input connection control."
+  - "AC3: Browser screenshot shows the left floating image/reference affordance as the visible reference image connection control."
+  - "AC4: Browser screenshot shows a right-side floating output affordance as the visible output connection control."
+  - "AC5: The node still shows label 이미지 생성기 #1."
+  - "AC6: The node still shows top-right floating action toolbar."
+  - "AC7: The node still shows large prompt area."
+  - "AC8: The node still shows bottom chips x1, model, 16:9, 1K, settings."
+  - "AC9: The node still shows bottom-right circular run button."
+  - "AC10: The node still shows lower-right resize handle."
+  - "AC11: No preview grid is visible."
+  - "AC12: No JSON/secrets/storage/debug copy is visible."
+  - "AC13: npm run typecheck passes."
+  - "AC14: npm run build passes."
+  - "AC15: node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts passes."
+  - "AC16: git diff --check passes."
+  - "AC17: Browser console has no new JS errors or React warnings."
+  - "AC18: Codex read-only diff review returns PASS for the corrected connection affordance design."
+
+evaluation_principles:
+  - name: visual_fidelity_to_user_correction
+    weight: 0.4
+    description: No border dots; floating controls are the visible connection affordances.
+  - name: preserve_existing_spaces_node
+    weight: 0.25
+    description: Keep the current compact Spaces-style node structure and do not regress to page UI.
+  - name: interaction_integrity
+    weight: 0.2
+    description: Selection, dragging, resizing, and connectable handle behavior remain coherent.
+  - name: build_quality
+    weight: 0.15
+    description: Tests, typecheck, build, diff check, and console checks pass.
+
+verification_plan:
+  commands:
+    - node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts
+    - npm run typecheck
+    - npm run build
+    - git diff --check
+  browser:
+    - Start dev server with npm run dev -- --host 127.0.0.1.
+    - Open http://127.0.0.1:5173/.
+    - Create a blank campaign.
+    - Add Image Block.
+    - Capture screenshot of selected image node.
+    - Verify no border connection dots remain.
+    - Verify floating T/image/output affordances are the visible connection points.
+    - Verify browser console has no warnings/errors.
+  review:
+    - Run Codex in read-only review mode against the diff.
+    - Prompt Codex explicitly: Do not evaluate as an image generator page. Evaluate only whether connection affordances match the provided Spaces-style node spec.
+
+execution_instructions: |
+  Implement this seed exactly.
+
+  Critical correction:
+  The current selected Image Block still shows generic circular React Flow handle dots on the blue node border. That is wrong.
+  The blue border is selection feedback only.
+  Connection affordances must be represented by the floating left-side T/text and image/reference controls, and a right-side output affordance.
+  If React Flow Handle elements are required, embed/reposition/style them so the connectable area corresponds to those floating affordances, not random border dots.
+
+  Do not redesign the whole node.
+  Do not turn it into a page.
+  Do not add preview grids.
+  Do not show JSON/secrets/storage/debug copy.
+  Preserve selected outline, top toolbar, prompt area, bottom chips, run button, resize handle, aspect/frame model, and tests.
+  Do not commit.
+  Do not push.
+
+  After implementation, run:
+  - node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts
+  - npm run typecheck
+  - npm run build
+  - git diff --check
+
+exit_conditions:
+  - name: acceptance_criteria_satisfied
+    description: Implementation satisfies all acceptance criteria.
+    criteria: All AC1 through AC18 are satisfied.
+  - name: verification_commands_pass
+    description: Tests/build/diff checks pass.
+    criteria: The specified test, typecheck, build, and diff check commands exit 0.
+  - name: browser_screenshot_confirms_design
+    description: Browser screenshot confirms the corrected affordance design.
+    criteria: Screenshot shows no border dots and shows floating connection affordances.
+  - name: codex_review_passes
+    description: Codex read-only review passes.
+    criteria: Codex returns PASS with no blocking issues.
+  - name: user_approval_gate_preserved
+    description: Stop before commit or push until the user approves the screenshot.
+    criteria: No commit or push is performed during execution.

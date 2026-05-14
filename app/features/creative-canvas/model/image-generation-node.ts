@@ -34,11 +34,21 @@ export type ImageGenerationStorageContract = {
   secretPolicy: "env-or-local-secret-store-only";
 };
 
+export type ImageGenerationAspectRatio = "16:9" | "9:16" | "1:1";
+
+export type ImageGenerationFrame = {
+  width: number;
+  height: number;
+  resizeMode: "locked-aspect-ratio";
+};
+
 export type ImageGenerationNodeProperties = {
   nodeType: typeof IMAGE_GENERATION_NODE_TYPE;
   providerAgnostic: true;
   providerId: ImageGenerationProviderPreset["providerId"];
   batchCount: 1 | 2 | 3 | 4 | 5;
+  aspectRatio: ImageGenerationAspectRatio;
+  frame: ImageGenerationFrame;
   inputs: ImageGenerationNodePort[];
   outputs: ImageGenerationNodePort[];
   providerPresets: ImageGenerationProviderPreset[];
@@ -126,13 +136,22 @@ export const imageGenerationProviderPresets = [
 ] as const satisfies readonly ImageGenerationProviderPreset[];
 
 export function createImageGenerationNodeProperties(
-  input: Partial<Pick<ImageGenerationNodeProperties, "providerId" | "batchCount">> = {},
+  input: Partial<
+    Pick<
+      ImageGenerationNodeProperties,
+      "providerId" | "batchCount" | "aspectRatio" | "frame"
+    >
+  > = {},
 ): ImageGenerationNodeProperties {
+  const aspectRatio = input.aspectRatio ?? "16:9";
+
   return {
     nodeType: IMAGE_GENERATION_NODE_TYPE,
     providerAgnostic: true,
     providerId: input.providerId ?? "openai-image",
-    batchCount: input.batchCount ?? 5,
+    batchCount: input.batchCount ?? 1,
+    aspectRatio,
+    frame: input.frame ?? createImageGenerationFrame(aspectRatio),
     inputs: imageGenerationInputPorts.map((port) => ({ ...port })),
     outputs: imageGenerationOutputPorts.map((port) => ({ ...port })),
     providerPresets: imageGenerationProviderPresets.map((preset) => ({ ...preset })),
@@ -148,6 +167,20 @@ export function createImageGenerationNodeProperties(
       costUsageRunId: null,
     },
   };
+}
+
+export function createImageGenerationFrame(
+  aspectRatio: ImageGenerationAspectRatio,
+): ImageGenerationFrame {
+  if (aspectRatio === "9:16") {
+    return { width: 360, height: 640, resizeMode: "locked-aspect-ratio" };
+  }
+
+  if (aspectRatio === "1:1") {
+    return { width: 480, height: 480, resizeMode: "locked-aspect-ratio" };
+  }
+
+  return { width: 640, height: 360, resizeMode: "locked-aspect-ratio" };
 }
 
 export function isImageGenerationNodeProperties(

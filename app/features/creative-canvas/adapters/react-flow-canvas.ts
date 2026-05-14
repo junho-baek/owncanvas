@@ -13,6 +13,10 @@ import {
   type CampaignSpecJsonEditValidationError,
   type GenerationBlockKind,
 } from "../model/creative-canvas.ts";
+import {
+  createImageGenerationFrame,
+  isImageGenerationNodeProperties,
+} from "../model/image-generation-node.ts";
 
 export type CreativeFlowNode = Node<
   CampaignCanvasBlock & Record<string, unknown>
@@ -110,11 +114,26 @@ export function toCreativeFlowEdges(
 export function toCampaignCanvasBlocks(
   nodes: CreativeFlowNode[],
 ): CampaignCanvasBlock[] {
-  return nodes.map((node) => ({
-    ...node.data,
-    id: node.id,
-    position: node.position,
-  }));
+  return nodes.map((node) => {
+    const data = node.data;
+    const properties = isImageGenerationNodeProperties(data.properties)
+      ? {
+          ...data.properties,
+          frame: {
+            ...data.properties.frame,
+            width: node.width ?? data.properties.frame.width,
+            height: node.height ?? data.properties.frame.height,
+          },
+        }
+      : data.properties;
+
+    return {
+      ...data,
+      id: node.id,
+      position: node.position,
+      ...(properties === undefined ? {} : { properties }),
+    };
+  });
 }
 
 export function toCampaignCanvasEdges(
@@ -157,11 +176,17 @@ export function createGenerationFlowNode(
 }
 
 function toFlowNode(block: CampaignCanvasBlock): CreativeFlowNode {
+  const properties = block.properties;
+  const frame = isImageGenerationNodeProperties(properties)
+    ? properties.frame ?? createImageGenerationFrame(properties.aspectRatio)
+    : null;
+
   return {
     id: block.id,
     type: "generation",
     position: block.position,
     data: block,
+    ...(frame === null ? {} : { width: frame.width, height: frame.height }),
   };
 }
 

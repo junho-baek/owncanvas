@@ -20,6 +20,12 @@ test("image generation node exposes provider-agnostic ports, batch limit, storag
   assert.equal(properties.providerAgnostic, true);
   assert.equal(properties.providerId, "replicate");
   assert.equal(properties.batchCount, 5);
+  assert.equal(properties.aspectRatio, "16:9");
+  assert.deepEqual(properties.frame, {
+    width: 640,
+    height: 360,
+    resizeMode: "locked-aspect-ratio",
+  });
   assert.deepEqual(
     properties.inputs.map((port) => port.id),
     ["prompt", "reference_image", "style_template_vars"],

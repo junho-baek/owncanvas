@@ -1,0 +1,83 @@
+id: seed_image_generation_node_space_ui
+version: 1
+kind: implementation_seed
+name: Image Generation Node Spaces UI Redesign
+summary: >
+  Replace the incorrect page-like image generator node with a Freepik Spaces-style
+  canvas node: a resizable prompt composer block with aspect-ratio-aware frame,
+  compact bottom controls, floating action bar, input/reference/output ports, and
+  no internal preview grid.
+
+context:
+  repo: junho-baek/owncanvas
+  cwd: /tmp/owncanvas-image-node
+  existing_problem: >
+    The current Image Block was redesigned as a full image generator page/card with
+    left settings and right preview grid. The user clarified the reference is a
+    node inside a canvas, not a page. The node should look like the provided UI
+    specification image.
+  reference_traits:
+    - white dotted canvas surface
+    - selected image-generation node with blue outline
+    - node header above card with image icon and label "이미지 생성기 #1"
+    - floating action bar above top-right: run, connection, delete, more
+    - large blank prompt input area inside node
+    - placeholder copy: "어떤 이미지를 생성하고 싶은지 설명해주세요..."
+    - compact bottom settings chips inside node
+    - chips include count x1, model "Google Nano Ban...", aspect ratio selector 16:9, quality/resolution 1K, settings gear
+    - circular run/play button at node bottom-right
+    - left input port for text/style connection
+    - left lower reference-image attachment port
+    - right output port for passing result to next node
+    - empty canvas connection affordance for creating next nodes
+    - focus/resize/drag interactions are part of node behavior
+
+constraints:
+  - Do not make the node look like a full generator page.
+  - Do not include an internal generated-image preview grid in the image generator node.
+  - Do not show JSON paths, secrets policy, runs paths, metadata, cost usage, or provider env var names in the visible node UI.
+  - Keep provider/secrets/storage details in model/docs/tests only.
+  - Preserve JSON/source-of-truth data model semantics.
+  - Do not commit or push before the user sees the final UI capture and approves.
+  - Keep current repo branch main but leave changes uncommitted until approval.
+
+implementation_requirements:
+  - Component should render Image Block as a compact Spaces-style canvas node.
+  - Use aspect-ratio-aware sizing:
+      supported_ratios:
+        - "16:9"
+        - "9:16"
+        - "1:1"
+      default_ratio: "16:9"
+      default_16_9_size: { width: 640, height: 360 }
+      behavior: >
+        The aspect ratio selector changes the node/frame shape. Resize should be
+        possible via a bottom-right handle; default resize should respect the
+        selected ratio unless a future free-resize mode is implemented.
+  - Add/represent node size metadata in the image generation node model or canvas block properties if not already present.
+  - The UI must show a resize handle affordance at bottom-right.
+  - The node's bottom controls must fit inside the node and wrap gracefully for narrower sizes.
+  - If React Flow NodeResizer/NodeResizeControl is available in the project, use it. Otherwise implement a visual resize affordance and persist size fields for later wiring.
+  - Remove newly-added static preview image assets from the node implementation if they are no longer needed.
+
+acceptance_criteria:
+  - The Image Block is visually a canvas node prompt composer, not a page-like generator panel.
+  - The visible node matches the provided UI spec: header, floating action bar, prompt area, bottom chips, run button, ports, selection outline, resize affordance.
+  - Aspect ratio state is present and drives the visible node shape for at least 16:9 default.
+  - Tests/typecheck/build pass.
+  - Browser visual review passes against the provided spec image before asking user approval.
+  - Codex read-only design review explicitly checks against "Spaces node, not generator page" and reports no blocking issues.
+  - No commit/push occurs until after user sees UI capture.
+
+verification_commands:
+  - node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts
+  - npm run typecheck
+  - npm run build
+  - git diff --check
+
+deliverables_before_commit:
+  - local URL
+  - screenshot path with MEDIA attachment
+  - concise PASS/FAIL summary from browser visual review
+  - Codex design review result
+  - list of changed files

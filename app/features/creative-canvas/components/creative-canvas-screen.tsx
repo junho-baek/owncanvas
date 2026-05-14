@@ -6,6 +6,7 @@ import {
   Background,
   BackgroundVariant,
   Handle,
+  NodeResizer,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -27,6 +28,7 @@ import {
   Hand,
   ImageIcon,
   Link2,
+  Maximize2,
   MessageSquare,
   Mic2,
   MousePointer2,
@@ -85,7 +87,6 @@ import {
   type CampaignAssetMediaType,
   type CampaignAssetStatus,
   type CampaignAssetUsage,
-  type CampaignCanvasBlock,
   type CampaignLandingPageConversionElementConfiguration,
   type CampaignLandingPageConversionElementPlacement,
   type CampaignLandingPageBehaviorMode,
@@ -279,6 +280,7 @@ export function CreativeCanvasScreen({
   );
   const [edges, setEdges] = useEdgesState<CreativeFlowEdge>(initialEdges);
   const [activeTool, setActiveTool] = useState("select");
+  const selectedNodeIdRef = useRef<string | null>(null);
   const campaignRef = useRef(campaign);
   const canvasSnapshotRef = useRef<{
     nodes: CreativeFlowNode[];
@@ -302,8 +304,12 @@ export function CreativeCanvasScreen({
       return;
     }
 
+    const nextNodes = toCreativeFlowNodes(campaign.canvasState.nodes).map((node) => ({
+      ...node,
+      selected: node.id === selectedNodeIdRef.current,
+    }));
     canvasSnapshotRef.current = {
-      nodes: toCreativeFlowNodes(campaign.canvasState.nodes),
+      nodes: nextNodes,
       edges: toCreativeFlowEdges(campaign.canvasState.edges),
     };
     setNodes(canvasSnapshotRef.current.nodes);
@@ -336,9 +342,20 @@ export function CreativeCanvasScreen({
   }, [onCampaignChange]);
 
   const handleNodesChange = (changes: NodeChange<CreativeFlowNode>[]) => {
+    const selectedChange = changes.find(
+      (change): change is Extract<NodeChange<CreativeFlowNode>, { type: "select" }> =>
+        change.type === "select" && change.selected,
+    );
+
+    if (selectedChange) {
+      selectedNodeIdRef.current = selectedChange.id;
+    }
+
     setNodes((currentNodes) => {
       const nextNodes = applyNodeChanges(changes, currentNodes);
-      updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
       return nextNodes;
     });
   };
@@ -346,19 +363,25 @@ export function CreativeCanvasScreen({
   const handleEdgesChange = (changes: EdgeChange[]) => {
     setEdges((currentEdges) => {
       const nextEdges = applyEdgeChanges(changes, currentEdges);
-      updateCampaignCanvas(canvasSnapshotRef.current.nodes, nextEdges);
+      queueMicrotask(() => {
+        updateCampaignCanvas(canvasSnapshotRef.current.nodes, nextEdges);
+      });
       return nextEdges;
     });
   };
 
   const addGenerationBlock = (kind: GenerationBlockKind) => {
     setNodes((current) => {
+      const createdNode = createGenerationFlowNode(kind, current.length);
+      selectedNodeIdRef.current = createdNode.id;
       const nextNodes = [
-        ...current,
-        createGenerationFlowNode(kind, current.length),
+        ...current.map((node) => ({ ...node, selected: false })),
+        { ...createdNode, selected: true },
       ];
 
-      updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
 
       return nextNodes;
     });
@@ -426,6 +449,12 @@ export function CreativeCanvasScreen({
             nodeTypes={creativeNodeTypes}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
+            onNodeClick={(_, node) => {
+              selectedNodeIdRef.current = node.id;
+            }}
+            onPaneClick={() => {
+              selectedNodeIdRef.current = null;
+            }}
             fitView
             fitViewOptions={{ padding: 0.24 }}
             minZoom={0.45}
@@ -2500,6 +2529,8 @@ function CanvasStatus({ visibleBlocks }: { visibleBlocks: number }) {
 function GenerationBlockNode({
   data,
   selected,
+  width,
+  height,
 }: NodeProps<CreativeFlowNode>) {
   const Icon = blockIcons[data.kind];
   const imageGeneration = isImageGenerationNodeProperties(data.properties)
@@ -2507,6 +2538,9 @@ function GenerationBlockNode({
     : null;
 
   if (imageGeneration) {
+    const frameWidth = width ?? imageGeneration.frame.width;
+    const frameHeight = height ?? imageGeneration.frame.height;
+
     return (
       <article
         className={cn(
@@ -2515,12 +2549,22 @@ function GenerationBlockNode({
           "image-generation-node",
           selected && "selected",
         )}
+        style={{ width: frameWidth, height: frameHeight }}
       >
-        <ImageGenerationPortHandles imageGeneration={imageGeneration} tone={data.tone} />
+        <NodeResizer
+          color="#1877f2"
+          handleClassName="space-node-resize-handle"
+          isVisible={selected}
+          keepAspectRatio
+          lineClassName="space-node-resize-line"
+          minHeight={260}
+          minWidth={320}
+        />
         <FreepikReferenceImageNode
-          data={data}
           details={imageGeneration}
           Icon={Icon}
+          selected={selected}
+          tone={data.tone}
         />
       </article>
     );
@@ -2577,139 +2621,146 @@ function GenerationBlockNode({
   );
 }
 
-const freepikPreviewThumbs = [
-  "/assets/image-node/freepik-preview-1.jpg",
-  "/assets/image-node/freepik-preview-2.jpg",
-  "/assets/image-node/freepik-preview-3.jpg",
-  "/assets/image-node/freepik-preview-4.jpg",
-  "/assets/image-node/freepik-preview-5.jpg",
-] as const;
-
 function FreepikReferenceImageNode({
-  data,
   details,
   Icon,
+  selected,
+  tone,
 }: {
-  data: CampaignCanvasBlock;
   details: ImageGenerationNodeProperties;
   Icon: ComponentType<{ className?: string }>;
+  selected: boolean;
+  tone: GenerationBlockTone;
 }) {
   const activeProvider = details.providerPresets.find(
     (provider) => provider.providerId === details.providerId,
   );
+  const modelLabel = activeProvider?.label === "Freepik-style" ? "Google Nano Ban..." : (activeProvider?.label ?? details.providerId);
+  const promptPort = details.inputs.find((port) => port.id === "prompt") ?? details.inputs[0];
+  const referencePort =
+    details.inputs.find((port) => port.id === "reference_image") ??
+    details.inputs[1];
+  const generatedPort =
+    details.outputs.find((port) => port.id === "generated_image_asset") ??
+    details.outputs[0];
+
   return (
-    <div className="freepik-node-shell">
-      <header className="freepik-node-header">
-        <span className="freepik-node-icon">
-          <Icon className="size-4" />
-        </span>
-        <div className="freepik-node-title">
-          <span>Image generator</span>
-          <strong>{activeProvider?.label ?? "Freepik-style"}</strong>
-        </div>
-        <span className="freepik-node-status">{data.status}</span>
-      </header>
+    <div
+      className={cn("space-image-node-shell", selected && "selected")}
+      aria-label="Image generator node"
+    >
+      <div className="space-image-node-label">
+        <Icon className="size-3" />
+        <span>이미지 생성기 #1</span>
+      </div>
 
-      <div className="freepik-node-body">
-        <section className="freepik-control-panel" aria-label="Freepik-style image controls">
-          <div className="freepik-prompt-box" role="textbox" aria-label="Prompt" aria-readonly="true">
-            <span>Prompt</span>
-            <strong>Describe the image you want to create...</strong>
-            <em>Connected from text block</em>
+      <div className="space-node-toolbar nodrag" aria-label="Node actions">
+        <button type="button" aria-label="Run image node"><Play className="size-4" fill="currentColor" /></button>
+        <button type="button" aria-label="Action menu">⌄</button>
+        <button type="button" aria-label="Connect node"><Link2 className="size-4" /></button>
+        <button type="button" aria-label="Connection menu">⌄</button>
+        <button type="button" aria-label="Delete node"><Trash2 className="size-4" /></button>
+        <button type="button" aria-label="More actions">•••</button>
+      </div>
+
+      <div className="space-image-node-card">
+        <div className="space-side-port-stack" aria-label="Image node input connections">
+          <div
+            className="space-side-port text-port prompt-input-affordance"
+            aria-label={promptPort?.label ?? "Prompt text connection"}
+            title={promptPort?.label ?? "Prompt text connection"}
+          >
+            <Type className="size-3" />
+            {promptPort === undefined ? null : (
+              <Handle
+                id={`inputs.${promptPort.id}`}
+                type="target"
+                position={Position.Left}
+                className={cn(
+                  "space-embedded-port-handle",
+                  "prompt-input-handle",
+                  `${tone}-handle`,
+                )}
+                title={promptPort.label}
+              />
+            )}
           </div>
-
-          <button className="freepik-reference-row" type="button">
-            <span>Reference</span>
-            <strong>Drop image</strong>
-            <em>optional</em>
-          </button>
-
-          <div className="freepik-option-group">
-            <span>Style</span>
-            <div>
-              <button type="button">Photo</button>
-              <button type="button">Product</button>
-              <button type="button">Campaign</button>
+          {referencePort === undefined ? null : (
+            <div
+              className="space-side-port image-port"
+              aria-label={referencePort.label}
+              title={referencePort.label}
+            >
+              <ImageIcon className="size-3" />
+              <Handle
+                id={`inputs.${referencePort.id}`}
+                type="target"
+                position={Position.Left}
+                className={cn(
+                  "space-embedded-port-handle",
+                  "reference-image-handle",
+                  `${tone}-handle`,
+                )}
+                title={referencePort.label}
+              />
             </div>
-          </div>
+          )}
+        </div>
 
-          <div className="freepik-option-grid">
-            <button type="button">
-              <small>Model</small>
-              <strong>{activeProvider?.label ?? details.providerId}</strong>
-            </button>
-            <button type="button">
-              <small>Aspect</small>
-              <strong>1:1</strong>
-            </button>
-            <button type="button">
-              <small>Images</small>
-              <strong>x{details.batchCount}</strong>
-            </button>
-            <button type="button">
-              <small>Mode</small>
-              <strong>Fast</strong>
-            </button>
-          </div>
+        <div className="space-node-prompt" role="textbox" aria-label="Prompt" aria-readonly="true">
+          어떤 이미지를 생성하고 싶은지 설명해주세요...
+        </div>
 
-          <button className="freepik-generate-button" type="button">
-            Generate
+        <div className="space-node-controls nodrag" aria-label="Image generation settings">
+          <button className="space-control-chip count" type="button" aria-label="Output count">
+            <span>−</span>
+            <strong>x{details.batchCount}</strong>
+            <span>＋</span>
           </button>
-        </section>
+          <button className="space-control-chip model" type="button" aria-label="Model selector">
+            <span>{modelLabel}</span>
+            <em>⌄</em>
+          </button>
+          <button className="space-control-chip ratio" type="button" aria-label="Aspect ratio selector">
+            <Maximize2 className="size-3" />
+            <span>{details.aspectRatio}</span>
+            <em>⌄</em>
+          </button>
+          <button className="space-control-chip quality" type="button" aria-label="Resolution selector">
+            <span>1K</span>
+            <em>⌄</em>
+          </button>
+          <button className="space-control-chip icon" type="button" aria-label="Advanced settings">
+            ⚙
+          </button>
+        </div>
 
-        <section className="freepik-preview-panel" aria-label="Generated image previews">
-          <div className="freepik-preview-toolbar">
-            <span>Generated images</span>
-            <strong>{details.batchCount} results</strong>
+        <button className="space-run-button nodrag" type="button" aria-label="Generate image">
+          <Play className="size-4" fill="currentColor" />
+        </button>
+        {generatedPort === undefined ? null : (
+          <div
+            className="space-side-port space-output-port"
+            aria-label={generatedPort.label}
+            title={generatedPort.label}
+          >
+            <ImageIcon className="size-3" />
+            <Handle
+              id={`outputs.${generatedPort.id}`}
+              type="source"
+              position={Position.Right}
+              className={cn(
+                "space-embedded-port-handle",
+                "generated-output-handle",
+                `${tone}-handle`,
+              )}
+              title={generatedPort.label}
+            />
           </div>
-          <div className="freepik-preview-grid">
-            {freepikPreviewThumbs.slice(0, details.batchCount).map((src, index) => (
-              <img key={src} src={src} alt={`Generated preview ${index + 1}`} />
-            ))}
-          </div>
-        </section>
+        )}
+        <span className="space-node-resize-corner" aria-hidden="true" />
       </div>
     </div>
-  );
-}
-
-function ImageGenerationPortHandles({
-  imageGeneration,
-  tone,
-}: {
-  imageGeneration: ImageGenerationNodeProperties;
-  tone: GenerationBlockTone;
-}) {
-  const inputSpacing = 40 / Math.max(imageGeneration.inputs.length - 1, 1);
-  const outputSpacing = 38 / Math.max(imageGeneration.outputs.length - 1, 1);
-  const inputTop = imageGeneration.inputs.map((_, index) => 30 + inputSpacing * index);
-  const outputTop = imageGeneration.outputs.map((_, index) => 36 + outputSpacing * index);
-
-  return (
-    <>
-      {imageGeneration.inputs.map((port, index) => (
-        <Handle
-          key={`input-${port.id}`}
-          id={`inputs.${port.id}`}
-          type="target"
-          position={Position.Left}
-          className={cn("canvas-handle", `${tone}-handle`, "image-port-handle")}
-          style={{ top: `${inputTop[index] ?? 50}%` }}
-          title={port.label}
-        />
-      ))}
-      {imageGeneration.outputs.map((port, index) => (
-        <Handle
-          key={`output-${port.id}`}
-          id={`outputs.${port.id}`}
-          type="source"
-          position={Position.Right}
-          className={cn("canvas-handle", `${tone}-handle`, "image-port-handle")}
-          style={{ top: `${outputTop[index] ?? 50}%` }}
-          title={port.label}
-        />
-      ))}
-    </>
   );
 }
 

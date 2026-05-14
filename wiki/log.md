@@ -2,6 +2,63 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-14] image-generation-node-final-port-affordance-cleanup | Hermes
+
+- 사용자 레퍼런스 UI 기준으로 Image Generation Node의 남은 `style_template_vars` border handle과 우측 하단 원형 NodeResizer dot을 제거했다.
+- 실제 연결 가능한 React Flow handles는 visible floating affordance 내부의 투명 hit target으로 유지하고, 파란 selection outline은 순수 선택 피드백으로 정리했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`, browser screenshot `browser_screenshot_ba713287a2f34c85b4d818a647c59019.png`.
+
+## [2026-05-14] image-generation-node-level2-log-conflict-review | Level coordinator
+
+- Level 2 parallel AC 결과의 공통 수정 파일 `wiki/log.md`를 검토했다.
+- AC14 build verification, AC17 browser console guard, AC18 diff review PASS 기록이 모두 보존되어 있고 conflict marker나 whitespace 오류가 없음을 확인했다.
+- 별도 병합 수정은 필요하지 않았으며, 다음 단계는 AC17의 실제 browser console 검증 sandbox 한계를 재검증 가능한 환경에서 해소하는 것이다.
+- 검증: `rg -n '<<<<<<<|=======|>>>>>>>|image-generation-node-(build-verification|browser-console-guard|connection-affordance-review)' wiki/log.md`, `git diff --check`.
+
+## [2026-05-14] image-generation-node-ac-conflict-coordination | Level coordinator
+
+- Level 1 parallel AC 결과의 충돌 파일 `app/app.css`, `creative-canvas-screen.tsx`, `creative-canvas-screen-authoring-controls.test.ts`, `wiki/log.md`를 검토했다.
+- `reference_image` handle이 visible image affordance와 분리된 보조 위치 계산으로 남아 있던 통합 충돌을 해소해, prompt/reference/output connection affordance가 모두 각 visible floating control 내부의 투명 `Handle`을 사용하도록 정렬했다.
+- `style_template_vars` input은 visible affordance가 없으므로 투명 generic hit target으로만 유지해 선택 outline 위의 원형 dot이 보이지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `git diff --check`.
+
+## [2026-05-14] image-generation-node-diff-check | AC16
+
+- Spaces-style Image Generation Node 연결 affordance 수정 작업의 현재 combined diff에 대해 whitespace/error marker 검사를 수행했다.
+- 검증: `git diff --check`.
+
+## [2026-05-14] image-generation-node-preview-grid-removal | AC11
+
+- Spaces-style Image Generation Node 안에 preview grid가 다시 보이지 않도록 회귀 테스트를 추가했다.
+- `FreepikReferenceImageNode` 소스 범위에 old `freepik-preview-grid`, `freepik-preview-panel`, preview image asset, inline `<img>` preview가 없는지 확인하고, CSS에도 `.freepik-preview-grid`가 남아 있지 않음을 검증한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-14] image-generation-node-toolbar-retry-verification | AC6 retry 1
+
+- Spaces-style Image Generation Node의 top-right floating action toolbar가 현재 구현에 유지되어 있음을 재확인했다.
+- `space-node-toolbar nodrag`, `Node actions` 접근성 레이블, run/connect/delete/more 버튼, absolute top-right 배치가 기존 회귀 테스트로 보호된다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "top-right floating action toolbar" app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`.
+
+## [2026-05-14] image-generation-node-run-button-preservation | AC9
+
+- Spaces-style Image Generation Node의 bottom-right circular run button 보존을 회귀 테스트로 고정했다.
+- `space-run-button nodrag`, `Generate image` 접근성 레이블, Play 아이콘, absolute bottom-right 배치, 34px 원형 크기를 `creative-canvas-screen-authoring-controls.test.ts`에서 확인한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-14] image-generation-node-action-toolbar-preservation | AC6
+
+- Spaces-style Image Generation Node의 top-right floating action toolbar 보존을 회귀 테스트로 고정했다.
+- `space-node-toolbar nodrag`와 `Node actions` 접근성 레이블, run/connect/delete/more 버튼, absolute top-right 배치를 `creative-canvas-screen-authoring-controls.test.ts`에서 확인한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+
+## [2026-05-14] image-generation-node-border-handle-removal | AC 1
+
+- Image Generation Node의 선택 파란 outline 위에 보이던 기본 원형 React Flow handle을 제거했다.
+- 실제 연결 가능한 `Handle`은 유지하되 `.image-port-handle`을 투명한 36px hit target으로 바꾸고, reference/image input 및 generated output handle 위치를 floating affordance 근처로 옮겨 border dot처럼 보이지 않게 했다.
+- prompt input handle은 floating T/text affordance 내부의 투명 embedded handle로 유지되어 selection outline과 시각적으로 분리된다.
+- 검증: `npm run typecheck`, `npm run build`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `git diff --check`.
+- 참고: sandbox에서 `npm run dev`는 `EMFILE: too many open files, watch`, `npm run start -- --host 127.0.0.1 --port 3000`는 `EPERM: operation not permitted 0.0.0.0:3000`, Playwright CLI wrapper는 network-disabled `ENOTFOUND registry.npmjs.org`로 막혀 실제 브라우저 screenshot 생성은 수행하지 못했다.
+
 ## [2026-05-11] campaign-core-plugin-history-separation | Sub-AC 3.4.3
 
 - Campaign commit history에서 `campaign-core:` 계약 커밋과 `plugin:` 변경 커밋이 별도 커밋으로 드러나는지 검증하는 `assertCampaignCorePluginCommitHistoryIsSeparated()`를 추가했다.
@@ -1779,3 +1836,94 @@
 - Image Block 기본 계약에 prompt, reference_image, style_template_vars 입력 포트와 generated_image_asset, metadata, cost_usage 출력 포트를 명시했다.
 - OpenAI Image, Replicate, Freepik-style provider preset을 provider-agnostic core 위의 adapter metadata로 두고, API key 값은 저장하지 않으며 env/local secret store 이름만 노출하도록 했다.
 - UI는 Freepik-style 이미지 생성 노드처럼 provider, 포트, x1~x5 batch, canvas.json/assets/runs 저장 계약을 카드 안에 보여주는 방향으로 구현했다.
+
+## [2026-05-14] image-generation-node-reference-affordance | AC3
+
+- Spaces-style Image Block의 `reference_image` React Flow target handle을 왼쪽 플로팅 이미지 아이콘 중심으로 이동하고, 실제 handle은 투명하게 처리했다.
+- 왼쪽 이미지 아이콘은 `Reference image connection` affordance로 노출되어, 선택 파란 outline 위의 generic circular border dot 대신 reference image 연결 지점을 시각적으로 대표한다.
+- 검증: `npm run typecheck`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run build`, `git diff --check`.
+- 브라우저 스크린샷 시도: dev server는 `EMFILE` watcher 오류, production server는 sandbox `EPERM` listen 오류, Playwright CLI는 npm registry 네트워크 차단, Chrome/QuickLook/Computer Use screenshot 경로는 sandbox/approval 제한으로 완료하지 못했다. 대신 `output/playwright/ac3-reference-affordance.html`에 동일 클래스 기반 검증 fixture를 남겼다.
+
+## [2026-05-14] image-generation-node-output-affordance | AC4
+
+- Spaces-style Image Block의 `generated_image_asset` React Flow source handle을 오른쪽 플로팅 `space-output-port` 안으로 이동해, 실제 연결 지점이 visible output affordance와 같은 위치를 쓰도록 했다.
+- 기존 별도 `image-port-handle-output` 렌더링을 제거해 파란 selected outline 또는 임의 border 위치가 출력 연결점처럼 보이지 않게 했다.
+- 검증: `npm run typecheck`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run build`, `git diff --check`.
+- 브라우저 스크린샷 시도: production server는 sandbox `EPERM` listen 오류, Browser Use는 Node REPL tool 미노출, Chrome headless는 sandbox 종료, QuickLook은 sandbox 초기화 오류, Safari Computer Use는 approval denied로 완료하지 못했다. 대신 `output/playwright/ac4-output-affordance-check.html`에 동일 클래스 기반 검증 fixture를 남겼다.
+
+## [2026-05-14] image-generation-node-label-preservation | AC5
+
+- Spaces-style Image Block의 상단 라벨 `이미지 생성기 #1`이 계속 렌더링되는지 정적 컴포넌트 회귀 테스트로 고정했다.
+- 라벨은 `.space-image-node-label` 안의 사용자-visible 텍스트로 유지되며, 노드를 page-like generator로 되돌리거나 preview/debug UI를 추가하지 않았다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+
+## [2026-05-14] image-generation-node-prompt-affordance | AC2
+
+- Spaces-style Image Block의 `prompt` React Flow target handle을 왼쪽 플로팅 T/text affordance 내부로 이동하고, 실제 handle은 투명한 전체 크기 overlay로 처리했다.
+- `.prompt-input-affordance`와 `.prompt-input-handle`을 추가해 prompt/text 입력 연결 지점이 선택 파란 outline 위의 원형 dot이 아니라 왼쪽 T 컨트롤로 보이도록 했다.
+- 검증: `npm run typecheck`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run build`, `git diff --check`.
+- 브라우저 스크린샷 시도: dev server는 `EMFILE` watcher 오류, production server는 sandbox `EPERM` listen 오류, Playwright Chromium/Chrome은 macOS sandbox 권한 오류, Playwright WebKit/Firefox는 브라우저 바이너리 미설치, Chrome/Safari/QuickLook/Computer Use 경로도 sandbox 또는 approval 제한으로 완료하지 못했다. 대신 `output/playwright/ac2-image-node-affordance.html`에 동일 클래스 기반 검증 fixture를 남겼다.
+
+## [2026-05-14] image-generation-node-large-prompt-area | AC7
+
+- Spaces-style Image Block의 `.space-node-prompt`가 노드 본문 상단부터 하단 칩 위까지 차지하도록 `top`, `bottom`, `min-height`를 지정해 큰 prompt area를 유지했다.
+- prompt placeholder `어떤 이미지를 생성하고 싶은지 설명해주세요...`와 `aria-label="Prompt"`를 정적 회귀 테스트로 고정했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+
+## [2026-05-14] image-generation-node-lower-right-resize-handle | AC10
+
+- Spaces-style Image Block의 resize affordance를 lower-right 전용으로 고정해 selection outline 위의 여러 원형 resize controls가 연결점처럼 보이지 않도록 했다.
+- `.space-node-resize-corner`와 React Flow `NodeResizer`의 bottom-right handle은 유지되어, resize affordance가 connection affordance와 분리된 상태로 남는다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 브라우저 스크린샷 시도: `npm run start -- --host 127.0.0.1 --port 4173`가 sandbox `listen EPERM: operation not permitted 0.0.0.0:3000`로 실패해 실제 browser screenshot은 생성하지 못했다.
+
+## [2026-05-14] image-generation-node-bottom-setting-chips | AC8
+
+- Spaces-style Image Block의 하단 설정 칩 row가 `x1`, model, `16:9`, `1K`, settings affordance를 계속 렌더링하는지 확인했다.
+- 현재 구현은 `.space-node-controls` 아래 `count`, `model`, `ratio`, `quality`, `icon` 칩을 유지하며, `details.batchCount`, `modelLabel`, `details.aspectRatio` source-of-truth 필드를 visible UI에 연결한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고했고, 이번 AC는 `DESIGN.md`와 기존 컴포넌트 회귀 테스트 기준으로 확인했다.
+
+## [2026-05-14] image-generation-node-visible-debug-copy-guard | AC12
+
+- Spaces-style Image Block의 visible node UI에 JSON, schema, storage, secret, token, API key, debug, metadata, cost copy가 다시 노출되지 않도록 정적 회귀 테스트를 추가했다.
+- 테스트 범위는 `FreepikReferenceImageNode` 렌더 경계로 제한해 Campaign metadata sidebar와 Image Block source-of-truth model 필드를 혼동하지 않게 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고했고, `llm-wiki`, `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md` fallback을 사용했다.
+
+## [2026-05-14] image-generation-node-model-test-verification | AC15
+
+- Spaces-style Image Block 연결 affordance 수정 흐름에서 모델 계약 회귀 테스트가 계속 통과하는지 확인했다.
+- `aspectRatio`, `frame`, provider-agnostic ports, storage secret policy, Campaign image block default contract를 변경하지 않았다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다.
+
+## [2026-05-14] image-generation-node-typecheck-verification | AC13
+
+- Spaces-style Image Block 연결 affordance 수정 흐름에서 TypeScript 계약이 계속 통과하는지 확인했다.
+- UI 구현 파일은 수정하지 않았고, selected outline, floating prompt/reference/output affordance, resize affordance의 개념 경계를 그대로 보존했다.
+- 검증: `npm run typecheck`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다.
+
+## [2026-05-14] image-generation-node-connection-affordance-review | AC18
+
+- Codex read-only diff review 기준으로 Spaces-style Image Block 연결 affordance 변경은 PASS로 판정했다.
+- `prompt`와 `reference_image` target Handle은 왼쪽 플로팅 T/text 및 image/reference affordance 내부에 embedded/transparent handle로 정렬되어 있고, `generated_image_asset` source Handle은 오른쪽 output affordance 내부에 정렬되어 있다.
+- `.image-port-handle`은 투명 처리되어 파란 selected outline 위에 generic circular connection dot을 렌더링하지 않으며, lower-right resize affordance는 connection affordance와 별도로 유지된다.
+- 검증: `git diff --check`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`.
+- 참고: gstack review preamble의 session 상태 기록은 sandbox 권한 제한으로 실패했지만 리뷰 판정에는 영향이 없었다. commit/push는 수행하지 않았다.
+
+## [2026-05-14] image-generation-node-build-verification | AC14
+
+- Spaces-style Image Block 연결 affordance 수정 흐름에서 production build가 계속 통과하는지 확인했다.
+- UI 구현 파일은 수정하지 않았고, selected outline, floating prompt/reference/output affordance, resize affordance의 개념 경계를 그대로 보존했다.
+- 검증: `npm run build`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다.
+
+## [2026-05-14] image-generation-node-browser-console-guard | AC17
+
+- Spaces-style Image Block의 floating prompt/reference/output affordance wrapper를 `span`에서 `div`로 바꿔 React Flow `Handle`이 만드는 DOM이 inline `span` 안에 들어가며 발생할 수 있는 React `validateDOMNesting` warning을 제거했다.
+- visible connection affordance 구조는 유지했다. `prompt`, `reference_image`, `generated_image_asset` Handle은 여전히 각각 왼쪽 T/text, 왼쪽 image/reference, 오른쪽 output affordance 내부에 embedded/transparent handle로 정렬된다.
+- 정적 회귀 테스트에 embedded Handle container가 `div`인지 확인하는 guard를 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `git diff --check`.
+- 브라우저 console 직접 검증 시도: `npm run dev -- --host 127.0.0.1 --port 5173`는 `EMFILE: too many open files, watch`, `npm run start -- --host 127.0.0.1 --port 4173`는 sandbox `listen EPERM`, gstack browse는 helper server port bind 실패, Playwright+Chrome headless는 macOS sandbox `SIGABRT`로 실패했다. commit/push는 수행하지 않았다.
