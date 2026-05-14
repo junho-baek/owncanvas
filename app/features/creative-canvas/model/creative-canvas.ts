@@ -14,6 +14,7 @@ import {
   validateInstagramCommentTriggerEvent,
   verifyAgentInstalledPluginUsable,
 } from "../../plugins/model/plugin-representation.ts";
+import { createImageGenerationNodeProperties } from "./image-generation-node.ts";
 
 export type GenerationBlockKind =
   | "text"
@@ -4916,15 +4917,16 @@ const generationBlockDefinitions = {
   image: {
     kind: "image",
     title: "Image Block",
-    subtitle: "product shots + visual variants",
-    description: "Creates still images from prompts, references, and edits.",
+    subtitle: "prompt + reference + x1-x5 outputs",
+    description: "Creates still images from prompt, reference image, and style/template variables.",
     tone: "blue",
-    status: "DRAFT",
+    status: "READY",
     contracts: [
-      { label: "INPUT", value: "Prompt or reference image", state: "READY" },
-      { label: "MODEL", value: "BYO image provider", state: "BYO" },
-      { label: "OUTPUT", value: "Image candidates", state: "WAITING" },
+      { label: "INPUT", value: "Prompt + optional reference image", state: "READY" },
+      { label: "MODEL", value: "OpenAI / Replicate / Freepik-style provider", state: "BYO" },
+      { label: "OUTPUT", value: "Image assets + metadata + cost usage", state: "READY" },
     ],
+    properties: createImageGenerationNodeProperties(),
   },
   video: {
     kind: "video",

@@ -1,0 +1,39 @@
+id: seed_a979f7e4b39e
+name: owncanvas-image-generation-node-mvp
+version: 1
+goal: >
+  Implement the first OwnCanvas MVP unit: a connectable Image Generation Block on the
+  node-based Creative Canvas where the Campaign JSON spec remains the source of truth.
+context:
+  product: OwnCanvas
+  feature_area: Creative Canvas
+  primary_user: Creative Operator
+  framing: >
+    The block should feel like a Freepik-style image generation node in UX shape
+    (prompt + reference + style controls, provider choice, and batch outputs), while
+    preserving OwnCanvas' provider-agnostic core and BYO-provider economics.
+constraints:
+  - Use Campaign / Creative Canvas / Generation Block language in user-facing UI.
+  - Keep provider API keys, tokens, passwords, and connection strings out of canvas.json and repo files.
+  - Store secrets only through env vars or a local secret store; surface only env var names when needed.
+  - Keep the MVP provider-agnostic; provider specifics must be adapter/preset metadata, not hard-coded core behavior.
+  - Support MVP batch counts x1 through x5, with x5 as the visible maximum.
+  - Keep generated files and run metadata as references from the JSON spec, not embedded binary data.
+acceptance_criteria:
+  - The image generation block exposes input ports for prompt, reference_image, and style_template_vars.
+  - The image generation block exposes output ports for generated_image_asset, metadata, and cost_usage.
+  - The image block defaults to a provider-agnostic image generation node contract with OpenAI Image, Replicate, and Freepik-style provider presets.
+  - The visible node UI shows provider, input/output port names, batch count, and storage contract.
+  - canvas.json remains the source of truth for node graph, port connections, prompt/reference/style config, batch count, provider id, and latest result refs.
+  - Generated image assets are referenced under assets/ and run metadata is referenced under runs/ or history.jsonl.
+  - The implementation has regression tests proving ports, batch limit, provider presets, storage contract, and no persisted secret values.
+  - Local typecheck/build pass.
+verification:
+  commands:
+    - node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts
+    - npm run typecheck
+    - npm run build
+  visual_review:
+    - Start npm run dev on localhost.
+    - Inspect the Creative Canvas image block in browser.
+    - Capture screenshot evidence before reporting to the user.

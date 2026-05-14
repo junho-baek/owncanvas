@@ -1455,6 +1455,10 @@ button {
   box-shadow: 0 16px 34px rgba(53, 43, 27, 0.08);
 }
 
+.react-flow__node-generation {
+  visibility: visible !important;
+}
+
 .generation-node.selected {
   box-shadow:
     0 0 0 3px rgba(147, 197, 253, 0.16),
@@ -1475,6 +1479,19 @@ button {
 
 .generation-node.green {
   border-color: #bbf7d0;
+}
+
+.generation-node.image-generation-node {
+  width: 366px;
+  border-color: #93c5fd;
+  background:
+    linear-gradient(180deg, rgba(234, 244, 255, 0.82), rgba(255, 254, 250, 0) 38%),
+    #fffefa;
+}
+
+.image-port-handle {
+  width: 10px;
+  height: 10px;
 }
 
 .generation-node-header {
@@ -1626,6 +1643,85 @@ button {
 .generation-contract-row em.green {
   background: #ecfdf5;
   color: #059669;
+}
+
+.image-generation-details {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid #dbeafe;
+  background: rgba(239, 246, 255, 0.68);
+  padding: 12px 14px;
+}
+
+.image-generation-summary,
+.image-generation-storage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #1e3a8a;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.image-generation-summary strong,
+.image-generation-storage-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  line-height: 1.25;
+}
+
+.image-generation-summary span,
+.image-generation-storage-row span,
+.image-generation-port-title {
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.image-generation-port-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.image-generation-port-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.image-generation-port-title {
+  width: 100%;
+}
+
+.image-generation-port-chip {
+  border-radius: 999px;
+  padding: 5px 7px;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.image-generation-port-chip.input {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.image-generation-port-chip.output {
+  background: #eff6ff;
+  color: #0f172a;
+}
+
+.image-generation-secret-note {
+  margin: 0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .generation-node-footer {

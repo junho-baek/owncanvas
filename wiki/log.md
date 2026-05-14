@@ -1773,3 +1773,9 @@
 - The revert plan rejects commits that mix Campaign boundaries and rejects title scopes that do not match the changed area, preserving `git revert <commit>` as a one-boundary operation.
 - Commit scope docs now state the revert rule explicitly for reviewers.
 - 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/campaign-core-verification-policy.test.ts`, `git diff --check`.
+## [2026-05-14] image-generation-node-mvp | Seed seed_a979f7e4b39e
+
+- 이미지 생성 노드 MVP 범위를 `/docs/seeds/image-generation-node-mvp.seed.yaml`로 복원했다. 핵심 목표는 Campaign JSON spec을 source of truth로 하는 연결 가능한 Image Generation Block이다.
+- Image Block 기본 계약에 prompt, reference_image, style_template_vars 입력 포트와 generated_image_asset, metadata, cost_usage 출력 포트를 명시했다.
+- OpenAI Image, Replicate, Freepik-style provider preset을 provider-agnostic core 위의 adapter metadata로 두고, API key 값은 저장하지 않으며 env/local secret store 이름만 노출하도록 했다.
+- UI는 Freepik-style 이미지 생성 노드처럼 provider, 포트, x1~x5 batch, canvas.json/assets/runs 저장 계약을 카드 안에 보여주는 방향으로 구현했다.
