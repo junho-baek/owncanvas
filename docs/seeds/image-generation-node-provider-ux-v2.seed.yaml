@@ -1,0 +1,434 @@
+metadata:
+  id: seed_image_generation_node_provider_ux_v2
+  title: Image Generation Node Provider Schema and 9:16 Interaction Spec
+  kind: implementation_seed
+  created_for: OwnCanvas image generation node v2
+  repository: junho-baek/owncanvas
+  working_directory: /tmp/owncanvas-image-node
+  branch: main
+  status: draft_for_user_review
+  source_context:
+  - User approved and pushed v1 compact Spaces-style Image Generation Node at commit eb4515c.
+  - User now wants a v2 specification covering lower explanatory panels, document/inspector UX, Replicate provider model schema, provider-specific node ports, and default 9:16 vertical framing.
+  - User explicitly said not everything needs to be implemented immediately; this seed should define how to approach it.
+goal: 'Define and implement the next OwnCanvas Image Generation Node v2 direction: a provider-aware, capability-driven image node that defaults to 9:16 vertical generation, keeps the node frame synchronized with output aspect ratio, supports Replicate model schema adapters, and introduces reference-document-aligned interaction surfaces such as focus/expand, inspector/document panels, reference attachment, output-to-next-node flow, and state feedback without turning the node into a page-like generator.
+
+  '
+problem_statement: 'The v1 node now visually matches a compact Spaces-style canvas prompt composer. The next gap is product behavior: model/provider choices have different input schemas and capabilities, the default short-form marketing use case needs 9:16 vertical output and node framing, and the reference image includes non-node UI/UX behaviors such as lower explanatory panels, focus mode, drag interactions, empty-canvas connections, reference attachment trays, and state feedback. The implementation must preserve the compact node while moving deeper controls into inspector, document, or contextual panels.
+
+  '
+hard_constraints:
+- Do not regress to an image generator page.
+- Do not add preview grids inside the compact node.
+- Do not show raw JSON, secrets, storage paths, provider debug text, or API keys inside the visible node.
+- Do not hardcode secret values. Environment variable names such as REPLICATE_API_TOKEN may be referenced, but values must never be stored.
+- Preserve the compact Spaces-style node affordances from v1.
+- Preserve source-of-truth JSON/canvas sync for node properties.
+- Preserve selected-state-only blue outline.
+- Preserve floating connection affordances; do not reintroduce generic circular border handles.
+- Provider-specific controls must be capability/schema driven, not hardcoded only for one model.
+- Commit/push only after browser screenshot and user approval if this seed is executed.
+scope:
+  include:
+  - Default aspect ratio and node frame change from 16:9 to 9:16.
+  - Provider/model capability contract for image generation nodes.
+  - Replicate provider adapter specification.
+  - Model schema mapping examples for Nano Banana, GPT Image, and Seedream-like models.
+  - Capability-driven visible connection affordances.
+  - Inspector/document panel UX for deeper model settings and docs.
+  - Focus/expand mode UX.
+  - Reference attachment tray UX.
+  - Output affordance to next-node flow UX.
+  - Node status feedback UX.
+  - Tests and browser QA criteria.
+  exclude_for_mvp:
+  - Full production image generation backend execution for every Replicate model.
+  - Paid billing/cost enforcement.
+  - Full drag-and-drop asset library implementation.
+  - Full documentation authoring system.
+  - Training/fine-tuning flows.
+current_baseline:
+  commit: eb4515c
+  node_type: owncanvas.image-generation.v1
+  visible_affordances:
+  - inputs.prompt via floating T/text control
+  - inputs.reference_image via floating image/reference control
+  - outputs.generated_image_asset via right floating output control
+  current_default_ratio: 969
+  desired_default_ratio: 556
+  current_status: v1 compact UI pushed to main
+provider_research_snapshot:
+  source: Replicate public API reference pages checked without secret tokens.
+  models:
+  - model: google/nano-banana
+    observed_fields:
+    - prompt/instruction-style generation/editing input
+    - input images/reference images supported, including multiple images
+    - aspect_ratio enum includes match_input_image, 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
+    - output_format enum includes jpg/png-like options
+    ux_implication: 'Reference image affordance and multi-reference tray are first-class. Ratio may default to 9:16 for OwnCanvas, but match_input_image should be offered when reference images exist.
+
+      '
+  - model: openai/gpt-image-1
+    observed_fields:
+    - prompt is required
+    - wrapper page exposes openai_api_key as required input; OwnCanvas must treat provider credentials as settings, not visible node copy
+    - aspect_ratio enum observed as 1:1, 3:2, 2:3
+    - input_images supported
+    - quality and output_format supported
+    ux_implication: 'Ratio selector must disable or map unsupported OwnCanvas ratios. 9:16 cannot be blindly passed if the selected model only accepts 2:3; the node should show a compatibility chip or warning in inspector.
+
+      '
+  - model: bytedance/seedream-3
+    observed_fields:
+    - prompt required
+    - aspect_ratio enum includes 1:1, 3:4, 4:3, 16:9, 9:16, 2:3, 3:2, 21:9, custom
+    - size, guidance_scale, seed, and custom dimensions are supported
+    ux_implication: 'Seedream-like models can support 9:16 directly and can connect manual resize/custom size behavior to provider input mapping.
+
+      '
+ontology_schema:
+  name: ImageGenerationNodeV2
+  description: Provider-aware image generation node contract for OwnCanvas creative canvas.
+  fields:
+  - name: nodeType
+    type: string
+    required: true
+    value: owncanvas.image-generation.v2
+    description: Versioned node contract for provider-aware image generation.
+  - name: provider
+    type: object
+    required: true
+    fields:
+    - name: id
+      type: enum
+      values:
+      - replicate
+      - fal
+      - openai
+      - custom
+      description: id subfield.
+    - name: authEnvName
+      type: string
+      example: REPLICATE_API_TOKEN
+      secret_policy: environment variable name only, never value
+      description: authEnvName subfield.
+    - name: displayName
+      type: string
+      description: displayName subfield.
+    description: provider field for ImageGenerationNodeV2 contract.
+  - name: model
+    type: object
+    required: true
+    fields:
+    - name: owner
+      type: string
+      example: google
+      description: owner subfield.
+    - name: name
+      type: string
+      example: nano-banana
+      description: name subfield.
+    - name: version
+      type: string
+      nullable: true
+      description: version subfield.
+    - name: label
+      type: string
+      example: Nano Banana
+      description: label subfield.
+    description: model field for ImageGenerationNodeV2 contract.
+  - name: capabilities
+    type: object
+    required: true
+    fields:
+    - name: textToImage
+      type: boolean
+      description: textToImage subfield.
+    - name: imageToImage
+      type: boolean
+      description: imageToImage subfield.
+    - name: multiReference
+      type: boolean
+      description: multiReference subfield.
+    - name: inpainting
+      type: boolean
+      description: inpainting subfield.
+    - name: maskInput
+      type: boolean
+      description: maskInput subfield.
+    - name: seedControl
+      type: boolean
+      description: seedControl subfield.
+    - name: aspectRatioControl
+      type: boolean
+      description: aspectRatioControl subfield.
+    - name: customSize
+      type: boolean
+      description: customSize subfield.
+    - name: qualityControl
+      type: boolean
+      description: qualityControl subfield.
+    - name: outputFormatControl
+      type: boolean
+      description: outputFormatControl subfield.
+    description: capabilities field for ImageGenerationNodeV2 contract.
+  - name: schemaAdapter
+    type: object
+    required: true
+    fields:
+    - name: promptField
+      type: string
+      example: prompt
+      description: promptField subfield.
+    - name: referenceImagesField
+      type: string
+      nullable: true
+      example: input_images
+      description: referenceImagesField subfield.
+    - name: aspectRatioField
+      type: string
+      nullable: true
+      example: aspect_ratio
+      description: aspectRatioField subfield.
+    - name: widthField
+      type: string
+      nullable: true
+      description: widthField subfield.
+    - name: heightField
+      type: string
+      nullable: true
+      description: heightField subfield.
+    - name: sizeField
+      type: string
+      nullable: true
+      description: sizeField subfield.
+    - name: seedField
+      type: string
+      nullable: true
+      description: seedField subfield.
+    - name: guidanceField
+      type: string
+      nullable: true
+      description: guidanceField subfield.
+    - name: qualityField
+      type: string
+      nullable: true
+      description: qualityField subfield.
+    - name: outputFormatField
+      type: string
+      nullable: true
+      description: outputFormatField subfield.
+    - name: unsupportedRatioBehavior
+      type: enum
+      values:
+      - disable
+      - map_nearest
+      - require_model_change
+      description: unsupportedRatioBehavior subfield.
+    description: schemaAdapter field for ImageGenerationNodeV2 contract.
+  - name: aspectRatio
+    type: enum
+    required: true
+    default: 556
+    values:
+    - 556
+    - 969
+    - 61
+    - 245
+    - 184
+    - 123
+    - 182
+    - 243
+    - 1269
+    - match_input_image
+    - custom
+    description: aspectRatio field for ImageGenerationNodeV2 contract.
+  - name: frame
+    type: object
+    required: true
+    fields:
+    - name: width
+      type: number
+      default: 360
+      description: width subfield.
+    - name: height
+      type: number
+      default: 640
+      description: height subfield.
+    - name: resizeMode
+      type: enum
+      default: aspect-ratio-locked
+      values:
+      - aspect-ratio-locked
+      - freeform
+      - custom-provider-size
+      description: resizeMode subfield.
+    description: frame field for ImageGenerationNodeV2 contract.
+  - name: ports
+    type: object
+    required: true
+    fields:
+    - name: visibleInputs
+      type: array
+      description: Capability-driven visible floating affordances only.
+      allowed_ids:
+      - inputs.prompt
+      - inputs.reference_image
+      - inputs.reference_images
+      - inputs.mask_image
+    - name: hiddenModelInputs
+      type: array
+      description: Schema/model inputs that are edited in inspector or set by adapter but not visible as canvas connection dots.
+    - name: visibleOutputs
+      type: array
+      allowed_ids:
+      - outputs.generated_image_asset
+      description: visibleOutputs subfield.
+    - name: hiddenOutputs
+      type: array
+      allowed_ids:
+      - outputs.metadata
+      - outputs.cost_usage
+      - outputs.provider_prediction
+      description: hiddenOutputs subfield.
+    description: ports field for ImageGenerationNodeV2 contract.
+  - name: uiState
+    type: object
+    fields:
+    - name: viewMode
+      type: enum
+      values:
+      - compact
+      - focused
+      description: viewMode subfield.
+    - name: inspectorOpen
+      type: boolean
+      description: inspectorOpen subfield.
+    - name: docsPanelOpen
+      type: boolean
+      description: docsPanelOpen subfield.
+    - name: referenceTrayOpen
+      type: boolean
+      description: referenceTrayOpen subfield.
+    - name: status
+      type: enum
+      values:
+      - idle
+      - selected
+      - running
+      - completed
+      - error
+      description: status subfield.
+    description: uiState field for ImageGenerationNodeV2 contract.
+implementation_requirements:
+  ratio_and_frame:
+  - Default newly created Image Block aspectRatio must be 9:16.
+  - Default node frame must be vertical and match 9:16 visually.
+  - Aspect ratio selector changes must update both provider output ratio and node frame ratio.
+  - Manual resize must preserve ratio by default unless the selected model supports custom size and user chooses custom-provider-size.
+  - If selected provider model does not support 9:16, show a compatibility indicator and do not send invalid provider inputs.
+  provider_adapter:
+  - Add a provider-agnostic model capability registry for image generation models.
+  - Add Replicate adapter mappings for at least google/nano-banana, openai/gpt-image-1, and bytedance/seedream-3 or seedream-like entries.
+  - Adapter must translate OwnCanvas node state to provider input payload without leaking credential values.
+  - Unsupported model controls must be hidden or disabled with a clear reason in inspector.
+  visible_ports:
+  - Render prompt T affordance when capabilities.textToImage is true.
+  - Render reference image affordance only when capabilities.imageToImage or capabilities.multiReference is true.
+  - Render optional mask affordance only when capabilities.maskInput is true.
+  - Render output affordance for generated image output.
+  - Do not render hidden model inputs such as metadata, cost, style_template_vars, seed, quality, guidance, output_format as border dots.
+  compact_node_ui:
+  - Preserve label 이미지 생성기
+  - Preserve top-right floating toolbar.
+  - Preserve large prompt area.
+  - Preserve bottom chips, but default ratio chip must show 9:16.
+  - Bottom chips should reflect model capability; e.g. unsupported ratio disabled, quality chip shown only if supported.
+  - Preserve bottom-right circular run button.
+  inspector_and_docs_ui:
+  - Clicking model/settings/docs affordance should open a side inspector or floating panel outside the compact node.
+  - Inspector should show provider, model, supported ratios, required inputs, optional controls, credential status by env var name only, and output format choices.
+  - Docs panel should explain what the node does and how its connections work, without crowding the node body.
+  - Document panel state should be in UI state/source-of-truth if needed for persistence.
+  reference_attachment_ui:
+  - Reference affordance click should open a tray/menu for upload, URL, existing asset, recent generated asset, and multiple references when supported.
+  - Nano Banana-style models should support multiple reference images in the data model and UI tray.
+  output_to_next_node_ui:
+  - Dragging or clicking output affordance into empty canvas should open a contextual menu for next node choices.
+  - Candidate next nodes: image edit, style variant, upscale, video node, output/result card, landing asset.
+  - This flow can be specified and lightly stubbed before full implementation.
+  status_feedback:
+  - Node must support idle, selected, running, completed, and error states.
+  - Running should show progress affordance without blocking canvas interaction.
+  - Completed should show success feedback and output connection readiness.
+  - Error should show retry and concise reason in inspector/panel, not raw stack traces in node.
+acceptance_criteria:
+- 'AC1: Default ratio is 9:16: New Image Block defaults to aspectRatio 9:16 in model state and visible ratio chip.'
+- 'AC2: Default frame is vertical: New Image Block default frame visually matches 9:16 and stores width/height in source-of-truth state.'
+- 'AC3: Ratio selector syncs frame: Changing ratio updates both output ratio and node frame dimensions without breaking resize.'
+- 'AC4: Provider capability registry exists: Image models are described through provider/model capability metadata rather than hardcoded UI assumptions.'
+- 'AC5: Replicate schema adapter exists: Replicate adapter maps OwnCanvas node fields to provider input schema keys for prompt, references, ratio, output format, seed, size, and quality where supported.'
+- 'AC6: Nano Banana mapping documented or implemented: Nano Banana supports prompt, multiple references, ratio options including 9:16, and output format in the capability/schema mapping.'
+- 'AC7: GPT Image mapping handles ratio limits: GPT Image-like mapping does not blindly expose unsupported 9:16 as provider input and surfaces compatibility state.'
+- 'AC8: Seedream mapping supports 9:16 and custom controls: Seedream-like mapping supports 9:16, seed, size/guidance/custom-size controls where schema allows.'
+- 'AC9: Visible ports are capability-driven: Visible floating affordances change based on model capabilities and never show hidden schema fields as border dots.'
+- 'AC10: Compact node remains compact: Node does not become a page and does not include preview grids, raw JSON, or provider debug text.'
+- 'AC11: Inspector/docs panel exists or is clearly stubbed: Settings/docs click opens or prepares an external panel for provider schema, docs, credentials status, and controls.'
+- 'AC12: Reference tray behavior exists or is clearly stubbed: Reference affordance supports upload/URL/existing asset/recent asset/multiple reference flows at least at UI contract level.'
+- 'AC13: Output-to-next-node flow exists or is clearly stubbed: Output affordance can lead to next-node menu choices without adding generic border handles.'
+- 'AC14: Status feedback modeled: Idle, selected, running, completed, and error states have model/UI representation.'
+- 'AC15: Tests pass: Focused model and UI tests pass for new contracts.'
+- 'AC16: Typecheck and build pass: npm run typecheck and npm run build pass.'
+- 'AC17: Browser screenshot passes: Browser screenshot shows 9:16 node, ratio chip 9:16, no page regression, no border dots, and inspector/docs behavior if implemented.'
+- 'AC18: No secrets leaked: No API keys, tokens, passwords, or connection strings are stored or rendered; only env var names may appear.'
+verification_plan:
+  commands:
+  - node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts
+  - node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts
+  - npm run typecheck
+  - npm run build
+  - git diff --check
+  browser:
+  - Start dev server with npm run dev -- --host 127.0.0.1.
+  - Open http://127.0.0.1:5173/.
+  - Create blank campaign.
+  - Add Image Block.
+  - Verify ratio chip shows 9:16 and node is vertical.
+  - Verify settings/docs opens panel outside the node if implemented.
+  - Verify reference and output affordances match capabilities.
+  - Verify browser console has no React warnings or JS errors.
+  review:
+  - Run read-only review against diff.
+  - Review prompt must say: Evaluate as a provider-aware Spaces-style canvas node, not as an image generator page.
+exit_conditions:
+- name: seed_review_ready
+  description: This seed is ready when it clearly describes the v2 requirements and can be reviewed by the user before execution.
+  criteria: Default 9:16 behavior is specified. Provider schema adapter direction is specified. Capability-driven ports are specified. Inspector/docs/reference/output/status UX is specified.
+- name: implementation_ready_after_user_approval
+  description: If executed, stop after tests/build/browser screenshot pass and wait for user approval before commit/push.
+  criteria: Focused tests pass. Typecheck and build pass. Browser screenshot is shown to user. No commit or push occurs before explicit user approval.
+codex_prompt: 'Implement docs/seeds/image-generation-node-provider-ux-v2.seed.yaml.
+
+
+  Evaluate this as a provider-aware Spaces-style canvas node, not as an image generator page.
+
+
+  Priorities:
+
+  1. Change the default Image Block aspect ratio from 16:9 to 9:16 and make the default node frame vertical.
+
+  2. Add or update model/provider capability metadata for Replicate image models.
+
+  3. Add schema adapter mappings for Nano Banana, GPT Image, and Seedream-like models using public Replicate API schema concepts.
+
+  4. Make visible floating affordances capability-driven and never render hidden provider/schema fields as border dots.
+
+  5. Add inspector/docs/reference/output/status UX contracts or minimal UI stubs outside the compact node.
+
+  6. Preserve the compact node body: no preview grid, no page-like generator, no raw JSON/secrets/debug text.
+
+
+  Do not commit. Do not push. After implementation, run the verification commands and prepare a browser screenshot for user review.
+
+  '

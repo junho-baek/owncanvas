@@ -6,6 +6,7 @@ import {
   createCampaignAssetGenerationJob,
   createCampaignBlock,
 } from "../model/creative-canvas.ts";
+import { isImageGenerationNodeProperties } from "../model/image-generation-node.ts";
 import {
   createCreativeCanvasSnapshotFromCampaignSpecJsonEdit,
   createGenerationFlowNode,
@@ -13,6 +14,20 @@ import {
   toCreativeFlowEdges,
   toCreativeFlowNodes,
 } from "./react-flow-canvas.ts";
+
+test("new Image Block creation initializes vertical image generation model state", () => {
+  const imageFlowNode = createGenerationFlowNode("image", 1);
+
+  assert.equal(isImageGenerationNodeProperties(imageFlowNode.data.properties), true);
+
+  if (!isImageGenerationNodeProperties(imageFlowNode.data.properties)) {
+    throw new Error("expected image generation properties");
+  }
+
+  assert.equal(imageFlowNode.data.properties.aspectRatio, "9:16");
+  assert.equal(imageFlowNode.width, 360);
+  assert.equal(imageFlowNode.height, 640);
+});
 
 test("React Flow canvas creation and update operations synchronize into the JSON spec", () => {
   const textFlowNode = createGenerationFlowNode("text", 0);

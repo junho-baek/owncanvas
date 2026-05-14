@@ -106,7 +106,10 @@ import {
   type GenerationBlockTone,
 } from "~/features/creative-canvas/model/creative-canvas";
 import {
+  IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
   isImageGenerationNodeProperties,
+  resolveImageGenerationNodeStatus,
+  resolveImageGenerationNodeStatusView,
   type ImageGenerationNodeProperties,
 } from "~/features/creative-canvas/model/image-generation-node";
 
@@ -2538,8 +2541,20 @@ function GenerationBlockNode({
     : null;
 
   if (imageGeneration) {
-    const frameWidth = width ?? imageGeneration.frame.width;
-    const frameHeight = height ?? imageGeneration.frame.height;
+    const frameWidth = Math.min(
+      IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxWidth,
+      Math.max(
+        IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minWidth,
+        width ?? imageGeneration.frame.width,
+      ),
+    );
+    const frameHeight = Math.min(
+      IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxHeight,
+      Math.max(
+        IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minHeight,
+        height ?? imageGeneration.frame.height,
+      ),
+    );
 
     return (
       <article
@@ -2557,8 +2572,10 @@ function GenerationBlockNode({
           isVisible={selected}
           keepAspectRatio
           lineClassName="space-node-resize-line"
-          minHeight={260}
-          minWidth={320}
+          maxHeight={IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxHeight}
+          maxWidth={IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxWidth}
+          minHeight={IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minHeight}
+          minWidth={IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minWidth}
         />
         <FreepikReferenceImageNode
           details={imageGeneration}
@@ -2636,13 +2653,17 @@ function FreepikReferenceImageNode({
     (provider) => provider.providerId === details.providerId,
   );
   const modelLabel = activeProvider?.label === "Freepik-style" ? "Google Nano Ban..." : (activeProvider?.label ?? details.providerId);
-  const promptPort = details.inputs.find((port) => port.id === "prompt") ?? details.inputs[0];
+  const promptPort = details.inputs.find((port) => port.id === "prompt");
   const referencePort =
-    details.inputs.find((port) => port.id === "reference_image") ??
-    details.inputs[1];
-  const generatedPort =
-    details.outputs.find((port) => port.id === "generated_image_asset") ??
-    details.outputs[0];
+    details.inputs.find((port) => port.id === "reference_image" && port.dataType === "asset");
+  const generatedPort = details.outputs.find(
+    (port) => port.id === "generated_image_asset" && port.dataType === "asset",
+  );
+  const nodeStatus = resolveImageGenerationNodeStatus({
+    selected,
+    uiState: details.uiState,
+  });
+  const nodeStatusView = resolveImageGenerationNodeStatusView(nodeStatus);
 
   return (
     <div
@@ -2664,6 +2685,15 @@ function FreepikReferenceImageNode({
       </div>
 
       <div className="space-image-node-card">
+        <span
+          className={cn("space-node-status", nodeStatusView.className)}
+          data-status={nodeStatusView.status}
+          role="status"
+          aria-label={nodeStatusView.ariaLabel}
+        >
+          {nodeStatusView.label}
+        </span>
+
         <div className="space-side-port-stack" aria-label="Image node input connections">
           <div
             className="space-side-port text-port prompt-input-affordance"
@@ -2709,6 +2739,10 @@ function FreepikReferenceImageNode({
 
         <div className="space-node-prompt" role="textbox" aria-label="Prompt" aria-readonly="true">
           어떤 이미지를 생성하고 싶은지 설명해주세요...
+        </div>
+
+        <div className="space-primary-output-preview" aria-label="Primary output preview">
+          <ImageIcon className="size-4" />
         </div>
 
         <div className="space-node-controls nodrag" aria-label="Image generation settings">

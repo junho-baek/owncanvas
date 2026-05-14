@@ -5032,6 +5032,13 @@ export function createCampaignBlock(
     ...definition,
     id: `${kind}_block_${index + 1}`,
     position,
+    ...(kind === "image"
+      ? {
+          properties: createImageGenerationNodeProperties({
+            providerId: "freepik-compatible",
+          }),
+        }
+      : {}),
   };
 }
 

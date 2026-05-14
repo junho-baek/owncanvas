@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { createImageGenerationNodeProperties } from "../model/image-generation-node.ts";
+
 const creativeCanvasScreen = readFileSync(
   new URL("./creative-canvas-screen.tsx", import.meta.url),
   "utf8",
@@ -55,7 +57,48 @@ test("Spaces-style image generation node keeps a large prompt area", () => {
   assert.match(appCss, /\.space-node-prompt\s*\{[\s\S]*min-height:\s*120px/);
 });
 
+test("Spaces-style image generation node stays compact and not page-like", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.match(
+    creativeCanvasScreen,
+    /style=\{\{ width: frameWidth, height: frameHeight \}\}/,
+  );
+  assert.match(creativeCanvasScreen, /IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.minWidth/);
+  assert.match(creativeCanvasScreen, /IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.minHeight/);
+  assert.match(creativeCanvasScreen, /maxWidth=\{IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.maxWidth\}/);
+  assert.match(creativeCanvasScreen, /maxHeight=\{IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.maxHeight\}/);
+  assert.match(creativeCanvasScreen, /Math\.min\([\s\S]*IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.maxWidth/);
+  assert.match(creativeCanvasScreen, /Math\.min\([\s\S]*IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.maxHeight/);
+  assert.match(appCss, /\.space-image-node-card\s*\{[\s\S]*min-width:\s*320px/);
+  assert.match(appCss, /\.space-image-node-card\s*\{[\s\S]*min-height:\s*260px/);
+  assert.doesNotMatch(imageNodeSource, /className="[^"]*(?:page|generator-page|fullscreen|preview-grid|preview-panel)[^"]*"/i);
+  assert.doesNotMatch(appCss, /\.space-image-node-card\s*\{[\s\S]*(?:width:\s*100vw|height:\s*100vh|position:\s*fixed)/i);
+});
+
 test("Spaces-style image generation node keeps bottom setting chips", () => {
+  const defaultImageGeneration = createImageGenerationNodeProperties();
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.equal(defaultImageGeneration.aspectRatio, "9:16");
   assert.match(creativeCanvasScreen, /className="space-node-controls nodrag"/);
   assert.match(creativeCanvasScreen, /aria-label="Image generation settings"/);
   assert.match(creativeCanvasScreen, /className="space-control-chip count"/);
@@ -63,7 +106,8 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   assert.match(creativeCanvasScreen, /className="space-control-chip model"/);
   assert.match(creativeCanvasScreen, /<span>\{modelLabel\}<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip ratio"/);
-  assert.match(creativeCanvasScreen, /<span>\{details\.aspectRatio\}<\/span>/);
+  assert.match(imageNodeSource, /<span>\{details\.aspectRatio\}<\/span>/);
+  assert.doesNotMatch(imageNodeSource, /<span>16:9<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip quality"/);
   assert.match(creativeCanvasScreen, /<span>1K<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip icon"/);
@@ -99,6 +143,38 @@ test("Spaces-style image generation node keeps the bottom-right circular run but
   assert.match(appCss, /\.space-run-button\s*\{[\s\S]*border-radius:\s*999px/);
 });
 
+test("Spaces-style image generation node renders compact lifecycle status feedback", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.match(imageNodeSource, /resolveImageGenerationNodeStatus\(\{/);
+  assert.match(imageNodeSource, /selected,\s*uiState: details\.uiState/);
+  assert.match(imageNodeSource, /resolveImageGenerationNodeStatusView\(nodeStatus\)/);
+  assert.match(
+    imageNodeSource,
+    /className=\{cn\("space-node-status", nodeStatusView\.className\)\}/,
+  );
+  assert.match(imageNodeSource, /data-status=\{nodeStatusView\.status\}/);
+  assert.match(imageNodeSource, /role="status"/);
+  assert.match(imageNodeSource, /aria-label=\{nodeStatusView\.ariaLabel\}/);
+  assert.match(imageNodeSource, /\{nodeStatusView\.label\}/);
+  assert.doesNotMatch(imageNodeSource, /if \(status ===/);
+  assert.doesNotMatch(imageNodeSource, /invoke|retry|runGeneration|generateImage/);
+  assert.match(appCss, /\.space-node-status\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(appCss, /\.space-node-status\.selected\s*\{[\s\S]*color:\s*#2563eb/);
+  assert.match(appCss, /\.space-node-status\.running\s*\{[\s\S]*color:\s*#c2410c/);
+  assert.match(appCss, /\.space-node-status\.completed\s*\{[\s\S]*color:\s*#047857/);
+  assert.match(appCss, /\.space-node-status\.error\s*\{[\s\S]*color:\s*#b91c1c/);
+});
+
 test("Spaces-style image generation node keeps the lower-right resize handle", () => {
   assert.match(creativeCanvasScreen, /<NodeResizer/);
   assert.match(
@@ -120,7 +196,7 @@ test("Spaces-style image generation node keeps the lower-right resize handle", (
   );
 });
 
-test("Spaces-style image generation node does not render a preview grid", () => {
+test("Spaces-style image generation node only allows a single primary output preview", () => {
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
@@ -131,12 +207,21 @@ test("Spaces-style image generation node does not render a preview grid", () => 
   assert.notEqual(imageNodeEnd, -1);
 
   const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+  const primaryPreviewMatches = imageNodeSource.match(
+    /className="space-primary-output-preview"/g,
+  ) ?? [];
 
+  assert.equal(primaryPreviewMatches.length, 1);
+  assert.match(imageNodeSource, /aria-label="Primary output preview"/);
+  assert.match(appCss, /\.space-primary-output-preview\s*\{[\s\S]*width:\s*46px/);
+  assert.match(appCss, /\.space-primary-output-preview\s*\{[\s\S]*height:\s*82px/);
   assert.doesNotMatch(imageNodeSource, /freepik-preview-grid/);
   assert.doesNotMatch(imageNodeSource, /freepik-preview-panel/);
   assert.doesNotMatch(imageNodeSource, /freepik-preview-\d+\.jpg/);
+  assert.doesNotMatch(imageNodeSource, /(?:outputs|generatedAssetIds)\.map\(/);
   assert.doesNotMatch(imageNodeSource, /<img\b/);
   assert.doesNotMatch(appCss, /\.freepik-preview-grid\b/);
+  assert.doesNotMatch(appCss, /\.freepik-preview-panel\b/);
 });
 
 test("Spaces-style image generation node hides JSON, secrets, storage, and debug copy", () => {
@@ -153,6 +238,24 @@ test("Spaces-style image generation node hides JSON, secrets, storage, and debug
 
   assert.doesNotMatch(imageNodeSource, />[^<]*(?:JSON|schema|storage|debug|secret|token|API key|canvas\.json|assets\/|runs\/|metadata|cost)[^<]*</i);
   assert.doesNotMatch(imageNodeSource, /aria-label="[^"]*(?:JSON|schema|storage|debug|secret|token|API key|metadata|cost)[^"]*"/i);
+  assert.doesNotMatch(imageNodeSource, /title=\{[^}]*(?:JSON|schema|storage|debug|secret|token|API key|payload|request|response|trace|metadata|cost)[^}]*\}/i);
   assert.doesNotMatch(imageNodeSource, /title=\{[^}]*(?:secretEnvName|storage|canvasJsonPath|assetDirectory|runHistory|latestResultRefs|metadataRunId|costUsageRunId)[^}]*\}/i);
   assert.doesNotMatch(imageNodeSource, /secretEnvName|canvasJsonPath|assetDirectory|runHistory|latestResultRefs|metadataRunId|costUsageRunId/);
+  assert.doesNotMatch(imageNodeSource, /\?\?\s*details\.(?:inputs|outputs)\[/);
+  assert.match(
+    imageNodeSource,
+    /details\.inputs\.find\(\(port\) => port\.id === "prompt"\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /details\.inputs\.find\(\(port\) => port\.id === "reference_image" && port\.dataType === "asset"\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /details\.outputs\.find\([\s\S]*port\.id === "generated_image_asset" && port\.dataType === "asset"[\s\S]*\)/,
+  );
+  assert.doesNotMatch(
+    imageNodeSource,
+    /(?:metadata|cost_usage|style_template_vars|payload|raw|debug|trace|request|response)/i,
+  );
 });
