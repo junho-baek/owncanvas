@@ -344,6 +344,9 @@ export type ImageGenerationNodeProperties = {
   uiState: ImageGenerationNodeUiState;
 };
 
+export type ImageGenerationNodeResultRefs =
+  ImageGenerationNodeProperties["latestResultRefs"];
+
 export const imageGenerationInputPorts = [
   {
     id: "prompt",
@@ -1168,6 +1171,49 @@ export function createImageGenerationNodeUiState(
     statusMessage: input.statusMessage ?? null,
     errorReason: input.errorReason ?? null,
     outputConnectionReady: input.outputConnectionReady ?? false,
+  };
+}
+
+export function startImageGenerationNodeTransition(
+  properties: ImageGenerationNodeProperties,
+): ImageGenerationNodeProperties {
+  return {
+    ...properties,
+    latestResultRefs: {
+      generatedAssetIds: [],
+      metadataRunId: null,
+      costUsageRunId: null,
+    },
+    uiState: createImageGenerationNodeUiState({
+      ...properties.uiState,
+      status: "running",
+      progressPercent: 0,
+      statusMessage: "Generation started",
+      errorReason: null,
+      outputConnectionReady: false,
+    }),
+  };
+}
+
+export function completeImageGenerationNodeTransition(
+  properties: ImageGenerationNodeProperties,
+  latestResultRefs: ImageGenerationNodeResultRefs,
+): ImageGenerationNodeProperties {
+  return {
+    ...properties,
+    latestResultRefs: {
+      generatedAssetIds: [...latestResultRefs.generatedAssetIds],
+      metadataRunId: latestResultRefs.metadataRunId,
+      costUsageRunId: latestResultRefs.costUsageRunId,
+    },
+    uiState: createImageGenerationNodeUiState({
+      ...properties.uiState,
+      status: "completed",
+      progressPercent: 100,
+      statusMessage: "Generation complete",
+      errorReason: null,
+      outputConnectionReady: latestResultRefs.generatedAssetIds.length > 0,
+    }),
   };
 }
 

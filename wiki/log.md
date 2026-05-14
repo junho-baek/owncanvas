@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-14] image-generation-node-model-capability-fixtures | Sub-AC 4.4.1 retry 2
+
+- Image Generation Node v2 model capability fixture를 `app/features/creative-canvas/model/image-generation-node.fixtures.ts` 기준으로 테스트에 연결했다.
+- fixture coverage는 Replicate `google/nano-banana`의 9:16 default와 Replicate `openai/gpt-image-1`의 제한된 aspect ratio/control surface를 함께 고정한다.
+- `model capability fixtures cover vertical defaults and restricted unsupported options` regression은 fixture count, default aspect ratio, supported/unsupported aspect ratios, unsupported control kinds, unsupported ratio behavior, reference image limit을 검증한다.
+- 공유 작업공간에 있던 `completeImageGenerationNodeTransition` test/import와 model export 간 불일치를 같은 model state contract 안에서 정리해 model suite가 다시 실행되도록 했다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "model capability fixtures" app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/model/image-generation-node.ts app/features/creative-canvas/model/image-generation-node.fixtures.ts app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+
 ## [2026-05-14] image-generation-node-output-area-states | Sub-AC 14.2.3 retry 2
 
 - Image Generation Node v2 output area가 `success`, `error`, `cancelled`, `empty-output` 상태를 `resolveImageGenerationNodeOutputView()` 계약으로 렌더링하도록 공유 작업공간에 반영되어 있음을 확인했다.
@@ -2004,3 +2012,10 @@
 - `FreepikReferenceImageNode` 범위의 정적 회귀 테스트를 강화해 raw JSON, schema/storage/debug/secret/token/API key, payload/request/response/trace, metadata/cost copy와 임의 `details.inputs/outputs` fallback을 금지했다.
 - 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts app/features/creative-canvas/model/image-generation-node.test.ts app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
 - 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. 브라우저 스크린샷은 production server가 sandbox `listen EPERM: operation not permitted 0.0.0.0:3000`으로 실패해 완료하지 못했다. commit/push는 수행하지 않았다.
+
+## [2026-05-14] image-generation-node-start-transition | Sub-AC 14.3.1
+
+- `startImageGenerationNodeTransition()` 경로를 모델 테스트로 고정해 generation start 시 `uiState.status`가 `running`이 되고 `progressPercent`가 `0`으로 초기화되는지 확인했다.
+- 이전 완료/오류 상태의 `latestResultRefs`, `errorReason`, `outputConnectionReady`는 새 실행 시작 시 비워지고, `viewMode`, inspector, docs panel, reference tray 같은 상호작용 표면 상태는 유지되도록 명시했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: `npm run skills:check`는 이번 sandbox에서 출력 없이 장시간 종료되지 않았고, process inspection도 권한 제한으로 실패해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. commit/push는 수행하지 않았다.

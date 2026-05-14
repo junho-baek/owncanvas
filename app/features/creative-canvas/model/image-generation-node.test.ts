@@ -17,12 +17,18 @@ import {
   imageGenerationOutputPorts,
   imageGenerationProviderCapabilityRegistry,
   isImageGenerationNodeProperties,
+  completeImageGenerationNodeTransition,
   resolveImageGenerationNodeOutputView,
   listImageGenerationModelCapabilities,
   resolveImageGenerationNodeStatusView,
   resolveImageGenerationNodeStatus,
+  startImageGenerationNodeTransition,
   type ImageGenerationAspectRatio,
 } from "./image-generation-node.ts";
+import {
+  imageGenerationModelCapabilityFixtureCases,
+  imageGenerationModelCapabilityFixtures,
+} from "./image-generation-node.fixtures.ts";
 
 test("image generation node exposes provider-agnostic ports, batch limit, storage, and no secrets", () => {
   const properties = createImageGenerationNodeProperties({
@@ -175,6 +181,130 @@ test("image generation node maps lifecycle states to compact view metadata only"
     ]);
   }
   assert.doesNotMatch(serialized, /invoke|retry|runGeneration|generateImage/i);
+});
+
+test("image generation start transition marks status model active in progress", () => {
+  const completedProperties = createImageGenerationNodeProperties({
+    latestResultRefs: {
+      generatedAssetIds: ["asset_previous_output"],
+      metadataRunId: "run_previous_metadata",
+      costUsageRunId: "run_previous_cost",
+    },
+    uiState: createImageGenerationNodeUiState({
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+      status: "completed",
+      progressPercent: 100,
+      statusMessage: "Ready",
+      errorReason: "Previous transient provider warning",
+      outputConnectionReady: true,
+    }),
+  });
+
+  const runningProperties =
+    startImageGenerationNodeTransition(completedProperties);
+
+  assert.equal(runningProperties.uiState.status, "running");
+  assert.equal(runningProperties.uiState.progressPercent, 0);
+  assert.equal(runningProperties.uiState.statusMessage, "Generation started");
+  assert.equal(runningProperties.uiState.errorReason, null);
+  assert.equal(runningProperties.uiState.outputConnectionReady, false);
+  assert.deepEqual(runningProperties.latestResultRefs, {
+    generatedAssetIds: [],
+    metadataRunId: null,
+    costUsageRunId: null,
+  });
+  assert.deepEqual(
+    {
+      viewMode: runningProperties.uiState.viewMode,
+      inspectorOpen: runningProperties.uiState.inspectorOpen,
+      docsPanelOpen: runningProperties.uiState.docsPanelOpen,
+      referenceTrayOpen: runningProperties.uiState.referenceTrayOpen,
+    },
+    {
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+    },
+  );
+  assert.equal(
+    resolveImageGenerationNodeStatus({
+      selected: true,
+      uiState: runningProperties.uiState,
+    }),
+    "running",
+  );
+});
+
+test("image generation success transition marks status model completed with output ready", () => {
+  const runningProperties = createImageGenerationNodeProperties({
+    latestResultRefs: {
+      generatedAssetIds: [],
+      metadataRunId: null,
+      costUsageRunId: null,
+    },
+    uiState: createImageGenerationNodeUiState({
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+      status: "running",
+      progressPercent: 64,
+      statusMessage: "Provider is rendering",
+      errorReason: "Previous warning",
+      outputConnectionReady: false,
+    }),
+  });
+
+  const completedProperties = completeImageGenerationNodeTransition(
+    runningProperties,
+    {
+      generatedAssetIds: ["asset_vertical_ad_1", "asset_vertical_ad_2"],
+      metadataRunId: "run_image_metadata_1",
+      costUsageRunId: "run_image_cost_1",
+    },
+  );
+
+  assert.deepEqual(completedProperties.latestResultRefs, {
+    generatedAssetIds: ["asset_vertical_ad_1", "asset_vertical_ad_2"],
+    metadataRunId: "run_image_metadata_1",
+    costUsageRunId: "run_image_cost_1",
+  });
+  assert.equal(completedProperties.uiState.status, "completed");
+  assert.equal(completedProperties.uiState.progressPercent, 100);
+  assert.equal(completedProperties.uiState.statusMessage, "Generation complete");
+  assert.equal(completedProperties.uiState.errorReason, null);
+  assert.equal(completedProperties.uiState.outputConnectionReady, true);
+  assert.deepEqual(
+    {
+      viewMode: completedProperties.uiState.viewMode,
+      inspectorOpen: completedProperties.uiState.inspectorOpen,
+      docsPanelOpen: completedProperties.uiState.docsPanelOpen,
+      referenceTrayOpen: completedProperties.uiState.referenceTrayOpen,
+    },
+    {
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+    },
+  );
+  assert.equal(
+    resolveImageGenerationNodeStatus({
+      selected: true,
+      uiState: completedProperties.uiState,
+    }),
+    "completed",
+  );
+  assert.deepEqual(resolveImageGenerationNodeOutputView(completedProperties), {
+    state: "success",
+    label: "Ready",
+    className: "success",
+    ariaLabel: "Image output area: generated output ready",
+  });
 });
 
 test("image generation node maps output area success error cancelled and empty-output states", () => {
@@ -428,6 +558,75 @@ test("initial image model registry entries declare default ratio and supported c
     gptImage.schemaAdapter.unsupportedRatioBehavior,
     "map_nearest",
   );
+});
+
+test("model capability fixtures cover vertical defaults and restricted unsupported options", () => {
+  assert.equal(imageGenerationModelCapabilityFixtureCases.length >= 2, true);
+  assert.equal(
+    imageGenerationModelCapabilityFixtures.length,
+    imageGenerationModelCapabilityFixtureCases.length,
+  );
+
+  for (const fixtureCase of imageGenerationModelCapabilityFixtureCases) {
+    const { capability, expectations } = fixtureCase;
+    const supportedControlKinds = new Set(
+      capability.inputControls.map((control) => control.kind),
+    );
+
+    assert.equal(
+      capability.defaultAspectRatio,
+      expectations.defaultAspectRatio,
+      `${fixtureCase.id} default aspect ratio`,
+    );
+    assert.equal(
+      capability.schemaAdapter.unsupportedRatioBehavior,
+      expectations.unsupportedRatioBehavior,
+      `${fixtureCase.id} unsupported ratio behavior`,
+    );
+    assert.equal(
+      capability.referenceSupport.maxImages,
+      expectations.maxReferenceImages,
+      `${fixtureCase.id} max reference images`,
+    );
+
+    for (const aspectRatio of expectations.supportedAspectRatiosInclude) {
+      assert.equal(
+        capability.supportedAspectRatios.includes(aspectRatio),
+        true,
+        `${fixtureCase.id} should support ${aspectRatio}`,
+      );
+    }
+
+    for (const aspectRatio of expectations.unsupportedAspectRatios) {
+      assert.equal(
+        capability.supportedAspectRatios.includes(aspectRatio),
+        false,
+        `${fixtureCase.id} should not support ${aspectRatio}`,
+      );
+    }
+
+    for (const controlKind of expectations.unsupportedControlKinds) {
+      assert.equal(
+        supportedControlKinds.has(controlKind),
+        false,
+        `${fixtureCase.id} should not expose unsupported ${controlKind} control`,
+      );
+    }
+  }
+
+  const hasVerticalNineBySixteenDefault =
+    imageGenerationModelCapabilityFixtureCases.some(
+      ({ capability }) => capability.defaultAspectRatio === "9:16",
+    );
+  const hasRestrictedUnsupportedOptions =
+    imageGenerationModelCapabilityFixtureCases.some(
+      ({ expectations }) =>
+        expectations.unsupportedAspectRatios.length > 0 ||
+        expectations.unsupportedControlKinds.length > 0,
+    );
+
+  assert.equal(hasVerticalNineBySixteenDefault, true);
+  assert.equal(hasRestrictedUnsupportedOptions, true);
 });
 
 test("replicate image model entries expose provider-specific schema metadata aligned with adapters", () => {

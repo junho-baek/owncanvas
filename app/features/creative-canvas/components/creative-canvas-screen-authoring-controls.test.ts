@@ -221,6 +221,10 @@ test("Spaces-style image generation node has non-generating UI coverage for ever
   });
 
   assert.deepEqual(
+    statusBadgeStories.map((story) => story.status),
+    imageGenerationNodeStatuses,
+  );
+  assert.deepEqual(
     statusBadgeStories.map((story) => story.renderedBadge),
     [
       {
@@ -276,7 +280,7 @@ test("Spaces-style image generation node has non-generating UI coverage for ever
     );
     assert.doesNotMatch(
       JSON.stringify(story.renderedBadge),
-      /on(?:Click|PointerDown|MouseDown|Submit)|invoke|retry|runGeneration|generateImage/i,
+      /type|button|on(?:Click|PointerDown|MouseDown|Submit)|invoke|retry|runGeneration|generateImage/i,
     );
   }
 
@@ -285,7 +289,7 @@ test("Spaces-style image generation node has non-generating UI coverage for ever
   assert.match(statusBadgeSource, /\{nodeStatusView\.label\}/);
   assert.doesNotMatch(
     statusBadgeSource,
-    /on(?:Click|PointerDown|MouseDown|Submit)=|invoke|retry|runGeneration|generateImage|Generate image/i,
+    /type="button"|on(?:Click|PointerDown|MouseDown|Submit)=|invoke|retry|runGeneration|generateImage|Generate image/i,
   );
 });
 
