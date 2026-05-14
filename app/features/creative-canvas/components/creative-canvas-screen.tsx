@@ -108,6 +108,7 @@ import {
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
   isImageGenerationNodeProperties,
+  resolveImageGenerationNodeOutputView,
   resolveImageGenerationNodeStatus,
   resolveImageGenerationNodeStatusView,
   type ImageGenerationNodeProperties,
@@ -2664,6 +2665,7 @@ function FreepikReferenceImageNode({
     uiState: details.uiState,
   });
   const nodeStatusView = resolveImageGenerationNodeStatusView(nodeStatus);
+  const outputView = resolveImageGenerationNodeOutputView(details);
 
   return (
     <div
@@ -2741,8 +2743,13 @@ function FreepikReferenceImageNode({
           어떤 이미지를 생성하고 싶은지 설명해주세요...
         </div>
 
-        <div className="space-primary-output-preview" aria-label="Primary output preview">
+        <div
+          className={cn("space-primary-output-preview", outputView.className)}
+          data-output-state={outputView.state}
+          aria-label={outputView.ariaLabel}
+        >
           <ImageIcon className="size-4" />
+          <span>{outputView.label}</span>
         </div>
 
         <div className="space-node-controls nodrag" aria-label="Image generation settings">

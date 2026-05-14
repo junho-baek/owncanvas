@@ -6,6 +6,7 @@ export const imageGenerationNodeStatuses = [
   "running",
   "completed",
   "error",
+  "cancelled",
 ] as const;
 
 export type ImageGenerationNodeStatus =
@@ -209,6 +210,44 @@ export type ImageGenerationModelCapability = {
   };
 };
 
+export type ImageGenerationNodeValidationIssueSeverity = "warning" | "error";
+
+export type ImageGenerationNodeValidationIssue = {
+  code:
+    | "image_generation.model_capability_missing"
+    | "image_generation.aspect_ratio_unsupported"
+    | "image_generation.aspect_ratio_mapped"
+    | "image_generation.control_unsupported"
+    | "image_generation.control_value_invalid"
+    | "image_generation.reference_unsupported"
+    | "image_generation.reference_count_invalid"
+    | "image_generation.reference_type_invalid";
+  severity: ImageGenerationNodeValidationIssueSeverity;
+  controlId: string;
+  message: string;
+  guidance: string;
+  supportedValues?: readonly string[];
+};
+
+export type ImageGenerationNodeValidationFeedbackState =
+  | "ready"
+  | "warning"
+  | "invalid";
+
+export type ImageGenerationNodeValidationFeedback = {
+  state: ImageGenerationNodeValidationFeedbackState;
+  label: string;
+  className: ImageGenerationNodeValidationFeedbackState;
+  ariaLabel: string;
+  message: string | null;
+};
+
+export type ImageGenerationNodeValidationResult = {
+  valid: boolean;
+  issues: ImageGenerationNodeValidationIssue[];
+  feedback: ImageGenerationNodeValidationFeedback;
+};
+
 type ImageGenerationModelCapabilityDefinition = Omit<
   ImageGenerationModelCapability,
   "controlMetadata"
@@ -272,10 +311,24 @@ export type ImageGenerationNodeStatusView = {
   ariaLabel: string;
 };
 
+export type ImageGenerationNodeOutputState =
+  | "success"
+  | "error"
+  | "cancelled"
+  | "empty-output";
+
+export type ImageGenerationNodeOutputView = {
+  state: ImageGenerationNodeOutputState;
+  label: string;
+  className: ImageGenerationNodeOutputState;
+  ariaLabel: string;
+};
+
 export type ImageGenerationNodeProperties = {
   nodeType: typeof IMAGE_GENERATION_NODE_TYPE;
   providerAgnostic: true;
   providerId: ImageGenerationProviderPreset["providerId"];
+  modelSlug: string;
   batchCount: 1 | 2 | 3 | 4 | 5;
   aspectRatio: ImageGenerationAspectRatio;
   frame: ImageGenerationFrame;
@@ -1043,20 +1096,44 @@ export function listImageGenerationModelCapabilities(
   );
 }
 
+export function resolveImageGenerationNodeModelCapability(
+  properties: Pick<ImageGenerationNodeProperties, "providerId" | "modelSlug">,
+): ImageGenerationModelCapability | undefined {
+  return getImageGenerationModelCapability({
+    providerId: properties.providerId,
+    modelSlug: properties.modelSlug,
+  });
+}
+
 export function createImageGenerationNodeProperties(
   input: Partial<
     Pick<
       ImageGenerationNodeProperties,
-      "providerId" | "batchCount" | "aspectRatio" | "frame" | "uiState"
+      | "providerId"
+      | "modelSlug"
+      | "batchCount"
+      | "aspectRatio"
+      | "frame"
+      | "latestResultRefs"
+      | "uiState"
     >
   > = {},
 ): ImageGenerationNodeProperties {
   const aspectRatio = input.aspectRatio ?? "9:16";
+  const providerId =
+    input.providerId ?? imageGenerationProviderCapabilityRegistry.defaultModel.providerId;
+  const modelSlug =
+    input.modelSlug ??
+    imageGenerationProviderCapabilityRegistry.providers.find(
+      (provider) => provider.providerId === providerId,
+    )?.modelSlugs[0] ??
+    imageGenerationProviderCapabilityRegistry.defaultModel.modelSlug;
 
   return {
     nodeType: IMAGE_GENERATION_NODE_TYPE,
     providerAgnostic: true,
-    providerId: input.providerId ?? "openai-image",
+    providerId,
+    modelSlug,
     batchCount: input.batchCount ?? 1,
     aspectRatio,
     frame: input.frame ?? createImageGenerationFrame(aspectRatio),
@@ -1069,7 +1146,7 @@ export function createImageGenerationNodeProperties(
       runHistory: "runs/",
       secretPolicy: "env-or-local-secret-store-only",
     },
-    latestResultRefs: {
+    latestResultRefs: input.latestResultRefs ?? {
       generatedAssetIds: [],
       metadataRunId: null,
       costUsageRunId: null,
@@ -1143,6 +1220,12 @@ const imageGenerationNodeStatusViews = {
     className: "error",
     ariaLabel: "Image node status: error",
   },
+  cancelled: {
+    status: "cancelled",
+    label: "Cancelled",
+    className: "cancelled",
+    ariaLabel: "Image node status: cancelled",
+  },
 } as const satisfies Record<
   ImageGenerationNodeStatus,
   ImageGenerationNodeStatusView
@@ -1152,6 +1235,52 @@ export function resolveImageGenerationNodeStatusView(
   status: ImageGenerationNodeStatus,
 ): ImageGenerationNodeStatusView {
   return { ...imageGenerationNodeStatusViews[status] };
+}
+
+export function resolveImageGenerationNodeOutputView(
+  properties: Pick<ImageGenerationNodeProperties, "latestResultRefs" | "uiState">,
+): ImageGenerationNodeOutputView {
+  if (properties.uiState.status === "error") {
+    return {
+      state: "error",
+      label: "Error",
+      className: "error",
+      ariaLabel: `Image output area: ${
+        properties.uiState.errorReason ?? "generation failed"
+      }`,
+    };
+  }
+
+  if (properties.uiState.status === "cancelled") {
+    return {
+      state: "cancelled",
+      label: "Cancelled",
+      className: "cancelled",
+      ariaLabel: "Image output area: generation cancelled",
+    };
+  }
+
+  if (
+    properties.uiState.status === "completed" &&
+    properties.latestResultRefs.generatedAssetIds.length > 0
+  ) {
+    return {
+      state: "success",
+      label: "Ready",
+      className: "success",
+      ariaLabel: "Image output area: generated output ready",
+    };
+  }
+
+  return {
+    state: "empty-output",
+    label: "Empty",
+    className: "empty-output",
+    ariaLabel:
+      properties.uiState.status === "completed"
+        ? "Image output area: no generated output returned"
+        : "Image output area: no output yet",
+  };
 }
 
 export function createImageGenerationFrame(

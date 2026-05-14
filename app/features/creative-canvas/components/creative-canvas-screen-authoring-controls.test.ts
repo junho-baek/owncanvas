@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { createImageGenerationNodeProperties } from "../model/image-generation-node.ts";
+import {
+  createImageGenerationNodeProperties,
+  imageGenerationNodeStatuses,
+  resolveImageGenerationNodeStatusView,
+} from "../model/image-generation-node.ts";
 
 const creativeCanvasScreen = readFileSync(
   new URL("./creative-canvas-screen.tsx", import.meta.url),
@@ -175,6 +179,116 @@ test("Spaces-style image generation node renders compact lifecycle status feedba
   assert.match(appCss, /\.space-node-status\.error\s*\{[\s\S]*color:\s*#b91c1c/);
 });
 
+test("Spaces-style image generation node has non-generating UI coverage for every lifecycle status", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+  const statusBadgeStart = imageNodeSource.indexOf(
+    'className={cn("space-node-status", nodeStatusView.className)}',
+  );
+  const statusBadgeEnd = imageNodeSource.indexOf(
+    "</span>",
+    statusBadgeStart,
+  );
+  assert.notEqual(statusBadgeStart, -1);
+  assert.notEqual(statusBadgeEnd, -1);
+
+  const statusBadgeSource = imageNodeSource.slice(
+    statusBadgeStart,
+    statusBadgeEnd,
+  );
+
+  const statusBadgeStories = imageGenerationNodeStatuses.map((status) => {
+    const view = resolveImageGenerationNodeStatusView(status);
+
+    return {
+      status,
+      renderedBadge: {
+        role: "status",
+        className: `space-node-status ${view.className}`,
+        dataStatus: view.status,
+        ariaLabel: view.ariaLabel,
+        text: view.label,
+      },
+    };
+  });
+
+  assert.deepEqual(
+    statusBadgeStories.map((story) => story.renderedBadge),
+    [
+      {
+        role: "status",
+        className: "space-node-status idle",
+        dataStatus: "idle",
+        ariaLabel: "Image node status: idle",
+        text: "Idle",
+      },
+      {
+        role: "status",
+        className: "space-node-status selected",
+        dataStatus: "selected",
+        ariaLabel: "Image node status: selected",
+        text: "Selected",
+      },
+      {
+        role: "status",
+        className: "space-node-status running",
+        dataStatus: "running",
+        ariaLabel: "Image node status: running",
+        text: "Running",
+      },
+      {
+        role: "status",
+        className: "space-node-status completed",
+        dataStatus: "completed",
+        ariaLabel: "Image node status: completed",
+        text: "Ready",
+      },
+      {
+        role: "status",
+        className: "space-node-status error",
+        dataStatus: "error",
+        ariaLabel: "Image node status: error",
+        text: "Error",
+      },
+      {
+        role: "status",
+        className: "space-node-status cancelled",
+        dataStatus: "cancelled",
+        ariaLabel: "Image node status: cancelled",
+        text: "Cancelled",
+      },
+    ],
+  );
+
+  for (const story of statusBadgeStories) {
+    assert.match(
+      appCss,
+      new RegExp(`\\.space-node-status\\.${story.status}\\s*\\{[\\s\\S]*color:`),
+      `${story.status} status should have explicit compact badge styling`,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(story.renderedBadge),
+      /on(?:Click|PointerDown|MouseDown|Submit)|invoke|retry|runGeneration|generateImage/i,
+    );
+  }
+
+  assert.match(statusBadgeSource, /data-status=\{nodeStatusView\.status\}/);
+  assert.match(statusBadgeSource, /aria-label=\{nodeStatusView\.ariaLabel\}/);
+  assert.match(statusBadgeSource, /\{nodeStatusView\.label\}/);
+  assert.doesNotMatch(
+    statusBadgeSource,
+    /on(?:Click|PointerDown|MouseDown|Submit)=|invoke|retry|runGeneration|generateImage|Generate image/i,
+  );
+});
+
 test("Spaces-style image generation node keeps the lower-right resize handle", () => {
   assert.match(creativeCanvasScreen, /<NodeResizer/);
   assert.match(
@@ -208,11 +322,11 @@ test("Spaces-style image generation node only allows a single primary output pre
 
   const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
   const primaryPreviewMatches = imageNodeSource.match(
-    /className="space-primary-output-preview"/g,
+    /className=\{cn\("space-primary-output-preview", outputView\.className\)\}/g,
   ) ?? [];
 
   assert.equal(primaryPreviewMatches.length, 1);
-  assert.match(imageNodeSource, /aria-label="Primary output preview"/);
+  assert.match(imageNodeSource, /aria-label=\{outputView\.ariaLabel\}/);
   assert.match(appCss, /\.space-primary-output-preview\s*\{[\s\S]*width:\s*46px/);
   assert.match(appCss, /\.space-primary-output-preview\s*\{[\s\S]*height:\s*82px/);
   assert.doesNotMatch(imageNodeSource, /freepik-preview-grid/);
@@ -222,6 +336,32 @@ test("Spaces-style image generation node only allows a single primary output pre
   assert.doesNotMatch(imageNodeSource, /<img\b/);
   assert.doesNotMatch(appCss, /\.freepik-preview-grid\b/);
   assert.doesNotMatch(appCss, /\.freepik-preview-panel\b/);
+});
+
+test("Spaces-style image generation node renders output area states", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.match(imageNodeSource, /resolveImageGenerationNodeOutputView\(details\)/);
+  assert.match(
+    imageNodeSource,
+    /className=\{cn\("space-primary-output-preview", outputView\.className\)\}/,
+  );
+  assert.match(imageNodeSource, /data-output-state=\{outputView\.state\}/);
+  assert.match(imageNodeSource, /aria-label=\{outputView\.ariaLabel\}/);
+  assert.match(imageNodeSource, /\{outputView\.label\}/);
+  assert.match(appCss, /\.space-primary-output-preview\.success\s*\{[\s\S]*border-color:\s*rgba\(57,\s*191,\s*69,\s*0\.64\)/);
+  assert.match(appCss, /\.space-primary-output-preview\.error\s*\{[\s\S]*border-color:\s*rgba\(185,\s*28,\s*28,\s*0\.48\)/);
+  assert.match(appCss, /\.space-primary-output-preview\.cancelled\s*\{[\s\S]*border-color:\s*rgba\(100,\s*116,\s*139,\s*0\.42\)/);
+  assert.match(appCss, /\.space-primary-output-preview\.empty-output\s*\{[\s\S]*border-color:\s*rgba\(226,\s*232,\s*240,\s*0\.92\)/);
 });
 
 test("Spaces-style image generation node hides JSON, secrets, storage, and debug copy", () => {

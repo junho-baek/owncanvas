@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-14] image-generation-node-output-area-states | Sub-AC 14.2.3 retry 2
+
+- Image Generation Node v2 output area가 `success`, `error`, `cancelled`, `empty-output` 상태를 `resolveImageGenerationNodeOutputView()` 계약으로 렌더링하도록 공유 작업공간에 반영되어 있음을 확인했다.
+- Compact Image Block UI는 단일 `space-primary-output-preview`에서 `data-output-state`, 상태별 class, aria label, 짧은 label을 사용해 output area feedback을 표시한다.
+- `cancelled`는 node lifecycle status에도 포함되어 cancelled output area와 compact lifecycle badge가 같은 상태 어휘를 공유한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "output area states" app/features/creative-canvas/model/image-generation-node.test.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 브라우저 스크린샷 시도: `npm start -- --host 127.0.0.1 --port 4173`는 sandbox `listen EPERM: operation not permitted 0.0.0.0:3000`로 실패했다.
+
 ## [2026-05-14] image-generation-node-status-model | Sub-AC 14.1 retry 2
 
 - Image Generation Node v2의 상태 모델이 `idle`, `selected`, `running`, `completed`, `error`를 포함하도록 공유 작업공간에 이미 반영되어 있음을 확인했다.

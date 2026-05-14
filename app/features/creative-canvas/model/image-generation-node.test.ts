@@ -17,6 +17,7 @@ import {
   imageGenerationOutputPorts,
   imageGenerationProviderCapabilityRegistry,
   isImageGenerationNodeProperties,
+  resolveImageGenerationNodeOutputView,
   listImageGenerationModelCapabilities,
   resolveImageGenerationNodeStatusView,
   resolveImageGenerationNodeStatus,
@@ -68,6 +69,7 @@ test("image generation node defines idle selected running completed and error st
     "running",
     "completed",
     "error",
+    "cancelled",
   ]);
   assert.deepEqual(properties.uiState, {
     viewMode: "compact",
@@ -150,6 +152,12 @@ test("image generation node maps lifecycle states to compact view metadata only"
         className: "error",
         ariaLabel: "Image node status: error",
       },
+      {
+        status: "cancelled",
+        label: "Cancelled",
+        className: "cancelled",
+        ariaLabel: "Image node status: cancelled",
+      },
     ],
   );
 
@@ -167,6 +175,85 @@ test("image generation node maps lifecycle states to compact view metadata only"
     ]);
   }
   assert.doesNotMatch(serialized, /invoke|retry|runGeneration|generateImage/i);
+});
+
+test("image generation node maps output area success error cancelled and empty-output states", () => {
+  const baseProperties = createImageGenerationNodeProperties();
+
+  assert.deepEqual(
+    [
+      resolveImageGenerationNodeOutputView(baseProperties),
+      resolveImageGenerationNodeOutputView(
+        createImageGenerationNodeProperties({
+          latestResultRefs: {
+            generatedAssetIds: ["asset_vertical_ad_1"],
+            metadataRunId: "run_image_1",
+            costUsageRunId: null,
+          },
+          uiState: createImageGenerationNodeUiState({
+            status: "completed",
+            outputConnectionReady: true,
+          }),
+        }),
+      ),
+      resolveImageGenerationNodeOutputView(
+        createImageGenerationNodeProperties({
+          uiState: createImageGenerationNodeUiState({
+            status: "completed",
+            statusMessage: "Provider returned no image output",
+          }),
+        }),
+      ),
+      resolveImageGenerationNodeOutputView(
+        createImageGenerationNodeProperties({
+          uiState: createImageGenerationNodeUiState({
+            status: "error",
+            errorReason: "Provider rejected unsupported aspect ratio",
+          }),
+        }),
+      ),
+      resolveImageGenerationNodeOutputView(
+        createImageGenerationNodeProperties({
+          uiState: createImageGenerationNodeUiState({
+            status: "cancelled",
+            statusMessage: "Generation cancelled",
+          }),
+        }),
+      ),
+    ],
+    [
+      {
+        state: "empty-output",
+        label: "Empty",
+        className: "empty-output",
+        ariaLabel: "Image output area: no output yet",
+      },
+      {
+        state: "success",
+        label: "Ready",
+        className: "success",
+        ariaLabel: "Image output area: generated output ready",
+      },
+      {
+        state: "empty-output",
+        label: "Empty",
+        className: "empty-output",
+        ariaLabel: "Image output area: no generated output returned",
+      },
+      {
+        state: "error",
+        label: "Error",
+        className: "error",
+        ariaLabel: "Image output area: Provider rejected unsupported aspect ratio",
+      },
+      {
+        state: "cancelled",
+        label: "Cancelled",
+        className: "cancelled",
+        ariaLabel: "Image output area: generation cancelled",
+      },
+    ],
+  );
 });
 
 test("campaign image block is the MVP image generation node by default", () => {
