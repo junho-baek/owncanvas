@@ -6,7 +6,13 @@ import {
   createCampaignAssetGenerationJob,
   createCampaignBlock,
 } from "../model/creative-canvas.ts";
-import { isImageGenerationNodeProperties } from "../model/image-generation-node.ts";
+import {
+  IMAGE_GENERATION_DEFAULT_ASPECT_RATIO,
+  IMAGE_GENERATION_DEFAULT_FRAME,
+  createImageGenerationFrame,
+  isImageGenerationNodeProperties,
+  selectImageGenerationNodeAspectRatioTransition,
+} from "../model/image-generation-node.ts";
 import {
   createCreativeCanvasSnapshotFromCampaignSpecJsonEdit,
   createGenerationFlowNode,
@@ -24,9 +30,57 @@ test("new Image Block creation initializes vertical image generation model state
     throw new Error("expected image generation properties");
   }
 
-  assert.equal(imageFlowNode.data.properties.aspectRatio, "9:16");
-  assert.equal(imageFlowNode.width, 360);
-  assert.equal(imageFlowNode.height, 640);
+  assert.equal(
+    imageFlowNode.data.properties.aspectRatio,
+    IMAGE_GENERATION_DEFAULT_ASPECT_RATIO,
+  );
+  assert.equal(imageFlowNode.width, IMAGE_GENERATION_DEFAULT_FRAME.width);
+  assert.equal(imageFlowNode.height, IMAGE_GENERATION_DEFAULT_FRAME.height);
+});
+
+test("Image Block ratio selector change persists selected output aspect-ratio state", () => {
+  const imageFlowNode = createGenerationFlowNode("image", 1);
+
+  if (!isImageGenerationNodeProperties(imageFlowNode.data.properties)) {
+    throw new Error("expected image generation properties");
+  }
+
+  const nextProperties = selectImageGenerationNodeAspectRatioTransition(
+    imageFlowNode.data.properties,
+    "1:1",
+  );
+  const updatedFlowNode = {
+    ...imageFlowNode,
+    width: nextProperties.frame.width,
+    height: nextProperties.frame.height,
+    data: {
+      ...imageFlowNode.data,
+      properties: nextProperties,
+    },
+  };
+
+  assert.equal(updatedFlowNode.width, createImageGenerationFrame("1:1").width);
+  assert.equal(updatedFlowNode.height, createImageGenerationFrame("1:1").height);
+
+  const campaign = syncCampaignFromCreativeCanvasInteraction(
+    createBlankCampaign(),
+    [updatedFlowNode],
+    [],
+  );
+  const persistedImageNode = campaign.campaignSpec.nodes[0];
+
+  assert.ok(persistedImageNode);
+  assert.equal(isImageGenerationNodeProperties(persistedImageNode.properties), true);
+
+  if (!isImageGenerationNodeProperties(persistedImageNode.properties)) {
+    throw new Error("expected persisted image generation properties");
+  }
+
+  assert.equal(persistedImageNode.properties.aspectRatio, "1:1");
+  assert.deepEqual(
+    persistedImageNode.properties.frame,
+    createImageGenerationFrame("1:1"),
+  );
 });
 
 test("React Flow canvas creation and update operations synchronize into the JSON spec", () => {

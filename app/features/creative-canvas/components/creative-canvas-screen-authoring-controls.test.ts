@@ -3,10 +3,17 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  IMAGE_GENERATION_DEFAULT_FRAME,
   createImageGenerationNodeProperties,
+  imageGenerationAspectRatioOptions,
   imageGenerationNodeStatuses,
+  imageGenerationNodeV2Statuses,
   resolveImageGenerationNodeStatusView,
 } from "../model/image-generation-node.ts";
+import {
+  imageGenerationNodeErrorRecoveryFeedbackFixtures,
+  imageGenerationNodeStatusFeedbackStoryFixtures,
+} from "./image-generation-node-status-feedback.fixtures.ts";
 
 const creativeCanvasScreen = readFileSync(
   new URL("./creative-canvas-screen.tsx", import.meta.url),
@@ -77,6 +84,26 @@ test("Spaces-style image generation node stays compact and not page-like", () =>
     creativeCanvasScreen,
     /style=\{\{ width: frameWidth, height: frameHeight \}\}/,
   );
+  assert.match(
+    creativeCanvasScreen,
+    /const storedFrameWidth = imageGeneration\.frame\.width;/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /const storedFrameHeight = imageGeneration\.frame\.height;/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /Math\.max\(\s*IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.minWidth,\s*storedFrameWidth,\s*\)/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /Math\.max\(\s*IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.minHeight,\s*storedFrameHeight,\s*\)/,
+  );
+  assert.doesNotMatch(
+    creativeCanvasScreen,
+    /(?:width|height)\s*\?\?\s*imageGeneration\.frame\.(?:width|height)/,
+  );
   assert.match(creativeCanvasScreen, /IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.minWidth/);
   assert.match(creativeCanvasScreen, /IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.minHeight/);
   assert.match(creativeCanvasScreen, /maxWidth=\{IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.maxWidth\}/);
@@ -103,6 +130,8 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
 
   assert.equal(defaultImageGeneration.aspectRatio, "9:16");
+  assert.equal(defaultImageGeneration.frame.width, IMAGE_GENERATION_DEFAULT_FRAME.width);
+  assert.equal(defaultImageGeneration.frame.height, IMAGE_GENERATION_DEFAULT_FRAME.height);
   assert.match(creativeCanvasScreen, /className="space-node-controls nodrag"/);
   assert.match(creativeCanvasScreen, /aria-label="Image generation settings"/);
   assert.match(creativeCanvasScreen, /className="space-control-chip count"/);
@@ -110,7 +139,9 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   assert.match(creativeCanvasScreen, /className="space-control-chip model"/);
   assert.match(creativeCanvasScreen, /<span>\{modelLabel\}<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip ratio"/);
-  assert.match(imageNodeSource, /<span>\{details\.aspectRatio\}<\/span>/);
+  assert.match(imageNodeSource, /value=\{details\.aspectRatio\}/);
+  assert.match(imageNodeSource, /onChange=\{handleAspectRatioChange\}/);
+  assert.match(imageNodeSource, /imageGenerationAspectRatioOptions\.map/);
   assert.doesNotMatch(imageNodeSource, /<span>16:9<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip quality"/);
   assert.match(creativeCanvasScreen, /<span>1K<\/span>/);
@@ -118,6 +149,35 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   assert.match(creativeCanvasScreen, /aria-label="Advanced settings"/);
   assert.match(appCss, /\.space-node-controls\s*\{[\s\S]*bottom:\s*22px/);
   assert.match(appCss, /\.space-node-controls\s*\{[\s\S]*display:\s*flex/);
+});
+
+test("Spaces-style image generation node ratio selector writes selected output aspect ratio", () => {
+  const defaultImageGeneration = createImageGenerationNodeProperties();
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.deepEqual(imageGenerationAspectRatioOptions, ["9:16", "1:1", "16:9"]);
+  assert.equal(defaultImageGeneration.aspectRatio, "9:16");
+  assert.match(
+    creativeCanvasScreen,
+    /selectImageGenerationNodeAspectRatioTransition\(\s*properties,\s*aspectRatio,\s*\)/,
+  );
+  assert.match(creativeCanvasScreen, /width:\s*nextProperties\.frame\.width/);
+  assert.match(creativeCanvasScreen, /height:\s*nextProperties\.frame\.height/);
+  assert.match(
+    imageNodeSource,
+    /onAspectRatioChange\(event\.currentTarget\.value as ImageGenerationAspectRatio\)/,
+  );
+  assert.match(imageNodeSource, /aria-label="Output aspect ratio"/);
+  assert.match(appCss, /\.space-control-select\s*\{[\s\S]*appearance:\s*none/);
 });
 
 test("Spaces-style image generation node uses valid DOM containers for embedded handles", () => {
@@ -291,6 +351,172 @@ test("Spaces-style image generation node has non-generating UI coverage for ever
     statusBadgeSource,
     /type="button"|on(?:Click|PointerDown|MouseDown|Submit)=|invoke|retry|runGeneration|generateImage|Generate image/i,
   );
+});
+
+test("Spaces-style image generation node has visible feedback for every v2 lifecycle status", () => {
+  const legacyStatusSet = new Set<string>(imageGenerationNodeStatuses);
+  const statusStories = [
+    ...imageGenerationNodeStatuses,
+    ...imageGenerationNodeV2Statuses.filter(
+      (status) => !legacyStatusSet.has(status),
+    ),
+  ].map((status) => {
+    const view = resolveImageGenerationNodeStatusView(status);
+
+    return {
+      status,
+      renderedBadge: {
+        role: "status",
+        className: `space-node-status ${view.className}`,
+        dataStatus: view.status,
+        ariaLabel: view.ariaLabel,
+        text: view.label,
+      },
+    };
+  });
+
+  assert.deepEqual(
+    statusStories.map((story) => story.status),
+    [
+      "idle",
+      "selected",
+      "running",
+      "completed",
+      "error",
+      "cancelled",
+      "queued",
+      "succeeded",
+      "failed",
+      "canceled",
+    ],
+  );
+
+  for (const story of statusStories) {
+    assert.match(
+      appCss,
+      new RegExp(`\\.space-node-status\\.${story.status}\\s*\\{[\\s\\S]*color:`),
+      `${story.status} status should render with explicit visible feedback styling`,
+    );
+    assert.equal(story.renderedBadge.role, "status");
+    assert.equal(story.renderedBadge.dataStatus, story.status);
+    assert.match(story.renderedBadge.className, new RegExp(`\\b${story.status}\\b`));
+    assert.match(story.renderedBadge.ariaLabel, /^Image node status: /);
+    assert.notEqual(story.renderedBadge.text, "");
+  }
+});
+
+test("image generation node status feedback story fixtures render every visible status badge", () => {
+  assert.deepEqual(
+    imageGenerationNodeStatusFeedbackStoryFixtures.map((fixture) => fixture.status),
+    imageGenerationNodeV2Statuses,
+  );
+
+  for (const fixture of imageGenerationNodeStatusFeedbackStoryFixtures) {
+    assert.equal(fixture.badge.role, "status");
+    assert.equal(fixture.badge.dataStatus, fixture.status);
+    assert.match(fixture.badge.className, /\bspace-node-status\b/);
+    assert.match(fixture.badge.className, new RegExp(`\\b${fixture.status}\\b`));
+    assert.match(fixture.badge.ariaLabel, /^Image node status: /);
+    assert.notEqual(fixture.badge.text, "");
+    assert.match(
+      fixture.renderedHtml,
+      new RegExp(
+        `<span class="${fixture.badge.className}" data-status="${fixture.status}" role="status" aria-label="${fixture.badge.ariaLabel}">${fixture.badge.text}</span>`,
+      ),
+    );
+    assert.match(
+      appCss,
+      new RegExp(`\\.space-node-status\\.${fixture.status}\\s*\\{[\\s\\S]*color:`),
+      `${fixture.status} fixture should have visible badge styling`,
+    );
+  }
+});
+
+test("image generation node error and recovery fixtures stay compact and non-generating", () => {
+  assert.deepEqual(
+    imageGenerationNodeErrorRecoveryFeedbackFixtures.map((fixture) => ({
+      id: fixture.id,
+      phase: fixture.phase,
+      retryable: fixture.retryable,
+      status: fixture.status,
+      statusMessage: fixture.statusMessage,
+      errorReason: fixture.errorReason,
+      outputState: fixture.outputBadge.dataOutputState,
+      outputConnectionReady: fixture.outputConnectionReady,
+    })),
+    [
+      {
+        id: "image-generation-node-error-retryable-provider",
+        phase: "error",
+        retryable: true,
+        status: "error",
+        statusMessage: "Generation failed",
+        errorReason: "Replicate is temporarily rate limited",
+        outputState: "error",
+        outputConnectionReady: false,
+      },
+      {
+        id: "image-generation-node-error-non-retryable-provider",
+        phase: "error",
+        retryable: false,
+        status: "error",
+        statusMessage: "Generation failed",
+        errorReason: "Provider rejected unsafe reference image",
+        outputState: "error",
+        outputConnectionReady: false,
+      },
+      {
+        id: "image-generation-node-recovery-queued",
+        phase: "recovery",
+        retryable: true,
+        status: "queued",
+        statusMessage: "Generation queued",
+        errorReason: null,
+        outputState: "empty-output",
+        outputConnectionReady: false,
+      },
+      {
+        id: "image-generation-node-recovery-succeeded",
+        phase: "recovery",
+        retryable: true,
+        status: "succeeded",
+        statusMessage: "Generation complete",
+        errorReason: null,
+        outputState: "success",
+        outputConnectionReady: true,
+      },
+    ],
+  );
+
+  for (const fixture of imageGenerationNodeErrorRecoveryFeedbackFixtures) {
+    assert.equal(fixture.statusBadge.role, "status");
+    assert.match(fixture.statusBadge.className, /\bspace-node-status\b/);
+    assert.match(fixture.outputBadge.className, /\bspace-primary-output-preview\b/);
+    assert.notEqual(fixture.statusBadge.text, "");
+    assert.notEqual(fixture.outputBadge.text, "");
+    assert.match(
+      appCss,
+      new RegExp(
+        `\\.space-node-status\\.${fixture.statusBadge.dataStatus}\\s*\\{[\\s\\S]*color:`,
+      ),
+      `${fixture.id} should keep compact status styling`,
+    );
+    assert.match(
+      appCss,
+      new RegExp(
+        `\\.space-primary-output-preview\\.${fixture.outputBadge.dataOutputState}\\s*\\{[\\s\\S]*border-color:`,
+      ),
+      `${fixture.id} should keep compact output-state styling`,
+    );
+    assert.doesNotMatch(
+      fixture.renderedHtml,
+      /class="[^"]*(?:page|generator-page|fullscreen|preview-grid|preview-panel)[^"]*"/i,
+    );
+    assert.doesNotMatch(
+      fixture.renderedHtml,
+      /<button\b|<form\b|type="button"|on(?:Click|PointerDown|MouseDown|Submit)|invoke|retry|runGeneration|generateImage|Generate image/i,
+    );
+  }
 });
 
 test("Spaces-style image generation node keeps the lower-right resize handle", () => {

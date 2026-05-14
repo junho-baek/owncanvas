@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType, ReactNode } from "react";
+import type { ChangeEvent, ComponentType, ReactNode } from "react";
 import {
   applyEdgeChanges,
   applyNodeChanges,
@@ -15,6 +15,7 @@ import {
   type EdgeChange,
   type NodeChange,
   type NodeProps,
+  type NodeTypes,
 } from "@xyflow/react";
 import {
   Archive,
@@ -107,10 +108,13 @@ import {
 } from "~/features/creative-canvas/model/creative-canvas";
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
+  imageGenerationAspectRatioOptions,
   isImageGenerationNodeProperties,
   resolveImageGenerationNodeOutputView,
   resolveImageGenerationNodeStatus,
   resolveImageGenerationNodeStatusView,
+  selectImageGenerationNodeAspectRatioTransition,
+  type ImageGenerationAspectRatio,
   type ImageGenerationNodeProperties,
 } from "~/features/creative-canvas/model/image-generation-node";
 
@@ -390,6 +394,54 @@ export function CreativeCanvasScreen({
       return nextNodes;
     });
   };
+
+  const handleImageAspectRatioChange = useCallback((
+    nodeId: string,
+    aspectRatio: ImageGenerationAspectRatio,
+  ) => {
+    setNodes((currentNodes) => {
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (node.id !== nodeId || !isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        const nextProperties = selectImageGenerationNodeAspectRatioTransition(
+          properties,
+          aspectRatio,
+        );
+
+        return {
+          ...node,
+          width: nextProperties.frame.width,
+          height: nextProperties.frame.height,
+          data: {
+            ...node.data,
+            properties: nextProperties,
+          },
+        };
+      });
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const creativeNodeTypes = useMemo<NodeTypes>(
+    () => ({
+      generation: (props) => (
+        <GenerationBlockNode
+          {...(props as NodeProps<CreativeFlowNode>)}
+          onImageAspectRatioChange={handleImageAspectRatioChange}
+        />
+      ),
+    }),
+    [handleImageAspectRatioChange],
+  );
 
   const applyCampaignSpecJsonEdit = (
     value: string,
@@ -2533,27 +2585,33 @@ function CanvasStatus({ visibleBlocks }: { visibleBlocks: number }) {
 function GenerationBlockNode({
   data,
   selected,
-  width,
-  height,
-}: NodeProps<CreativeFlowNode>) {
+  onImageAspectRatioChange,
+}: NodeProps<CreativeFlowNode> & {
+  onImageAspectRatioChange: (
+    nodeId: string,
+    aspectRatio: ImageGenerationAspectRatio,
+  ) => void;
+}) {
   const Icon = blockIcons[data.kind];
   const imageGeneration = isImageGenerationNodeProperties(data.properties)
     ? data.properties
     : null;
 
   if (imageGeneration) {
+    const storedFrameWidth = imageGeneration.frame.width;
+    const storedFrameHeight = imageGeneration.frame.height;
     const frameWidth = Math.min(
       IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxWidth,
       Math.max(
         IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minWidth,
-        width ?? imageGeneration.frame.width,
+        storedFrameWidth,
       ),
     );
     const frameHeight = Math.min(
       IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxHeight,
       Math.max(
         IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minHeight,
-        height ?? imageGeneration.frame.height,
+        storedFrameHeight,
       ),
     );
 
@@ -2581,6 +2639,9 @@ function GenerationBlockNode({
         <FreepikReferenceImageNode
           details={imageGeneration}
           Icon={Icon}
+          onAspectRatioChange={(aspectRatio) => {
+            onImageAspectRatioChange(data.id, aspectRatio);
+          }}
           selected={selected}
           tone={data.tone}
         />
@@ -2642,11 +2703,13 @@ function GenerationBlockNode({
 function FreepikReferenceImageNode({
   details,
   Icon,
+  onAspectRatioChange,
   selected,
   tone,
 }: {
   details: ImageGenerationNodeProperties;
   Icon: ComponentType<{ className?: string }>;
+  onAspectRatioChange: (aspectRatio: ImageGenerationAspectRatio) => void;
   selected: boolean;
   tone: GenerationBlockTone;
 }) {
@@ -2666,6 +2729,9 @@ function FreepikReferenceImageNode({
   });
   const nodeStatusView = resolveImageGenerationNodeStatusView(nodeStatus);
   const outputView = resolveImageGenerationNodeOutputView(details);
+  const handleAspectRatioChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    onAspectRatioChange(event.currentTarget.value as ImageGenerationAspectRatio);
+  };
 
   return (
     <div
@@ -2762,11 +2828,22 @@ function FreepikReferenceImageNode({
             <span>{modelLabel}</span>
             <em>⌄</em>
           </button>
-          <button className="space-control-chip ratio" type="button" aria-label="Aspect ratio selector">
+          <label className="space-control-chip ratio" aria-label="Aspect ratio selector">
             <Maximize2 className="size-3" />
-            <span>{details.aspectRatio}</span>
+            <select
+              className="space-control-select"
+              value={details.aspectRatio}
+              onChange={handleAspectRatioChange}
+              aria-label="Output aspect ratio"
+            >
+              {imageGenerationAspectRatioOptions.map((aspectRatio) => (
+                <option key={aspectRatio} value={aspectRatio}>
+                  {aspectRatio}
+                </option>
+              ))}
+            </select>
             <em>⌄</em>
-          </button>
+          </label>
           <button className="space-control-chip quality" type="button" aria-label="Resolution selector">
             <span>1K</span>
             <em>⌄</em>
@@ -2830,7 +2907,3 @@ function statusTone(status: string) {
   if (status === "NEEDS INPUT") return "needs-input";
   return "draft";
 }
-
-const creativeNodeTypes = {
-  generation: GenerationBlockNode,
-};

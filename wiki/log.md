@@ -2,6 +2,31 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-15] image-generation-node-ratio-frame-sync | Sub-AC 3.2 retry 2
+
+- Image Generation Node v2의 ratio selector 변경이 `selectImageGenerationNodeAspectRatioTransition()`을 통해 `aspectRatio`와 `frame`을 함께 갱신하도록 확인했다.
+- `createImageGenerationFrame()` 기준으로 `9:16`, `1:1`, `16:9` frame dimensions가 각각 compact node 크기에 반영되고, React Flow node `width`/`height` 및 campaign JSON persistence가 같은 frame 값을 유지한다.
+- Compact Image Block UI는 ratio `<select>` 변경 시 node data properties와 React Flow dimensions를 동시에 업데이트하며, node 내부 렌더링은 저장된 frame을 compact frame limits 안에서 사용한다.
+- 검증: focused ratio tests, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 브라우저 스크린샷 시도: `npm run start -- --host 127.0.0.1 --port 4173`는 sandbox `listen EPERM: operation not permitted 0.0.0.0:3000`로 실패했다.
+- 참고: `npm run skills:check`는 sandbox에서 출력 없이 반환되지 않아 `node scripts/check-skills.mjs`로 확인했고, 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다.
+
+## [2026-05-14] image-generation-node-level1-conflict-review | Level coordinator
+
+- Level 1 parallel AC 결과의 공통 수정 파일 `creative-canvas-screen-authoring-controls.test.ts`, `wiki/log.md`를 검토했다.
+- AC1의 9:16 기본 ratio regression, AC10의 compact node regression, AC14 계열 status/error feedback fixture 기록이 모두 보존되어 있고 conflict marker나 whitespace 오류가 없음을 확인했다.
+- 별도 병합 수정은 필요하지 않았으며, authoring controls regression suite가 통과했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `git diff --check -- app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts wiki/log.md`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다.
+
+## [2026-05-14] image-generation-node-error-recovery-feedback-fixtures | Sub-AC 14.4.3
+
+- Image Generation Node v2 상태 feedback fixture에 retryable provider error, non-retryable provider error, recovery queued, recovery succeeded 시나리오를 추가했다.
+- Error/recovery fixture는 compact status badge와 single primary output preview만 렌더링하며, `button`, `form`, retry/generate action, fullscreen/page-like class를 포함하지 않는다는 회귀 assertion을 추가했다.
+- Recovery queued는 이전 error reason을 지우고 output을 `empty-output`으로 유지하며, recovery succeeded는 selected output과 `success` output state를 통해 다음 노드 연결 가능 상태를 표현한다.
+- 검증: `node --experimental-strip-types --test --test-name-pattern "error and recovery fixtures|status feedback story fixtures" app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, focused `npx tsc --noEmit --allowImportingTsExtensions --module NodeNext --moduleResolution NodeNext --target ES2022 --strict app/features/creative-canvas/components/image-generation-node-status-feedback.fixtures.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 브라우저 스크린샷 시도: `npm start -- --host 127.0.0.1 --port 4173`는 sandbox `listen EPERM: operation not permitted 0.0.0.0:3000`로 실패했다.
+
 ## [2026-05-14] image-generation-node-model-capability-fixtures | Sub-AC 4.4.1 retry 2
 
 - Image Generation Node v2 model capability fixture를 `app/features/creative-canvas/model/image-generation-node.fixtures.ts` 기준으로 테스트에 연결했다.
@@ -72,6 +97,13 @@
 - `createCampaignBlock("image")` 기본 properties와 이미지 노드 팩토리 기본값을 회귀 테스트로 고정했다.
 - 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
 - 참고: start gate의 `npm run skills:check`는 sandbox에서 출력 없이 장시간 실행 상태로 남았고, `ps`/`pkill`도 process-list 권한 제한으로 사용할 수 없었다.
+
+## [2026-05-15] image-generation-node-provider-ux-v2-checkpoint | Hermes
+
+- 사용자 요청으로 Ouroboros job `job_30d549f26eb6` / execution `exec_3492c58e75cb`를 안전하게 취소했다. 취소 시점은 `Deliver | AC 3/18 | Sub-AC 18/44`였고 job result는 `Status: cancelled`로 확인했다.
+- 취소 전까지의 검증 가능한 구현은 checkpoint로 보존했다: 9:16/default frame 기반, capability registry/schema metadata foundations, compact lifecycle/status feedback, unsupported option contract tests.
+- focused gate 47개 테스트, `npm run typecheck`, `npm run build`, `git diff --check`가 통과했다.
+- 완료 checkpoint는 `docs/seeds/image-generation-node-provider-ux-v2-completed.md`, 남은 작업 publish용 seed는 `docs/seeds/image-generation-node-provider-ux-v2-remaining.seed.yaml`로 분리했다.
 
 ## [2026-05-14] image-generation-node-final-port-affordance-cleanup | Hermes
 
@@ -2019,3 +2051,50 @@
 - 이전 완료/오류 상태의 `latestResultRefs`, `errorReason`, `outputConnectionReady`는 새 실행 시작 시 비워지고, `viewMode`, inspector, docs panel, reference tray 같은 상호작용 표면 상태는 유지되도록 명시했다.
 - 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
 - 참고: `npm run skills:check`는 이번 sandbox에서 출력 없이 장시간 종료되지 않았고, process inspection도 권한 제한으로 실패해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. commit/push는 수행하지 않았다.
+
+## [2026-05-14] image-generation-node-failure-transition | Sub-AC 14.3.3
+
+- `failImageGenerationNodeTransition()`을 추가해 generation failure 시 `uiState.status`가 `error`가 되고 `statusMessage`, `errorReason`, `failureDetails`가 함께 갱신되도록 했다.
+- 실패 전환은 stale `latestResultRefs`를 비우고 `outputConnectionReady`를 `false`로 내려 실패한 Creative Output이 다음 Image Block으로 연결 가능한 상태처럼 보이지 않게 한다.
+- `viewMode`, inspector, docs panel, reference tray 상태는 start/success 전환과 동일하게 보존해 failure feedback이 node 내부 interaction surface에 머물도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. commit/push는 수행하지 않았다.
+
+## [2026-05-14] image-generation-node-selected-result-sync | Sub-AC 14.3.4
+
+- Image Block v2 status model에 `selectedResultAssetId`를 추가해 현재 선택된 Creative Output을 `uiState`에서 추적하도록 했다.
+- `completeImageGenerationNodeTransition()`은 성공 시 첫 output을 자동 선택하고, start/failure 전환은 stale 선택과 output connection readiness를 함께 초기화한다.
+- `syncImageGenerationNodeSelectedResultTransition()`을 추가해 output 선택 변경 또는 output 목록 변경으로 선택 결과가 사라진 경우 `selectedResultAssetId`, `statusMessage`, `outputConnectionReady`, output area view가 동기화되도록 했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts app/features/creative-canvas/adapters/react-flow-canvas.test.ts app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. commit/push는 수행하지 않았다.
+
+## [2026-05-14] image-generation-node-status-feedback-fixtures | Sub-AC 14.4.2
+
+- Image Block v2 lifecycle status별 visible feedback을 검증할 수 있도록 `image-generation-node-status-feedback.fixtures.ts` story fixture를 추가했다.
+- fixture는 `idle`, `queued`, `running`, `succeeded`, `failed`, `canceled` 상태마다 실제 compact badge가 쓰는 `role`, `data-status`, class, aria label, label text, rendered HTML을 제공한다.
+- authoring controls 테스트에 fixture 기반 검증을 추가해 각 상태가 `.space-node-status.<status>` CSS color 스타일과 연결되어 node 내부 compact status badge로 렌더링되는지 확인했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts app/features/creative-canvas/adapters/react-flow-canvas.test.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: 브라우저 스크린샷 검증은 `npm run start -- --host 127.0.0.1 --port 4173`가 sandbox 권한 제한으로 `listen EPERM: operation not permitted 0.0.0.0:3000`을 반환해 완료하지 못했다. commit/push는 수행하지 않았다.
+
+## [2026-05-15] image-generation-node-default-frame-source | Sub-AC 2.1
+
+- New Image Block의 source-of-truth 기본 비율과 프레임을 `IMAGE_GENERATION_DEFAULT_ASPECT_RATIO = "9:16"` 및 `IMAGE_GENERATION_DEFAULT_FRAME = { width: 360, height: 640, resizeMode: "locked-aspect-ratio" }`로 명명했다.
+- `createImageGenerationNodeProperties()`와 `createImageGenerationFrame("9:16")`가 같은 기본 프레임 상수를 사용하도록 정리해 React Flow node width/height와 Campaign Image Block properties가 같은 9:16 세로 기본값에서 출발한다.
+- 회귀 테스트는 Image Block model contract와 React Flow projection 모두 기본 상수를 참조하도록 갱신했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: 브라우저 스크린샷 검증은 `npm run start -- --host 127.0.0.1 --port 4173`가 sandbox 권한 제한으로 `listen EPERM: operation not permitted 0.0.0.0:3000`을 반환해 완료하지 못했다. commit/push는 수행하지 않았다.
+
+## [2026-05-15] image-generation-node-rendered-frame-source | Sub-AC 2.2
+
+- `GenerationBlockNode`의 Image Block wrapper가 React Flow 측정값 fallback이 아니라 `imageGeneration.frame.width`와 `imageGeneration.frame.height`를 직접 clamp해서 렌더링하도록 바꿨다.
+- 기본 `IMAGE_GENERATION_DEFAULT_FRAME`의 `360x640` 저장 프레임이 visible node frame에도 그대로 연결되어 New Image Block의 시각 비율이 9:16 세로로 시작한다.
+- authoring controls 회귀 테스트에 stored frame width/height source 사용과 이전 `width ?? imageGeneration.frame.width` fallback 금지를 추가했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. 브라우저 스크린샷 검증은 `npm run start -- --host 127.0.0.1 --port 4173`가 sandbox 권한 제한으로 `listen EPERM: operation not permitted 0.0.0.0:3000`을 반환해 완료하지 못했다. commit/push는 수행하지 않았다.
+
+## [2026-05-15] image-generation-node-ratio-selector-state | Sub-AC 3.1.1
+
+- Image Block ratio selector 변경이 `selectImageGenerationNodeAspectRatioTransition()`을 거쳐 선택된 output `aspectRatio`와 matching `frame`을 Campaign spec의 Image Block properties에 유지하는지 adapter 회귀 테스트로 고정했다.
+- 테스트는 selector handler와 같은 상태 변경 형태를 시뮬레이션해 `"1:1"` 선택 후 persisted `properties.aspectRatio`와 `createImageGenerationFrame("1:1")`가 함께 저장되는지 확인한다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. 브라우저 검증은 `npm run start -- --host 127.0.0.1 --port 4173` 이후 `127.0.0.1:3000` 및 `127.0.0.1:4173` 접속이 실패했고, sandbox가 `ps`/`kill`을 `operation not permitted`로 막아 스크린샷을 완료하지 못했다. commit/push는 수행하지 않았다.

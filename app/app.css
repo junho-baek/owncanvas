@@ -1737,7 +1737,17 @@ button {
   color: #c2410c;
 }
 
+.space-node-status.queued {
+  background: #fff7ed;
+  color: #a16207;
+}
+
 .space-node-status.completed {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.space-node-status.succeeded {
   background: #ecfdf5;
   color: #047857;
 }
@@ -1747,7 +1757,17 @@ button {
   color: #b91c1c;
 }
 
+.space-node-status.failed {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .space-node-status.cancelled {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.space-node-status.canceled {
   background: #f8fafc;
   color: #475569;
 }
@@ -1897,6 +1917,17 @@ button {
   font-size: 12px;
   font-style: normal;
   font-weight: 900;
+}
+
+.space-control-select {
+  max-width: 56px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  cursor: pointer;
 }
 
 .space-control-chip.count {

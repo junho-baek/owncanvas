@@ -1,0 +1,83 @@
+metadata:
+  id: seed_image_generation_node_provider_ux_v2_remaining
+  title: Image Generation Node Provider UX v2 Remaining Work
+  parent_seed: seed_image_generation_node_provider_ux_v2
+  source_job: job_30d549f26eb6
+  source_session: orch_50b87b2508dc
+  source_execution: exec_3492c58e75cb
+  status: ready_for_github_issue_publish
+  note: >
+    The original Ouroboros run was cancelled by user request after validated checkpoint work was
+    committed. Completed checkpoint scope is recorded separately in
+    docs/seeds/image-generation-node-provider-ux-v2-completed.md. This seed contains only the
+    remaining work to publish as GitHub issues.
+
+goal: >
+  Complete the remaining Image Generation Node v2 provider-aware UX work after the checkpointed
+  implementation: manual resize precedence, inspector/docs panel, reference attachment tray,
+  output-to-next-node flow, browser evidence, and final integration QA.
+
+constraints:
+  - Do not regress to a page-like image generator.
+  - Do not reintroduce generic circular border handles.
+  - Do not expose secret values; environment variable names are allowed.
+  - Keep compact node UI as the primary canvas object; deeper controls belong in inspector, docs, trays, or contextual menus.
+  - Preserve already completed checkpoint behavior: 9:16 defaults, capability registry, schema adapter foundations, compact status feedback, and passing tests.
+  - Commit/push only after verification and user approval when implementing these issues.
+
+completed_checkpoint_scope:
+  - Default image generation model state and ratio/frame foundations are implemented and tested.
+  - Capability metadata registry and Replicate-oriented schema metadata foundations are implemented and tested.
+  - Compact lifecycle/status feedback model and UI coverage are implemented and tested.
+  - Current checkpoint test/build gates pass.
+
+acceptance_criteria:
+  - "AC3_remaining: Manual resize precedence is explicitly defined and implemented between automatic aspect-ratio frame updates and user-initiated manual resize changes."
+  - "AC4_remaining: Inspector/settings/docs panel opens outside the compact node and shows provider, model, supported ratios, required inputs, optional controls, and credential status by env var name only."
+  - "AC5_remaining: Reference attachment tray supports upload, URL, existing asset, recent generated asset, and multiple references where model capability allows."
+  - "AC6_remaining: Output affordance can open a next-node contextual menu with image edit, style variant, upscale, video, output/result card, and landing asset options."
+  - "AC7_remaining: GPT Image-like unsupported ratios are visibly disabled or mapped with a clear compatibility reason before provider payload creation."
+  - "AC8_remaining: Seedream-like custom size controls are reconciled with node frame resize behavior without breaking source-of-truth sync."
+  - "AC9_remaining: Browser screenshot verifies 9:16 vertical node, no border dots, compact node preservation, and any implemented inspector/tray/menu interactions."
+  - "AC10_remaining: Final focused tests, typecheck, build, and git diff whitespace checks pass."
+  - "AC11_remaining: Wiki/log documentation records the final implementation result and any intentionally deferred provider/model limits."
+
+ontology_schema:
+  name: ImageGenerationNodeV2RemainingWork
+  description: Remaining task set for provider-aware OwnCanvas Image Generation Node v2.
+  fields:
+    - name: manualResizePolicy
+      type: object
+      description: Precedence rules between automatic ratio/frame sync and user resize operations.
+    - name: inspectorPanel
+      type: object
+      description: External panel for provider/model schema, docs, and non-compact controls.
+    - name: referenceTray
+      type: object
+      description: Reference attachment and multi-reference selection UX.
+    - name: outputNextNodeMenu
+      type: object
+      description: Contextual menu opened from output affordance for downstream node creation.
+    - name: compatibilityWarnings
+      type: array
+      description: Model/provider limitations surfaced without invalid payloads.
+
+verification_plan:
+  commands:
+    - node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts app/features/creative-canvas/adapters/react-flow-canvas.test.ts
+    - npm run typecheck
+    - npm run build
+    - git diff --check
+  browser:
+    - Start the app locally.
+    - Capture the vertical 9:16 image node.
+    - Open implemented inspector/docs/tray/menu interactions and capture evidence.
+    - Confirm browser console has no JS errors.
+
+exit_conditions:
+  - name: remaining_work_issue_ready
+    description: Remaining work is sufficiently decomposed to publish to GitHub issues.
+    criteria: Each remaining area has clear scope, acceptance criteria, and verification gates.
+  - name: implementation_ready
+    description: If implemented later, work is complete only after tests, build, browser evidence, and user approval.
+    criteria: Verification commands pass, browser screenshot is shown, no secrets leak, and user approves commit/push.

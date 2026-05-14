@@ -4,6 +4,8 @@ import { test } from "node:test";
 import { createCampaignBlock } from "./creative-canvas.ts";
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
+  IMAGE_GENERATION_DEFAULT_ASPECT_RATIO,
+  IMAGE_GENERATION_DEFAULT_FRAME,
   IMAGE_GENERATION_NODE_TYPE,
   createImageGenerationFrame,
   createImageGenerationModelCapabilityKey,
@@ -11,18 +13,29 @@ import {
   createImageGenerationNodeUiState,
   getDefaultImageGenerationModelCapability,
   getImageGenerationModelCapability,
+  imageGenerationAspectRatioOptions,
   imageGenerationInputPorts,
   imageGenerationModelCapabilities,
+  imageGenerationNodeV2Statuses,
   imageGenerationNodeStatuses,
   imageGenerationOutputPorts,
   imageGenerationProviderCapabilityRegistry,
   isImageGenerationNodeProperties,
+  cancelImageGenerationNodeV2Transition,
   completeImageGenerationNodeTransition,
+  failImageGenerationNodeV2Transition,
+  failImageGenerationNodeTransition,
+  queueImageGenerationNodeV2Transition,
   resolveImageGenerationNodeOutputView,
   listImageGenerationModelCapabilities,
   resolveImageGenerationNodeStatusView,
   resolveImageGenerationNodeStatus,
+  runImageGenerationNodeV2Transition,
+  selectImageGenerationNodeAspectRatioTransition,
   startImageGenerationNodeTransition,
+  succeedImageGenerationNodeV2Transition,
+  syncImageGenerationNodeSelectedResultTransition,
+  validateImageGenerationNodeModelOptions,
   type ImageGenerationAspectRatio,
 } from "./image-generation-node.ts";
 import {
@@ -40,12 +53,8 @@ test("image generation node exposes provider-agnostic ports, batch limit, storag
   assert.equal(properties.providerAgnostic, true);
   assert.equal(properties.providerId, "replicate");
   assert.equal(properties.batchCount, 5);
-  assert.equal(properties.aspectRatio, "9:16");
-  assert.deepEqual(properties.frame, {
-    width: 360,
-    height: 640,
-    resizeMode: "locked-aspect-ratio",
-  });
+  assert.equal(properties.aspectRatio, IMAGE_GENERATION_DEFAULT_ASPECT_RATIO);
+  assert.deepEqual(properties.frame, IMAGE_GENERATION_DEFAULT_FRAME);
   assert.deepEqual(
     properties.inputs.map((port) => port.id),
     ["prompt", "reference_image", "style_template_vars"],
@@ -64,6 +73,32 @@ test("image generation node exposes provider-agnostic ports, batch limit, storag
   const serialized = JSON.stringify(properties);
   assert.doesNotMatch(serialized, /sk-[a-z0-9]|ghp_|password=|secretValue/i);
   assert.match(serialized, /OWNCANVAS_REPLICATE_API_TOKEN/);
+});
+
+test("image generation ratio selector transition writes output aspect-ratio state and frame", () => {
+  const properties = createImageGenerationNodeProperties();
+
+  assert.deepEqual(imageGenerationAspectRatioOptions, ["9:16", "1:1", "16:9"]);
+
+  const squareProperties = selectImageGenerationNodeAspectRatioTransition(
+    properties,
+    "1:1",
+  );
+
+  assert.equal(squareProperties.aspectRatio, "1:1");
+  assert.deepEqual(squareProperties.frame, createImageGenerationFrame("1:1"));
+  assert.equal(squareProperties.frame.width, 480);
+  assert.equal(squareProperties.frame.height, 480);
+
+  const landscapeProperties = selectImageGenerationNodeAspectRatioTransition(
+    squareProperties,
+    "16:9",
+  );
+
+  assert.equal(landscapeProperties.aspectRatio, "16:9");
+  assert.deepEqual(landscapeProperties.frame, createImageGenerationFrame("16:9"));
+  assert.equal(landscapeProperties.frame.width, 640);
+  assert.equal(landscapeProperties.frame.height, 360);
 });
 
 test("image generation node defines idle selected running completed and error status model", () => {
@@ -86,6 +121,8 @@ test("image generation node defines idle selected running completed and error st
     progressPercent: null,
     statusMessage: null,
     errorReason: null,
+    failureDetails: null,
+    selectedResultAssetId: null,
     outputConnectionReady: false,
   });
   assert.equal(
@@ -183,6 +220,144 @@ test("image generation node maps lifecycle states to compact view metadata only"
   assert.doesNotMatch(serialized, /invoke|retry|runGeneration|generateImage/i);
 });
 
+test("image generation v2 status transitions cover idle queued running succeeded failed and canceled states", () => {
+  const baseProperties = createImageGenerationNodeProperties({
+    latestResultRefs: {
+      generatedAssetIds: ["asset_stale_output"],
+      metadataRunId: "run_stale_metadata",
+      costUsageRunId: "run_stale_cost",
+    },
+    uiState: createImageGenerationNodeUiState({
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+      status: "idle",
+      progressPercent: 88,
+      statusMessage: "Previous output",
+      errorReason: "Previous warning",
+      outputConnectionReady: true,
+      selectedResultAssetId: "asset_stale_output",
+    }),
+  });
+
+  assert.deepEqual(imageGenerationNodeV2Statuses, [
+    "idle",
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "canceled",
+  ]);
+  assert.equal(baseProperties.uiState.status, "idle");
+
+  const queuedProperties = queueImageGenerationNodeV2Transition(baseProperties);
+
+  assert.equal(queuedProperties.uiState.status, "queued");
+  assert.equal(queuedProperties.uiState.progressPercent, null);
+  assert.equal(queuedProperties.uiState.statusMessage, "Generation queued");
+  assert.equal(queuedProperties.uiState.errorReason, null);
+  assert.equal(queuedProperties.uiState.failureDetails, null);
+  assert.equal(queuedProperties.uiState.selectedResultAssetId, null);
+  assert.equal(queuedProperties.uiState.outputConnectionReady, false);
+  assert.deepEqual(queuedProperties.latestResultRefs, {
+    generatedAssetIds: [],
+    metadataRunId: null,
+    costUsageRunId: null,
+  });
+
+  const runningProperties = runImageGenerationNodeV2Transition(queuedProperties);
+
+  assert.equal(runningProperties.uiState.status, "running");
+  assert.equal(runningProperties.uiState.progressPercent, 0);
+  assert.equal(runningProperties.uiState.statusMessage, "Generation started");
+
+  const succeededProperties = succeedImageGenerationNodeV2Transition(
+    runningProperties,
+    {
+      generatedAssetIds: ["asset_vertical_ad_1", "asset_vertical_ad_2"],
+      metadataRunId: "run_image_metadata_1",
+      costUsageRunId: "run_image_cost_1",
+    },
+  );
+
+  assert.equal(succeededProperties.uiState.status, "succeeded");
+  assert.equal(succeededProperties.uiState.progressPercent, 100);
+  assert.equal(succeededProperties.uiState.statusMessage, "Generation complete");
+  assert.equal(succeededProperties.uiState.errorReason, null);
+  assert.equal(succeededProperties.uiState.failureDetails, null);
+  assert.equal(
+    succeededProperties.uiState.selectedResultAssetId,
+    "asset_vertical_ad_1",
+  );
+  assert.equal(succeededProperties.uiState.outputConnectionReady, true);
+
+  const failedProperties = failImageGenerationNodeV2Transition(
+    runningProperties,
+    {
+      name: "ProviderSafetyError",
+      message: "Provider rejected unsafe reference image",
+      providerId: "replicate",
+      modelSlug: "google/nano-banana",
+      providerRequestId: "prediction_failed_1",
+      retryable: false,
+    },
+  );
+
+  assert.equal(failedProperties.uiState.status, "failed");
+  assert.equal(failedProperties.uiState.progressPercent, null);
+  assert.equal(failedProperties.uiState.statusMessage, "Generation failed");
+  assert.equal(
+    failedProperties.uiState.errorReason,
+    "Provider rejected unsafe reference image",
+  );
+  assert.equal(failedProperties.uiState.outputConnectionReady, false);
+  assert.deepEqual(failedProperties.latestResultRefs, {
+    generatedAssetIds: [],
+    metadataRunId: null,
+    costUsageRunId: null,
+  });
+
+  const canceledProperties = cancelImageGenerationNodeV2Transition(
+    runningProperties,
+  );
+
+  assert.equal(canceledProperties.uiState.status, "canceled");
+  assert.equal(canceledProperties.uiState.progressPercent, null);
+  assert.equal(canceledProperties.uiState.statusMessage, "Generation canceled");
+  assert.equal(canceledProperties.uiState.errorReason, null);
+  assert.equal(canceledProperties.uiState.failureDetails, null);
+  assert.equal(canceledProperties.uiState.outputConnectionReady, false);
+  assert.deepEqual(canceledProperties.latestResultRefs, {
+    generatedAssetIds: [],
+    metadataRunId: null,
+    costUsageRunId: null,
+  });
+
+  for (const properties of [
+    queuedProperties,
+    runningProperties,
+    succeededProperties,
+    failedProperties,
+    canceledProperties,
+  ]) {
+    assert.deepEqual(
+      {
+        viewMode: properties.uiState.viewMode,
+        inspectorOpen: properties.uiState.inspectorOpen,
+        docsPanelOpen: properties.uiState.docsPanelOpen,
+        referenceTrayOpen: properties.uiState.referenceTrayOpen,
+      },
+      {
+        viewMode: "focused",
+        inspectorOpen: true,
+        docsPanelOpen: true,
+        referenceTrayOpen: true,
+      },
+    );
+  }
+});
+
 test("image generation start transition marks status model active in progress", () => {
   const completedProperties = createImageGenerationNodeProperties({
     latestResultRefs: {
@@ -210,6 +385,7 @@ test("image generation start transition marks status model active in progress", 
   assert.equal(runningProperties.uiState.progressPercent, 0);
   assert.equal(runningProperties.uiState.statusMessage, "Generation started");
   assert.equal(runningProperties.uiState.errorReason, null);
+  assert.equal(runningProperties.uiState.selectedResultAssetId, null);
   assert.equal(runningProperties.uiState.outputConnectionReady, false);
   assert.deepEqual(runningProperties.latestResultRefs, {
     generatedAssetIds: [],
@@ -277,6 +453,11 @@ test("image generation success transition marks status model completed with outp
   assert.equal(completedProperties.uiState.progressPercent, 100);
   assert.equal(completedProperties.uiState.statusMessage, "Generation complete");
   assert.equal(completedProperties.uiState.errorReason, null);
+  assert.equal(completedProperties.uiState.failureDetails, null);
+  assert.equal(
+    completedProperties.uiState.selectedResultAssetId,
+    "asset_vertical_ad_1",
+  );
   assert.equal(completedProperties.uiState.outputConnectionReady, true);
   assert.deepEqual(
     {
@@ -307,6 +488,159 @@ test("image generation success transition marks status model completed with outp
   });
 });
 
+test("image generation failure transition marks status model error with failure details", () => {
+  const runningProperties = createImageGenerationNodeProperties({
+    latestResultRefs: {
+      generatedAssetIds: ["asset_should_not_be_connectable"],
+      metadataRunId: "run_stale_metadata",
+      costUsageRunId: "run_stale_cost",
+    },
+    uiState: createImageGenerationNodeUiState({
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+      status: "running",
+      progressPercent: 72,
+      statusMessage: "Provider is rendering",
+      errorReason: null,
+      outputConnectionReady: true,
+    }),
+  });
+
+  const failedProperties = failImageGenerationNodeTransition(runningProperties, {
+    name: "ProviderSafetyError",
+    message: "Provider rejected unsafe reference image",
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+    providerRequestId: "prediction_failed_1",
+    retryable: false,
+  });
+
+  assert.deepEqual(failedProperties.latestResultRefs, {
+    generatedAssetIds: [],
+    metadataRunId: null,
+    costUsageRunId: null,
+  });
+  assert.equal(failedProperties.uiState.status, "error");
+  assert.equal(failedProperties.uiState.progressPercent, null);
+  assert.equal(failedProperties.uiState.statusMessage, "Generation failed");
+  assert.equal(
+    failedProperties.uiState.errorReason,
+    "Provider rejected unsafe reference image",
+  );
+  assert.deepEqual(failedProperties.uiState.failureDetails, {
+    name: "ProviderSafetyError",
+    message: "Provider rejected unsafe reference image",
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+    providerRequestId: "prediction_failed_1",
+    retryable: false,
+  });
+  assert.equal(failedProperties.uiState.outputConnectionReady, false);
+  assert.equal(failedProperties.uiState.selectedResultAssetId, null);
+  assert.deepEqual(
+    {
+      viewMode: failedProperties.uiState.viewMode,
+      inspectorOpen: failedProperties.uiState.inspectorOpen,
+      docsPanelOpen: failedProperties.uiState.docsPanelOpen,
+      referenceTrayOpen: failedProperties.uiState.referenceTrayOpen,
+    },
+    {
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+    },
+  );
+  assert.equal(
+    resolveImageGenerationNodeStatus({
+      selected: true,
+      uiState: failedProperties.uiState,
+    }),
+    "error",
+  );
+  assert.deepEqual(resolveImageGenerationNodeOutputView(failedProperties), {
+    state: "error",
+    label: "Error",
+    className: "error",
+    ariaLabel: "Image output area: Provider rejected unsafe reference image",
+  });
+});
+
+test("image generation output selection keeps status model synchronized with selected result", () => {
+  const completedProperties = completeImageGenerationNodeTransition(
+    createImageGenerationNodeProperties({
+      uiState: createImageGenerationNodeUiState({
+        viewMode: "focused",
+        inspectorOpen: true,
+        docsPanelOpen: true,
+        referenceTrayOpen: true,
+        status: "running",
+        progressPercent: 74,
+      }),
+    }),
+    {
+      generatedAssetIds: ["asset_vertical_ad_1", "asset_vertical_ad_2"],
+      metadataRunId: "run_image_metadata_1",
+      costUsageRunId: "run_image_cost_1",
+    },
+  );
+
+  assert.equal(completedProperties.uiState.selectedResultAssetId, "asset_vertical_ad_1");
+  assert.equal(completedProperties.uiState.status, "completed");
+  assert.equal(completedProperties.uiState.outputConnectionReady, true);
+
+  const secondSelection = syncImageGenerationNodeSelectedResultTransition(
+    completedProperties,
+    "asset_vertical_ad_2",
+  );
+
+  assert.equal(
+    secondSelection.uiState.selectedResultAssetId,
+    "asset_vertical_ad_2",
+  );
+  assert.equal(secondSelection.uiState.status, "completed");
+  assert.equal(secondSelection.uiState.statusMessage, "Output selected");
+  assert.equal(secondSelection.uiState.outputConnectionReady, true);
+  assert.deepEqual(resolveImageGenerationNodeOutputView(secondSelection), {
+    state: "success",
+    label: "Ready",
+    className: "success",
+    ariaLabel: "Image output area: generated output ready",
+  });
+
+  const missingSelection = syncImageGenerationNodeSelectedResultTransition(
+    secondSelection,
+    "asset_removed_by_output_change",
+  );
+
+  assert.equal(missingSelection.uiState.selectedResultAssetId, null);
+  assert.equal(missingSelection.uiState.status, "completed");
+  assert.equal(missingSelection.uiState.statusMessage, "Select an output");
+  assert.equal(missingSelection.uiState.outputConnectionReady, false);
+  assert.deepEqual(resolveImageGenerationNodeOutputView(missingSelection), {
+    state: "empty-output",
+    label: "Empty",
+    className: "empty-output",
+    ariaLabel: "Image output area: no generated output returned",
+  });
+  assert.deepEqual(
+    {
+      viewMode: missingSelection.uiState.viewMode,
+      inspectorOpen: missingSelection.uiState.inspectorOpen,
+      docsPanelOpen: missingSelection.uiState.docsPanelOpen,
+      referenceTrayOpen: missingSelection.uiState.referenceTrayOpen,
+    },
+    {
+      viewMode: "focused",
+      inspectorOpen: true,
+      docsPanelOpen: true,
+      referenceTrayOpen: true,
+    },
+  );
+});
+
 test("image generation node maps output area success error cancelled and empty-output states", () => {
   const baseProperties = createImageGenerationNodeProperties();
 
@@ -322,6 +656,7 @@ test("image generation node maps output area success error cancelled and empty-o
           },
           uiState: createImageGenerationNodeUiState({
             status: "completed",
+            selectedResultAssetId: "asset_vertical_ad_1",
             outputConnectionReady: true,
           }),
         }),
@@ -399,12 +734,11 @@ test("campaign image block is the MVP image generation node by default", () => {
 
   assert.deepEqual(imageBlock.properties.inputs, imageGenerationInputPorts);
   assert.deepEqual(imageBlock.properties.outputs, imageGenerationOutputPorts);
-  assert.equal(imageBlock.properties.aspectRatio, "9:16");
-  assert.deepEqual(imageBlock.properties.frame, {
-    width: 360,
-    height: 640,
-    resizeMode: "locked-aspect-ratio",
-  });
+  assert.equal(
+    imageBlock.properties.aspectRatio,
+    IMAGE_GENERATION_DEFAULT_ASPECT_RATIO,
+  );
+  assert.deepEqual(imageBlock.properties.frame, IMAGE_GENERATION_DEFAULT_FRAME);
   assert.equal(imageBlock.properties.providerPresets.length, 3);
   assert.equal(
     imageBlock.properties.providerPresets.some(
@@ -419,6 +753,10 @@ test("image generation frames stay compact canvas-node sized", () => {
 
   for (const aspectRatio of supportedRatios) {
     const frame = createImageGenerationFrame(aspectRatio);
+
+    if (aspectRatio === IMAGE_GENERATION_DEFAULT_ASPECT_RATIO) {
+      assert.deepEqual(frame, IMAGE_GENERATION_DEFAULT_FRAME);
+    }
 
     assert.equal(frame.resizeMode, "locked-aspect-ratio");
     assert.equal(
@@ -627,6 +965,159 @@ test("model capability fixtures cover vertical defaults and restricted unsupport
 
   assert.equal(hasVerticalNineBySixteenDefault, true);
   assert.equal(hasRestrictedUnsupportedOptions, true);
+});
+
+test("unsupported model options are hidden disabled or rejected by capability schema", () => {
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+  const seedream = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+  });
+
+  assert.ok(gptImage);
+  assert.ok(seedream);
+
+  assert.deepEqual(gptImage.controlMetadata.supportedControls, [
+    "prompt",
+    "reference_images",
+    "aspect_ratio",
+    "quality",
+    "output_format",
+  ]);
+  assert.equal(gptImage.controlMetadata.supportedControls.includes("seed"), false);
+  assert.equal(
+    gptImage.controlMetadata.supportedControls.includes("guidance"),
+    false,
+  );
+  assert.equal(gptImage.controlMetadata.supportedControls.includes("size"), false);
+
+  const gptAspectRatioControl = gptImage.inputControls.find(
+    (control) => control.id === "aspect_ratio",
+  );
+
+  assert.deepEqual(gptAspectRatioControl?.options, ["1:1", "2:3", "3:2"]);
+  assert.equal(gptAspectRatioControl?.options?.includes("9:16"), false);
+
+  assert.deepEqual(
+    validateImageGenerationNodeModelOptions(gptImage, {
+      aspectRatio: "9:16",
+    }),
+    {
+      valid: true,
+      issues: [
+        {
+          code: "image_generation.aspect_ratio_mapped",
+          severity: "warning",
+          controlId: "aspect_ratio",
+          message: "9:16 is not native to GPT Image.",
+          guidance:
+            "Map this request to the nearest model-supported aspect ratio before sending it to the provider.",
+          supportedValues: ["1:1", "2:3", "3:2"],
+        },
+      ],
+      feedback: {
+        state: "warning",
+        label: "Needs mapping",
+        className: "warning",
+        ariaLabel: "Image generation options need provider mapping",
+        message: "9:16 is not native to GPT Image.",
+      },
+    },
+  );
+
+  const rejectedGptOptions = validateImageGenerationNodeModelOptions(gptImage, {
+    controlValues: {
+      seed: 12345,
+      output_format: "jpg",
+    },
+    referenceImages: [
+      { type: "asset", ref: "asset_reference_1" },
+      { type: "url", ref: "https://example.com/reference.png" },
+    ],
+  });
+
+  assert.equal(rejectedGptOptions.valid, false);
+  assert.equal(rejectedGptOptions.feedback.state, "invalid");
+  assert.deepEqual(
+    rejectedGptOptions.issues.map((issue) => ({
+      code: issue.code,
+      severity: issue.severity,
+      controlId: issue.controlId,
+      supportedValues: issue.supportedValues,
+    })),
+    [
+      {
+        code: "image_generation.control_unsupported",
+        severity: "error",
+        controlId: "seed",
+        supportedValues: [
+          "prompt",
+          "input_images",
+          "aspect_ratio",
+          "quality",
+          "output_format",
+        ],
+      },
+      {
+        code: "image_generation.control_value_invalid",
+        severity: "error",
+        controlId: "output_format",
+        supportedValues: ["png", "webp"],
+      },
+      {
+        code: "image_generation.reference_count_invalid",
+        severity: "error",
+        controlId: "input_images",
+        supportedValues: undefined,
+      },
+    ],
+  );
+
+  const disabledSeedreamRatio = validateImageGenerationNodeModelOptions(seedream, {
+    aspectRatio: "4:5",
+  });
+
+  assert.equal(disabledSeedreamRatio.valid, false);
+  assert.deepEqual(disabledSeedreamRatio.issues, [
+    {
+      code: "image_generation.aspect_ratio_unsupported",
+      severity: "error",
+      controlId: "aspect_ratio",
+      message: "4:5 is not supported by Seedream 3.",
+      guidance: "Pick a supported aspect ratio or change image model.",
+      supportedValues: [
+        "1:1",
+        "3:4",
+        "4:3",
+        "16:9",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9",
+        "custom",
+      ],
+    },
+  ]);
+
+  const rejectedSeedreamReference = validateImageGenerationNodeModelOptions(
+    seedream,
+    {
+      referenceImages: [{ type: "asset", ref: "asset_reference_1" }],
+    },
+  );
+
+  assert.deepEqual(
+    rejectedSeedreamReference.issues.map((issue) => issue.code),
+    [
+      "image_generation.reference_unsupported",
+      "image_generation.reference_count_invalid",
+      "image_generation.reference_type_invalid",
+    ],
+  );
+  assert.equal(rejectedSeedreamReference.feedback.label, "Unsupported");
 });
 
 test("replicate image model entries expose provider-specific schema metadata aligned with adapters", () => {

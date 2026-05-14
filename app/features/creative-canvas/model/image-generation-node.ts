@@ -12,6 +12,22 @@ export const imageGenerationNodeStatuses = [
 export type ImageGenerationNodeStatus =
   (typeof imageGenerationNodeStatuses)[number];
 
+export const imageGenerationNodeV2Statuses = [
+  "idle",
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "canceled",
+] as const;
+
+export type ImageGenerationNodeV2Status =
+  (typeof imageGenerationNodeV2Statuses)[number];
+
+export type ImageGenerationNodeUiStatus =
+  | ImageGenerationNodeStatus
+  | ImageGenerationNodeV2Status;
+
 export type ImageGenerationNodeInputPortId =
   | "prompt"
   | "reference_image"
@@ -248,6 +264,48 @@ export type ImageGenerationNodeValidationResult = {
   feedback: ImageGenerationNodeValidationFeedback;
 };
 
+export type ImageGenerationNodeReferenceInput = {
+  type: "asset" | "url" | "recent_output";
+  ref: string;
+};
+
+export type ImageGenerationNodeModelOptionValues = {
+  aspectRatio?: ImageGenerationCapabilityAspectRatio;
+  controlValues?: Record<string, ImageGenerationInputControlDefaultValue>;
+  referenceImages?: readonly ImageGenerationNodeReferenceInput[];
+};
+
+export type ImageGenerationNodeProviderRequestInput = {
+  properties: ImageGenerationNodeProperties;
+  prompt: string;
+  referenceImages?: readonly ImageGenerationNodeReferenceInput[];
+  controlValues?: Record<string, ImageGenerationInputControlDefaultValue>;
+};
+
+export type ImageGenerationReplicatePredictionRequest = {
+  providerId: "replicate";
+  model: string;
+  credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN";
+  inputEnvelopeField: "input";
+  input: Record<string, unknown>;
+  aspectRatio: {
+    requested: ImageGenerationAspectRatio;
+    providerValue: ImageGenerationCapabilityAspectRatio;
+    mapped: boolean;
+  };
+};
+
+export type ImageGenerationNodeProviderRequest = {
+  provider: Pick<
+    ImageGenerationModelCapability["provider"],
+    "providerId" | "label" | "secretEnvName"
+  >;
+  model: ImageGenerationModelCapability["model"];
+  schemaAdapter: ImageGenerationSchemaAdapter;
+  validation: ImageGenerationNodeValidationResult;
+  replicate: ImageGenerationReplicatePredictionRequest;
+};
+
 type ImageGenerationModelCapabilityDefinition = Omit<
   ImageGenerationModelCapability,
   "controlMetadata"
@@ -279,11 +337,26 @@ export type ImageGenerationStorageContract = {
 
 export type ImageGenerationAspectRatio = "16:9" | "9:16" | "1:1";
 
+export const imageGenerationAspectRatioOptions = [
+  "9:16",
+  "1:1",
+  "16:9",
+] as const satisfies readonly ImageGenerationAspectRatio[];
+
 export type ImageGenerationFrame = {
   width: number;
   height: number;
   resizeMode: "locked-aspect-ratio";
 };
+
+export const IMAGE_GENERATION_DEFAULT_ASPECT_RATIO =
+  "9:16" as const satisfies ImageGenerationAspectRatio;
+
+export const IMAGE_GENERATION_DEFAULT_FRAME = {
+  width: 360,
+  height: 640,
+  resizeMode: "locked-aspect-ratio",
+} as const satisfies ImageGenerationFrame;
 
 export const IMAGE_GENERATION_COMPACT_FRAME_LIMITS = {
   minWidth: 320,
@@ -297,17 +370,28 @@ export type ImageGenerationNodeUiState = {
   inspectorOpen: boolean;
   docsPanelOpen: boolean;
   referenceTrayOpen: boolean;
-  status: ImageGenerationNodeStatus;
+  status: ImageGenerationNodeUiStatus;
   progressPercent: number | null;
   statusMessage: string | null;
   errorReason: string | null;
+  failureDetails: ImageGenerationNodeFailureDetails | null;
+  selectedResultAssetId: string | null;
   outputConnectionReady: boolean;
 };
 
+export type ImageGenerationNodeFailureDetails = {
+  name: string;
+  message: string;
+  providerId: ImageGenerationProviderId | null;
+  modelSlug: string | null;
+  providerRequestId: string | null;
+  retryable: boolean | null;
+};
+
 export type ImageGenerationNodeStatusView = {
-  status: ImageGenerationNodeStatus;
+  status: ImageGenerationNodeUiStatus;
   label: string;
-  className: ImageGenerationNodeStatus;
+  className: ImageGenerationNodeUiStatus;
   ariaLabel: string;
 };
 
@@ -1108,6 +1192,158 @@ export function resolveImageGenerationNodeModelCapability(
   });
 }
 
+export function validateImageGenerationNodeModelOptions(
+  capability: ImageGenerationModelCapability | undefined,
+  options: ImageGenerationNodeModelOptionValues,
+): ImageGenerationNodeValidationResult {
+  const issues: ImageGenerationNodeValidationIssue[] = [];
+
+  if (!capability) {
+    issues.push({
+      code: "image_generation.model_capability_missing",
+      severity: "error",
+      controlId: "model",
+      message: "Image model capability metadata is missing.",
+      guidance: "Choose a model from the image generation capability registry.",
+    });
+
+    return createImageGenerationNodeValidationResult(issues);
+  }
+
+  if (
+    options.aspectRatio !== undefined &&
+    !capability.supportedAspectRatios.includes(options.aspectRatio)
+  ) {
+    const canMapUnsupportedRatio =
+      capability.schemaAdapter.unsupportedRatioBehavior === "map_nearest";
+
+    issues.push({
+      code: canMapUnsupportedRatio
+        ? "image_generation.aspect_ratio_mapped"
+        : "image_generation.aspect_ratio_unsupported",
+      severity: canMapUnsupportedRatio ? "warning" : "error",
+      controlId: "aspect_ratio",
+      message: canMapUnsupportedRatio
+        ? `${options.aspectRatio} is not native to ${capability.model.label}.`
+        : `${options.aspectRatio} is not supported by ${capability.model.label}.`,
+      guidance: canMapUnsupportedRatio
+        ? "Map this request to the nearest model-supported aspect ratio before sending it to the provider."
+        : "Pick a supported aspect ratio or change image model.",
+      supportedValues: capability.supportedAspectRatios,
+    });
+  }
+
+  const controlsById = new Map(
+    capability.inputControls.map((control) => [control.id, control]),
+  );
+
+  for (const [controlId, value] of Object.entries(options.controlValues ?? {})) {
+    const control = controlsById.get(controlId);
+
+    if (!control) {
+      issues.push({
+        code: "image_generation.control_unsupported",
+        severity: "error",
+        controlId,
+        message: `${controlId} is not supported by ${capability.model.label}.`,
+        guidance: "Hide this control for the selected model or switch to a model that supports it.",
+        supportedValues: capability.inputControls.map(
+          (supportedControl) => supportedControl.id,
+        ),
+      });
+      continue;
+    }
+
+    const allowedValues = control.validationConstraints.options ?? control.options;
+
+    if (
+      allowedValues &&
+      typeof value === "string" &&
+      !allowedValues.includes(value)
+    ) {
+      issues.push({
+        code: "image_generation.control_value_invalid",
+        severity: "error",
+        controlId,
+        message: `${value} is not a valid ${control.id} option.`,
+        guidance: "Use one of the model-supported option values.",
+        supportedValues: allowedValues,
+      });
+    }
+  }
+
+  const referenceImages = options.referenceImages ?? [];
+
+  if (referenceImages.length > 0 && !capability.referenceSupport.supported) {
+    issues.push({
+      code: "image_generation.reference_unsupported",
+      severity: "error",
+      controlId: capability.referenceSupport.inputControlId ?? "reference_images",
+      message: `${capability.model.label} does not accept reference images.`,
+      guidance: "Remove reference attachments or switch to an image-to-image capable model.",
+    });
+  }
+
+  if (referenceImages.length > capability.referenceSupport.maxImages) {
+    issues.push({
+      code: "image_generation.reference_count_invalid",
+      severity: "error",
+      controlId: capability.referenceSupport.inputControlId ?? "reference_images",
+      message: `${capability.model.label} accepts at most ${capability.referenceSupport.maxImages} reference image(s).`,
+      guidance: "Remove extra references before sending the provider request.",
+    });
+  }
+
+  for (const referenceImage of referenceImages) {
+    if (!capability.referenceSupport.acceptedTypes.includes(referenceImage.type)) {
+      issues.push({
+        code: "image_generation.reference_type_invalid",
+        severity: "error",
+        controlId: capability.referenceSupport.inputControlId ?? "reference_images",
+        message: `${referenceImage.type} references are not supported by ${capability.model.label}.`,
+        guidance: "Attach a reference type accepted by this model capability.",
+        supportedValues: capability.referenceSupport.acceptedTypes,
+      });
+    }
+  }
+
+  return createImageGenerationNodeValidationResult(issues);
+}
+
+function createImageGenerationNodeValidationResult(
+  issues: ImageGenerationNodeValidationIssue[],
+): ImageGenerationNodeValidationResult {
+  const hasError = issues.some((issue) => issue.severity === "error");
+  const hasWarning = issues.some((issue) => issue.severity === "warning");
+  const state: ImageGenerationNodeValidationFeedbackState = hasError
+    ? "invalid"
+    : hasWarning
+      ? "warning"
+      : "ready";
+
+  return {
+    valid: !hasError,
+    issues,
+    feedback: {
+      state,
+      label:
+        state === "ready"
+          ? "Ready"
+          : state === "warning"
+            ? "Needs mapping"
+            : "Unsupported",
+      className: state,
+      ariaLabel:
+        state === "ready"
+          ? "Image generation options are ready"
+          : state === "warning"
+            ? "Image generation options need provider mapping"
+            : "Image generation options include unsupported values",
+      message: issues[0]?.message ?? null,
+    },
+  };
+}
+
 export function createImageGenerationNodeProperties(
   input: Partial<
     Pick<
@@ -1122,7 +1358,7 @@ export function createImageGenerationNodeProperties(
     >
   > = {},
 ): ImageGenerationNodeProperties {
-  const aspectRatio = input.aspectRatio ?? "9:16";
+  const aspectRatio = input.aspectRatio ?? IMAGE_GENERATION_DEFAULT_ASPECT_RATIO;
   const providerId =
     input.providerId ?? imageGenerationProviderCapabilityRegistry.defaultModel.providerId;
   const modelSlug =
@@ -1170,6 +1406,12 @@ export function createImageGenerationNodeUiState(
     progressPercent: input.progressPercent ?? null,
     statusMessage: input.statusMessage ?? null,
     errorReason: input.errorReason ?? null,
+    failureDetails: input.failureDetails
+      ? { ...input.failureDetails }
+      : input.failureDetails === null
+        ? null
+        : null,
+    selectedResultAssetId: input.selectedResultAssetId ?? null,
     outputConnectionReady: input.outputConnectionReady ?? false,
   };
 }
@@ -1190,6 +1432,8 @@ export function startImageGenerationNodeTransition(
       progressPercent: 0,
       statusMessage: "Generation started",
       errorReason: null,
+      failureDetails: null,
+      selectedResultAssetId: null,
       outputConnectionReady: false,
     }),
   };
@@ -1199,6 +1443,8 @@ export function completeImageGenerationNodeTransition(
   properties: ImageGenerationNodeProperties,
   latestResultRefs: ImageGenerationNodeResultRefs,
 ): ImageGenerationNodeProperties {
+  const selectedResultAssetId = latestResultRefs.generatedAssetIds[0] ?? null;
+
   return {
     ...properties,
     latestResultRefs: {
@@ -1212,8 +1458,181 @@ export function completeImageGenerationNodeTransition(
       progressPercent: 100,
       statusMessage: "Generation complete",
       errorReason: null,
-      outputConnectionReady: latestResultRefs.generatedAssetIds.length > 0,
+      failureDetails: null,
+      selectedResultAssetId,
+      outputConnectionReady: selectedResultAssetId !== null,
     }),
+  };
+}
+
+export function queueImageGenerationNodeV2Transition(
+  properties: ImageGenerationNodeProperties,
+): ImageGenerationNodeProperties {
+  return {
+    ...properties,
+    latestResultRefs: {
+      generatedAssetIds: [],
+      metadataRunId: null,
+      costUsageRunId: null,
+    },
+    uiState: createImageGenerationNodeUiState({
+      ...properties.uiState,
+      status: "queued",
+      progressPercent: null,
+      statusMessage: "Generation queued",
+      errorReason: null,
+      failureDetails: null,
+      selectedResultAssetId: null,
+      outputConnectionReady: false,
+    }),
+  };
+}
+
+export function runImageGenerationNodeV2Transition(
+  properties: ImageGenerationNodeProperties,
+): ImageGenerationNodeProperties {
+  return {
+    ...properties,
+    uiState: createImageGenerationNodeUiState({
+      ...properties.uiState,
+      status: "running",
+      progressPercent: 0,
+      statusMessage: "Generation started",
+      errorReason: null,
+      failureDetails: null,
+      selectedResultAssetId: null,
+      outputConnectionReady: false,
+    }),
+  };
+}
+
+export function succeedImageGenerationNodeV2Transition(
+  properties: ImageGenerationNodeProperties,
+  latestResultRefs: ImageGenerationNodeResultRefs,
+): ImageGenerationNodeProperties {
+  const completedProperties = completeImageGenerationNodeTransition(
+    properties,
+    latestResultRefs,
+  );
+
+  return {
+    ...completedProperties,
+    uiState: createImageGenerationNodeUiState({
+      ...completedProperties.uiState,
+      status: "succeeded",
+    }),
+  };
+}
+
+export function failImageGenerationNodeTransition(
+  properties: ImageGenerationNodeProperties,
+  failureDetails: ImageGenerationNodeFailureDetails,
+): ImageGenerationNodeProperties {
+  return {
+    ...properties,
+    latestResultRefs: {
+      generatedAssetIds: [],
+      metadataRunId: null,
+      costUsageRunId: null,
+    },
+    uiState: createImageGenerationNodeUiState({
+      ...properties.uiState,
+      status: "error",
+      progressPercent: null,
+      statusMessage: "Generation failed",
+      errorReason: failureDetails.message,
+      failureDetails,
+      selectedResultAssetId: null,
+      outputConnectionReady: false,
+    }),
+  };
+}
+
+export function failImageGenerationNodeV2Transition(
+  properties: ImageGenerationNodeProperties,
+  failureDetails: ImageGenerationNodeFailureDetails,
+): ImageGenerationNodeProperties {
+  const failedProperties = failImageGenerationNodeTransition(
+    properties,
+    failureDetails,
+  );
+
+  return {
+    ...failedProperties,
+    uiState: createImageGenerationNodeUiState({
+      ...failedProperties.uiState,
+      status: "failed",
+    }),
+  };
+}
+
+export function cancelImageGenerationNodeV2Transition(
+  properties: ImageGenerationNodeProperties,
+): ImageGenerationNodeProperties {
+  return {
+    ...properties,
+    latestResultRefs: {
+      generatedAssetIds: [],
+      metadataRunId: null,
+      costUsageRunId: null,
+    },
+    uiState: createImageGenerationNodeUiState({
+      ...properties.uiState,
+      status: "canceled",
+      progressPercent: null,
+      statusMessage: "Generation canceled",
+      errorReason: null,
+      failureDetails: null,
+      selectedResultAssetId: null,
+      outputConnectionReady: false,
+    }),
+  };
+}
+
+export function syncImageGenerationNodeSelectedResultTransition(
+  properties: ImageGenerationNodeProperties,
+  selectedResultAssetId: string | null,
+): ImageGenerationNodeProperties {
+  const nextSelectedResultAssetId =
+    selectedResultAssetId !== null &&
+    properties.latestResultRefs.generatedAssetIds.includes(selectedResultAssetId)
+      ? selectedResultAssetId
+      : null;
+  const hasAvailableOutputs =
+    properties.latestResultRefs.generatedAssetIds.length > 0;
+  const isTerminalFeedbackStatus =
+    properties.uiState.status === "error" ||
+    properties.uiState.status === "cancelled";
+  const status =
+    nextSelectedResultAssetId !== null && !isTerminalFeedbackStatus
+      ? "completed"
+      : properties.uiState.status;
+
+  return {
+    ...properties,
+    uiState: createImageGenerationNodeUiState({
+      ...properties.uiState,
+      status,
+      selectedResultAssetId: nextSelectedResultAssetId,
+      outputConnectionReady: nextSelectedResultAssetId !== null,
+      statusMessage:
+        nextSelectedResultAssetId !== null
+          ? "Output selected"
+          : hasAvailableOutputs && properties.uiState.status === "completed"
+            ? "Select an output"
+            : properties.uiState.statusMessage,
+    }),
+  };
+}
+
+export function selectImageGenerationNodeAspectRatioTransition(
+  properties: ImageGenerationNodeProperties,
+  aspectRatio: ImageGenerationAspectRatio,
+): ImageGenerationNodeProperties {
+  return {
+    ...properties,
+    aspectRatio,
+    frame: createImageGenerationFrame(aspectRatio),
   };
 }
 
@@ -1223,7 +1642,7 @@ export function resolveImageGenerationNodeStatus({
 }: {
   selected: boolean;
   uiState: ImageGenerationNodeUiState | undefined;
-}): ImageGenerationNodeStatus {
+}): ImageGenerationNodeUiStatus {
   if (uiState === undefined) {
     return selected ? "selected" : "idle";
   }
@@ -1272,13 +1691,37 @@ const imageGenerationNodeStatusViews = {
     className: "cancelled",
     ariaLabel: "Image node status: cancelled",
   },
+  queued: {
+    status: "queued",
+    label: "Queued",
+    className: "queued",
+    ariaLabel: "Image node status: queued",
+  },
+  succeeded: {
+    status: "succeeded",
+    label: "Ready",
+    className: "succeeded",
+    ariaLabel: "Image node status: succeeded",
+  },
+  failed: {
+    status: "failed",
+    label: "Error",
+    className: "failed",
+    ariaLabel: "Image node status: failed",
+  },
+  canceled: {
+    status: "canceled",
+    label: "Canceled",
+    className: "canceled",
+    ariaLabel: "Image node status: canceled",
+  },
 } as const satisfies Record<
-  ImageGenerationNodeStatus,
+  ImageGenerationNodeUiStatus,
   ImageGenerationNodeStatusView
 >;
 
 export function resolveImageGenerationNodeStatusView(
-  status: ImageGenerationNodeStatus,
+  status: ImageGenerationNodeUiStatus,
 ): ImageGenerationNodeStatusView {
   return { ...imageGenerationNodeStatusViews[status] };
 }
@@ -1286,7 +1729,10 @@ export function resolveImageGenerationNodeStatusView(
 export function resolveImageGenerationNodeOutputView(
   properties: Pick<ImageGenerationNodeProperties, "latestResultRefs" | "uiState">,
 ): ImageGenerationNodeOutputView {
-  if (properties.uiState.status === "error") {
+  if (
+    properties.uiState.status === "error" ||
+    properties.uiState.status === "failed"
+  ) {
     return {
       state: "error",
       label: "Error",
@@ -1297,7 +1743,10 @@ export function resolveImageGenerationNodeOutputView(
     };
   }
 
-  if (properties.uiState.status === "cancelled") {
+  if (
+    properties.uiState.status === "cancelled" ||
+    properties.uiState.status === "canceled"
+  ) {
     return {
       state: "cancelled",
       label: "Cancelled",
@@ -1307,8 +1756,12 @@ export function resolveImageGenerationNodeOutputView(
   }
 
   if (
-    properties.uiState.status === "completed" &&
-    properties.latestResultRefs.generatedAssetIds.length > 0
+    (properties.uiState.status === "completed" ||
+      properties.uiState.status === "succeeded") &&
+    properties.uiState.selectedResultAssetId !== null &&
+    properties.latestResultRefs.generatedAssetIds.includes(
+      properties.uiState.selectedResultAssetId,
+    )
   ) {
     return {
       state: "success",
@@ -1333,7 +1786,7 @@ export function createImageGenerationFrame(
   aspectRatio: ImageGenerationAspectRatio,
 ): ImageGenerationFrame {
   if (aspectRatio === "9:16") {
-    return { width: 360, height: 640, resizeMode: "locked-aspect-ratio" };
+    return { ...IMAGE_GENERATION_DEFAULT_FRAME };
   }
 
   if (aspectRatio === "1:1") {
