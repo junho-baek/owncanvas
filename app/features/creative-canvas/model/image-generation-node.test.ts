@@ -7,12 +7,17 @@ import {
   IMAGE_GENERATION_DEFAULT_ASPECT_RATIO,
   IMAGE_GENERATION_DEFAULT_FRAME,
   IMAGE_GENERATION_NODE_TYPE,
+  attachImageGenerationNodeReferenceTransition,
+  closeImageGenerationNodeInspectorTransition,
   createImageGenerationFrame,
   createImageGenerationModelCapabilityKey,
   createImageGenerationNodeProperties,
+  createImageGenerationNodeProviderRequest,
   createImageGenerationNodeUiState,
+  createImageGenerationReferenceAttachmentId,
   getDefaultImageGenerationModelCapability,
   getImageGenerationModelCapability,
+  imageGenerationAspectRatioCompatibilityMapping,
   imageGenerationAspectRatioOptions,
   imageGenerationInputPorts,
   imageGenerationModelCapabilities,
@@ -25,7 +30,18 @@ import {
   completeImageGenerationNodeTransition,
   failImageGenerationNodeV2Transition,
   failImageGenerationNodeTransition,
+  listImageGenerationReferenceTrayAttachments,
+  openImageGenerationNodeInspectorTransition,
   queueImageGenerationNodeV2Transition,
+  reorderImageGenerationNodeReferenceTransition,
+  removeImageGenerationNodeReferenceTransition,
+  resetImageGenerationNodeFrameToAspectRatioTransition,
+  resolveImageGenerationAspectRatioCompatibilityRule,
+  resolveImageGenerationAspectRatioSelectorOptions,
+  resolveImageGenerationDocsPanelMetadata,
+  resizeImageGenerationNodeFrameTransition,
+  resolveImageGenerationReferenceTrayCapability,
+  resolveImageGenerationReferenceTrayEmptyState,
   resolveImageGenerationNodeOutputView,
   listImageGenerationModelCapabilities,
   resolveImageGenerationNodeStatusView,
@@ -34,8 +50,13 @@ import {
   selectImageGenerationNodeAspectRatioTransition,
   startImageGenerationNodeTransition,
   succeedImageGenerationNodeV2Transition,
+  syncImageGenerationNodeFrameFromAspectRatioTransition,
   syncImageGenerationNodeSelectedResultTransition,
+  validateImageGenerationReferenceAttachmentDraft,
   validateImageGenerationNodeModelOptions,
+  imageGenerationOutputNextNodeMappings,
+  resolveImageGenerationOutputNextNodeActions,
+  resolveImageGenerationOutputNextNodeMapping,
   type ImageGenerationAspectRatio,
 } from "./image-generation-node.ts";
 import {
@@ -89,6 +110,7 @@ test("image generation ratio selector transition writes output aspect-ratio stat
   assert.deepEqual(squareProperties.frame, createImageGenerationFrame("1:1"));
   assert.equal(squareProperties.frame.width, 480);
   assert.equal(squareProperties.frame.height, 480);
+  assert.equal(squareProperties.frame.source, "aspect-ratio");
 
   const landscapeProperties = selectImageGenerationNodeAspectRatioTransition(
     squareProperties,
@@ -99,6 +121,139 @@ test("image generation ratio selector transition writes output aspect-ratio stat
   assert.deepEqual(landscapeProperties.frame, createImageGenerationFrame("16:9"));
   assert.equal(landscapeProperties.frame.width, 640);
   assert.equal(landscapeProperties.frame.height, 360);
+  assert.equal(landscapeProperties.frame.source, "aspect-ratio");
+});
+
+test("image generation automatic frame sync follows aspect-ratio updates while frame is automatic", () => {
+  const properties = createImageGenerationNodeProperties();
+
+  assert.equal(properties.aspectRatio, "9:16");
+  assert.deepEqual(properties.frame, createImageGenerationFrame("9:16"));
+
+  const squareProperties = selectImageGenerationNodeAspectRatioTransition(
+    properties,
+    "1:1",
+  );
+  const landscapeProperties = selectImageGenerationNodeAspectRatioTransition(
+    squareProperties,
+    "16:9",
+  );
+
+  assert.deepEqual(squareProperties.frame, createImageGenerationFrame("1:1"));
+  assert.equal(squareProperties.frame.source, "aspect-ratio");
+  assert.deepEqual(landscapeProperties.frame, createImageGenerationFrame("16:9"));
+  assert.equal(landscapeProperties.frame.source, "aspect-ratio");
+});
+
+test("image generation manual frame override blocks automatic aspect-ratio resync", () => {
+  const properties = createImageGenerationNodeProperties();
+  const manuallyResizedProperties = resizeImageGenerationNodeFrameTransition(
+    properties,
+    {
+      width: 388,
+      height: 640,
+    },
+  );
+
+  const ratioChangedProperties = selectImageGenerationNodeAspectRatioTransition(
+    manuallyResizedProperties,
+    "1:1",
+  );
+  const automaticSyncProperties =
+    syncImageGenerationNodeFrameFromAspectRatioTransition(ratioChangedProperties);
+
+  assert.equal(ratioChangedProperties.aspectRatio, "1:1");
+  assert.deepEqual(ratioChangedProperties.frame, {
+    width: 388,
+    height: 640,
+    resizeMode: "locked-aspect-ratio",
+    source: "user-resize",
+  });
+  assert.equal(automaticSyncProperties, ratioChangedProperties);
+  assert.notDeepEqual(
+    automaticSyncProperties.frame,
+    createImageGenerationFrame("1:1"),
+  );
+});
+
+test("image generation reset clears manual frame override and restores automatic sync", () => {
+  const properties = createImageGenerationNodeProperties();
+  const manuallyResizedProperties = resizeImageGenerationNodeFrameTransition(
+    properties,
+    {
+      width: 388,
+      height: 640,
+    },
+  );
+  const ratioChangedProperties = selectImageGenerationNodeAspectRatioTransition(
+    manuallyResizedProperties,
+    "1:1",
+  );
+
+  const resetProperties = resetImageGenerationNodeFrameToAspectRatioTransition(
+    ratioChangedProperties,
+  );
+  const nextAutomaticProperties = selectImageGenerationNodeAspectRatioTransition(
+    resetProperties,
+    "16:9",
+  );
+
+  assert.equal(resetProperties.aspectRatio, "1:1");
+  assert.deepEqual(resetProperties.frame, createImageGenerationFrame("1:1"));
+  assert.equal(resetProperties.frame.source, "aspect-ratio");
+  assert.equal(nextAutomaticProperties.aspectRatio, "16:9");
+  assert.deepEqual(
+    nextAutomaticProperties.frame,
+    createImageGenerationFrame("16:9"),
+  );
+  assert.equal(nextAutomaticProperties.frame.source, "aspect-ratio");
+});
+
+test("image generation frame records whether size came from ratio automation or manual resize", () => {
+  const properties = createImageGenerationNodeProperties();
+
+  assert.equal(properties.frame.source, "aspect-ratio");
+
+  const manuallyResizedProperties = resizeImageGenerationNodeFrameTransition(
+    properties,
+    {
+      width: 388,
+      height: 640,
+    },
+  );
+
+  assert.equal(manuallyResizedProperties.aspectRatio, "9:16");
+  assert.equal(manuallyResizedProperties.frame.width, 388);
+  assert.equal(manuallyResizedProperties.frame.height, 640);
+  assert.equal(manuallyResizedProperties.frame.resizeMode, "locked-aspect-ratio");
+  assert.equal(manuallyResizedProperties.frame.source, "user-resize");
+
+  const ratioChangedProperties = selectImageGenerationNodeAspectRatioTransition(
+    manuallyResizedProperties,
+    "1:1",
+  );
+
+  assert.equal(ratioChangedProperties.aspectRatio, "1:1");
+  assert.equal(ratioChangedProperties.frame.width, 388);
+  assert.equal(ratioChangedProperties.frame.height, 640);
+  assert.equal(ratioChangedProperties.frame.resizeMode, "locked-aspect-ratio");
+  assert.equal(ratioChangedProperties.frame.source, "user-resize");
+
+  const automaticSyncProperties =
+    syncImageGenerationNodeFrameFromAspectRatioTransition(ratioChangedProperties);
+
+  assert.equal(automaticSyncProperties.aspectRatio, "1:1");
+  assert.equal(automaticSyncProperties.frame.width, 388);
+  assert.equal(automaticSyncProperties.frame.height, 640);
+  assert.equal(automaticSyncProperties.frame.source, "user-resize");
+
+  const resetProperties = resetImageGenerationNodeFrameToAspectRatioTransition(
+    automaticSyncProperties,
+  );
+
+  assert.equal(resetProperties.aspectRatio, "1:1");
+  assert.deepEqual(resetProperties.frame, createImageGenerationFrame("1:1"));
+  assert.equal(resetProperties.frame.source, "aspect-ratio");
 });
 
 test("image generation node defines idle selected running completed and error status model", () => {
@@ -157,6 +312,32 @@ test("image generation node defines idle selected running completed and error st
     }).errorReason,
     "Provider rejected unsupported aspect ratio",
   );
+});
+
+test("image generation node inspector trigger opens external settings and docs surfaces", () => {
+  const properties = createImageGenerationNodeProperties();
+  const openedProperties = openImageGenerationNodeInspectorTransition(properties);
+
+  assert.equal(openedProperties.uiState.viewMode, "compact");
+  assert.equal(openedProperties.uiState.inspectorOpen, true);
+  assert.equal(openedProperties.uiState.docsPanelOpen, true);
+  assert.equal(openedProperties.uiState.referenceTrayOpen, false);
+  assert.equal(openedProperties.frame, properties.frame);
+});
+
+test("image generation node inspector close hides external surfaces only", () => {
+  const properties = createImageGenerationNodeProperties();
+  const openedProperties = openImageGenerationNodeInspectorTransition(properties);
+  const closedProperties =
+    closeImageGenerationNodeInspectorTransition(openedProperties);
+
+  assert.equal(closedProperties.uiState.viewMode, "compact");
+  assert.equal(closedProperties.uiState.inspectorOpen, false);
+  assert.equal(closedProperties.uiState.docsPanelOpen, false);
+  assert.equal(closedProperties.uiState.referenceTrayOpen, false);
+  assert.equal(closedProperties.frame, openedProperties.frame);
+  assert.equal(closedProperties.providerId, openedProperties.providerId);
+  assert.equal(closedProperties.modelSlug, openedProperties.modelSlug);
 });
 
 test("image generation node maps lifecycle states to compact view metadata only", () => {
@@ -721,6 +902,261 @@ test("image generation node maps output area success error cancelled and empty-o
   );
 });
 
+test("image generation output next-node actions expose provider-aware availability", () => {
+  const nanoBananaActions = resolveImageGenerationOutputNextNodeActions(
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "google/nano-banana",
+    }),
+  );
+
+  assert.deepEqual(
+    nanoBananaActions.map((action) => ({
+      kind: action.kind,
+      label: action.label,
+      availability: action.availability,
+      disabledReason: action.disabledReason,
+    })),
+    [
+      {
+        kind: "image-edit",
+        label: "Image edit",
+        availability: "available",
+        disabledReason: null,
+      },
+      {
+        kind: "style-variant",
+        label: "Style variant",
+        availability: "available",
+        disabledReason: null,
+      },
+      {
+        kind: "upscale",
+        label: "Upscale",
+        availability: "disabled",
+        disabledReason:
+          "Nano Banana does not expose provider size controls for upscaling.",
+      },
+      {
+        kind: "video",
+        label: "Video Block source",
+        availability: "disabled",
+        disabledReason: "No video provider is connected for this Image Block yet.",
+      },
+      {
+        kind: "output-card",
+        label: "Output / result card",
+        availability: "available",
+        disabledReason: null,
+      },
+      {
+        kind: "landing-asset",
+        label: "Landing asset",
+        availability: "available",
+        disabledReason: null,
+      },
+    ],
+  );
+
+  const seedreamActions = resolveImageGenerationOutputNextNodeActions(
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "bytedance/seedream-3",
+    }),
+  );
+
+  assert.deepEqual(
+    seedreamActions
+      .filter((action) =>
+        ["image-edit", "style-variant", "upscale", "video"].includes(
+          action.kind,
+        ),
+      )
+      .map((action) => ({
+        kind: action.kind,
+        availability: action.availability,
+        disabledReason: action.disabledReason,
+      })),
+    [
+      {
+        kind: "image-edit",
+        availability: "disabled",
+        disabledReason:
+          "Seedream 3 does not accept generated images for editing.",
+      },
+      {
+        kind: "style-variant",
+        availability: "disabled",
+        disabledReason:
+          "Seedream 3 does not accept reference images for style variants.",
+      },
+      {
+        kind: "upscale",
+        availability: "available",
+        disabledReason: null,
+      },
+      {
+        kind: "video",
+        availability: "disabled",
+        disabledReason: "No video provider is connected for this Image Block yet.",
+      },
+    ],
+  );
+
+  assert.doesNotMatch(
+    JSON.stringify(nanoBananaActions),
+    /sk-[a-z0-9]|ghp_|password=|secretValue|apiKey|credentialValue|tokenValue/i,
+  );
+});
+
+test("image generation output next-node mappings define node targets and selected output payload fields", () => {
+  assert.deepEqual(
+    imageGenerationOutputNextNodeMappings.map((mapping) => ({
+      actionKind: mapping.actionKind,
+      requiredNodeType: mapping.requiredNodeType,
+      targetNodeKind: mapping.targetNodeKind,
+      targetInputPort: mapping.targetInputPort,
+      edgeLabel: mapping.edgeLabel,
+      defaultConfig: mapping.defaultConfig,
+      selectedOutputPayloadFields: mapping.selectedOutputPayloadFields,
+    })),
+    [
+      {
+        actionKind: "image-edit",
+        requiredNodeType: "generation",
+        targetNodeKind: "image",
+        targetInputPort: "inputs.reference_image",
+        edgeLabel: "image edit source",
+        defaultConfig: {
+          nodeTitle: "Image Block",
+          nodeSubtitle: "Edit selected Creative Output",
+          nodeDescription:
+            "Uses the selected generated image as the edit source for a new Image Block.",
+          nodeStatus: "DRAFT",
+          connectionPurpose: "edit-source",
+        },
+        selectedOutputPayloadFields: [
+          "sourceImageNodeId",
+          "sourceOutputAssetId",
+          "nextNodeActionKind",
+        ],
+      },
+      {
+        actionKind: "style-variant",
+        requiredNodeType: "generation",
+        targetNodeKind: "image",
+        targetInputPort: "inputs.reference_image",
+        edgeLabel: "style reference",
+        defaultConfig: {
+          nodeTitle: "Image Block",
+          nodeSubtitle: "Variant from selected Creative Output",
+          nodeDescription:
+            "Keeps the selected generated image as the style reference for a new Image Block.",
+          nodeStatus: "DRAFT",
+          connectionPurpose: "style-reference",
+        },
+        selectedOutputPayloadFields: [
+          "sourceImageNodeId",
+          "sourceOutputAssetId",
+          "nextNodeActionKind",
+        ],
+      },
+      {
+        actionKind: "upscale",
+        requiredNodeType: "generation",
+        targetNodeKind: "image",
+        targetInputPort: "inputs.reference_image",
+        edgeLabel: "upscale source",
+        defaultConfig: {
+          nodeTitle: "Image Block",
+          nodeSubtitle: "Upscale selected Creative Output",
+          nodeDescription:
+            "Uses the selected generated image as the source for a provider-sized upscale Image Block.",
+          nodeStatus: "DRAFT",
+          connectionPurpose: "upscale-source",
+        },
+        selectedOutputPayloadFields: [
+          "sourceImageNodeId",
+          "sourceOutputAssetId",
+          "nextNodeActionKind",
+        ],
+      },
+      {
+        actionKind: "video",
+        requiredNodeType: "generation",
+        targetNodeKind: "video",
+        targetInputPort: "inputs.frame",
+        edgeLabel: "video source",
+        defaultConfig: {
+          nodeTitle: "Video Block",
+          nodeSubtitle: "Animate selected Creative Output",
+          nodeDescription:
+            "Uses the selected generated image as the starting frame for a Video Block.",
+          nodeStatus: "DRAFT",
+          connectionPurpose: "video-source-frame",
+        },
+        selectedOutputPayloadFields: [
+          "sourceImageNodeId",
+          "sourceOutputAssetId",
+          "nextNodeActionKind",
+        ],
+      },
+      {
+        actionKind: "output-card",
+        requiredNodeType: "generation",
+        targetNodeKind: "custom",
+        targetInputPort: "inputs.creative_output",
+        edgeLabel: "Creative Output",
+        defaultConfig: {
+          nodeTitle: "Output / result card",
+          nodeSubtitle: "Creative Output pin",
+          nodeDescription:
+            "Pins a selected image generation result as a reusable canvas output.",
+          nodeStatus: "READY",
+          connectionPurpose: "creative-output-pin",
+        },
+        selectedOutputPayloadFields: [
+          "sourceImageNodeId",
+          "sourceOutputAssetId",
+          "nextNodeActionKind",
+        ],
+      },
+      {
+        actionKind: "landing-asset",
+        requiredNodeType: "generation",
+        targetNodeKind: "landing",
+        targetInputPort: "inputs.landing_asset",
+        edgeLabel: "landing asset",
+        defaultConfig: {
+          nodeTitle: "Landing Block",
+          nodeSubtitle: "Use selected Creative Output",
+          nodeDescription:
+            "Uses the selected generated image as an asset for a landing destination.",
+          nodeStatus: "DRAFT",
+          connectionPurpose: "landing-page-asset",
+        },
+        selectedOutputPayloadFields: [
+          "sourceImageNodeId",
+          "sourceOutputAssetId",
+          "nextNodeActionKind",
+        ],
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    resolveImageGenerationOutputNextNodeMapping("output-card").defaultConfig,
+    {
+      nodeTitle: "Output / result card",
+      nodeSubtitle: "Creative Output pin",
+      nodeDescription:
+        "Pins a selected image generation result as a reusable canvas output.",
+      nodeStatus: "READY",
+      connectionPurpose: "creative-output-pin",
+    },
+  );
+});
+
 test("campaign image block is the MVP image generation node by default", () => {
   const imageBlock = createCampaignBlock("image", 0, { x: 240, y: 160 });
 
@@ -759,6 +1195,7 @@ test("image generation frames stay compact canvas-node sized", () => {
     }
 
     assert.equal(frame.resizeMode, "locked-aspect-ratio");
+    assert.equal(frame.source, "aspect-ratio");
     assert.equal(
       frame.width >= IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minWidth,
       true,
@@ -819,6 +1256,194 @@ test("image generation models expose provider capability metadata", () => {
   const serialized = JSON.stringify(imageGenerationModelCapabilities);
   assert.doesNotMatch(serialized, /sk-[a-z0-9]|ghp_|password=|secretValue/i);
   assert.match(serialized, /OWNCANVAS_REPLICATE_API_TOKEN/);
+});
+
+test("image generation docs panel metadata exposes selected provider model controls and warnings", () => {
+  const properties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+  const docsMetadata = resolveImageGenerationDocsPanelMetadata(properties);
+
+  assert.deepEqual(docsMetadata.provider, {
+    providerId: "replicate",
+    name: "Replicate",
+    credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+    credentialStatus: {
+      state: "missing",
+      label: "Environment variable missing",
+      envName: "OWNCANVAS_REPLICATE_API_TOKEN",
+      message: "Set OWNCANVAS_REPLICATE_API_TOKEN before running provider requests.",
+    },
+  });
+  assert.deepEqual(docsMetadata.selectedModel, {
+    slug: "openai/gpt-image-1",
+    name: "GPT Image",
+  });
+  assert.deepEqual(docsMetadata.supportedRatios, ["1:1", "2:3", "3:2"]);
+  assert.deepEqual(
+    docsMetadata.requiredInputs.map((control) => ({
+      id: control.id,
+      schemaKey: control.schemaKey,
+      kind: control.kind,
+      visibility: control.visibility,
+    })),
+    [
+      {
+        id: "prompt",
+        schemaKey: "prompt",
+        kind: "prompt",
+        visibility: "compact",
+      },
+    ],
+  );
+  assert.deepEqual(
+    docsMetadata.optionalControls.map((control) => ({
+      id: control.id,
+      schemaKey: control.schemaKey,
+      kind: control.kind,
+      visibility: control.visibility,
+      options: control.options,
+    })),
+    [
+      {
+        id: "input_images",
+        schemaKey: "input_images",
+        kind: "reference_images",
+        visibility: "compact",
+        options: [],
+      },
+      {
+        id: "aspect_ratio",
+        schemaKey: "aspect_ratio",
+        kind: "aspect_ratio",
+        visibility: "inspector",
+        options: ["1:1", "2:3", "3:2"],
+      },
+      {
+        id: "quality",
+        schemaKey: "quality",
+        kind: "quality",
+        visibility: "inspector",
+        options: ["auto", "low", "medium", "high"],
+      },
+      {
+        id: "output_format",
+        schemaKey: "output_format",
+        kind: "output_format",
+        visibility: "inspector",
+        options: ["png", "webp"],
+      },
+    ],
+  );
+  assert.deepEqual(docsMetadata.compatibilityWarnings, [
+    "9:16 is not native to GPT Image.",
+    "This model accepts one reference image.",
+  ]);
+
+  const serialized = JSON.stringify(docsMetadata);
+  assert.doesNotMatch(
+    serialized,
+    /sk-[a-z0-9]|ghp_|password=|secretValue|apiKey|credentialValue|tokenValue/i,
+  );
+  assert.match(serialized, /OWNCANVAS_REPLICATE_API_TOKEN/);
+});
+
+test("image generation docs panel metadata resolves credential status states without secrets", () => {
+  const baseProperties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+  const replicatePreset = baseProperties.providerPresets.find(
+    (providerPreset) => providerPreset.providerId === "replicate",
+  );
+
+  assert.ok(replicatePreset, "expected Replicate provider preset");
+
+  const credentialStatusCases = [
+    {
+      name: "configured",
+      providerPreset: {
+        ...replicatePreset,
+        credentialStatus: {
+          state: "configured" as const,
+          message: "Replicate credential is available in the local environment.",
+        },
+      },
+      expected: {
+        state: "configured",
+        label: "Environment variable configured",
+        envName: "OWNCANVAS_REPLICATE_API_TOKEN",
+        message: "Replicate credential is available in the local environment.",
+      },
+    },
+    {
+      name: "missing",
+      providerPreset: replicatePreset,
+      expected: {
+        state: "missing",
+        label: "Environment variable missing",
+        envName: "OWNCANVAS_REPLICATE_API_TOKEN",
+        message: "Set OWNCANVAS_REPLICATE_API_TOKEN before running provider requests.",
+      },
+    },
+    {
+      name: "error",
+      providerPreset: {
+        ...replicatePreset,
+        credentialStatus: {
+          state: "error" as const,
+          message: "Credential check failed; provider requests are disabled.",
+        },
+      },
+      expected: {
+        state: "error",
+        label: "Credential check error",
+        envName: "OWNCANVAS_REPLICATE_API_TOKEN",
+        message: "Credential check failed; provider requests are disabled.",
+      },
+    },
+    {
+      name: "disabled",
+      providerPreset: {
+        ...replicatePreset,
+        secretEnvName: "",
+        credentialStatus: {
+          state: "disabled" as const,
+          message: "Provider credential checks are disabled for this preset.",
+        },
+      },
+      expected: {
+        state: "disabled",
+        label: "Credential disabled",
+        envName: null,
+        message: "Provider credential checks are disabled for this preset.",
+      },
+    },
+  ];
+
+  for (const credentialStatusCase of credentialStatusCases) {
+    const docsMetadata = resolveImageGenerationDocsPanelMetadata({
+      ...baseProperties,
+      providerPresets: baseProperties.providerPresets.map((providerPreset) =>
+        providerPreset.providerId === "replicate"
+          ? credentialStatusCase.providerPreset
+          : providerPreset,
+      ),
+    });
+
+    assert.deepEqual(
+      docsMetadata.provider.credentialStatus,
+      credentialStatusCase.expected,
+      credentialStatusCase.name,
+    );
+
+    const serialized = JSON.stringify(docsMetadata.provider.credentialStatus);
+    assert.doesNotMatch(
+      serialized,
+      /sk-[a-z0-9]|ghp_|password=|secretValue|apiKey|credentialValue|tokenValue/i,
+    );
+  }
 });
 
 test("initial image model registry entries declare default ratio and supported controls", () => {
@@ -896,6 +1521,455 @@ test("initial image model registry entries declare default ratio and supported c
     gptImage.schemaAdapter.unsupportedRatioBehavior,
     "map_nearest",
   );
+});
+
+test("image generation provider config shares aspect-ratio compatibility mapping", () => {
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+
+  assert.ok(gptImage);
+
+  assert.deepEqual(
+    imageGenerationAspectRatioCompatibilityMapping[
+      "replicate:openai/gpt-image-1"
+    ],
+    [
+      {
+        providerId: "replicate",
+        modelSlug: "openai/gpt-image-1",
+        requestedAspectRatio: "9:16",
+        providerAspectRatio: "2:3",
+        behavior: "map_nearest",
+        message: "9:16 is not native to GPT Image.",
+        guidance:
+          "Map this request to the nearest model-supported aspect ratio before sending it to the provider.",
+      },
+      {
+        providerId: "replicate",
+        modelSlug: "openai/gpt-image-1",
+        requestedAspectRatio: "16:9",
+        providerAspectRatio: "3:2",
+        behavior: "map_nearest",
+        message: "16:9 is not native to GPT Image.",
+        guidance:
+          "Map this request to the nearest model-supported aspect ratio before sending it to the provider.",
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    resolveImageGenerationAspectRatioCompatibilityRule(gptImage, "9:16"),
+    {
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+      requestedAspectRatio: "9:16",
+      providerAspectRatio: "2:3",
+      behavior: "map_nearest",
+      message: "9:16 is not native to GPT Image.",
+      guidance:
+        "Map this request to the nearest model-supported aspect ratio before sending it to the provider.",
+    },
+  );
+
+  assert.deepEqual(
+    resolveImageGenerationAspectRatioCompatibilityRule(gptImage, "1:1"),
+    {
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+      requestedAspectRatio: "1:1",
+      providerAspectRatio: "1:1",
+      behavior: "native",
+      message: "1:1 is native to GPT Image.",
+      guidance: "Send the selected aspect ratio to the provider unchanged.",
+    },
+  );
+
+  assert.deepEqual(
+    resolveImageGenerationAspectRatioCompatibilityRule(gptImage, "16:9"),
+    {
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+      requestedAspectRatio: "16:9",
+      providerAspectRatio: "3:2",
+      behavior: "map_nearest",
+      message: "16:9 is not native to GPT Image.",
+      guidance:
+        "Map this request to the nearest model-supported aspect ratio before sending it to the provider.",
+    },
+  );
+});
+
+test("image generation ratio selector marks provider-native mapped and disabled options", () => {
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+
+  assert.ok(gptImage);
+
+  assert.deepEqual(resolveImageGenerationAspectRatioSelectorOptions(gptImage), [
+    {
+      aspectRatio: "9:16",
+      providerAspectRatio: "2:3",
+      label: "9:16 -> 2:3",
+      availability: "mapped",
+      disabled: false,
+      compatibilityMessage: "9:16 is not native to GPT Image.",
+      guidance:
+        "Map this request to the nearest model-supported aspect ratio before sending it to the provider.",
+    },
+    {
+      aspectRatio: "1:1",
+      providerAspectRatio: "1:1",
+      label: "1:1",
+      availability: "native",
+      disabled: false,
+      compatibilityMessage: null,
+      guidance: null,
+    },
+    {
+      aspectRatio: "16:9",
+      providerAspectRatio: "3:2",
+      label: "16:9 -> 3:2",
+      availability: "mapped",
+      disabled: false,
+      compatibilityMessage: "16:9 is not native to GPT Image.",
+      guidance:
+        "Map this request to the nearest model-supported aspect ratio before sending it to the provider.",
+    },
+  ]);
+
+  const disableOnlyCapability = {
+    ...gptImage,
+    model: {
+      ...gptImage.model,
+      slug: "custom/disable-ratio-model",
+      label: "Disable Ratio Model",
+    },
+    schemaAdapter: {
+      ...gptImage.schemaAdapter,
+      unsupportedRatioBehavior: "disable" as const,
+    },
+  };
+
+  assert.deepEqual(
+    resolveImageGenerationAspectRatioSelectorOptions(disableOnlyCapability).map(
+      (option) => ({
+        aspectRatio: option.aspectRatio,
+        providerAspectRatio: option.providerAspectRatio,
+        label: option.label,
+        availability: option.availability,
+        disabled: option.disabled,
+        compatibilityMessage: option.compatibilityMessage,
+      }),
+    ),
+    [
+      {
+        aspectRatio: "9:16",
+        providerAspectRatio: "9:16",
+        label: "9:16",
+        availability: "disabled",
+        disabled: true,
+        compatibilityMessage: "9:16 is not supported by Disable Ratio Model.",
+      },
+      {
+        aspectRatio: "1:1",
+        providerAspectRatio: "1:1",
+        label: "1:1",
+        availability: "native",
+        disabled: false,
+        compatibilityMessage: null,
+      },
+      {
+        aspectRatio: "16:9",
+        providerAspectRatio: "16:9",
+        label: "16:9",
+        availability: "disabled",
+        disabled: true,
+        compatibilityMessage: "16:9 is not supported by Disable Ratio Model.",
+      },
+    ],
+  );
+});
+
+test("image generation provider request maps GPT Image unsupported ratio before payload assembly", () => {
+  const properties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+    aspectRatio: "9:16",
+    referenceImages: [
+      {
+        type: "url",
+        ref: "https://cdn.example.test/reference.png",
+      },
+    ],
+  });
+
+  const request = createImageGenerationNodeProviderRequest({
+    properties,
+    prompt: "A vertical campaign poster with clean product lighting.",
+    controlValues: {
+      quality: "high",
+      output_format: "webp",
+    },
+  });
+
+  assert.equal(request.validation.valid, true);
+  assert.deepEqual(
+    request.validation.issues.map((issue) => issue.code),
+    ["image_generation.aspect_ratio_mapped"],
+  );
+  assert.equal(request.replicate.model, "openai/gpt-image-1");
+  assert.equal(request.replicate.credentialEnvName, "OWNCANVAS_REPLICATE_API_TOKEN");
+  assert.deepEqual(request.replicate.aspectRatio, {
+    requested: "9:16",
+    providerValue: "2:3",
+    mapped: true,
+  });
+  assert.deepEqual(request.replicate.input, {
+    prompt: "A vertical campaign poster with clean product lighting.",
+    input_images: "https://cdn.example.test/reference.png",
+    aspect_ratio: "2:3",
+    quality: "high",
+    output_format: "webp",
+  });
+});
+
+test("image generation provider request maps GPT Image unsupported landscape ratio to nearest supported landscape ratio", () => {
+  const properties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+    aspectRatio: "16:9",
+  });
+
+  const request = createImageGenerationNodeProviderRequest({
+    properties,
+    prompt: "A wide product banner with crisp shadows.",
+  });
+
+  assert.equal(request.validation.valid, true);
+  assert.deepEqual(
+    request.validation.issues.map((issue) => ({
+      code: issue.code,
+      severity: issue.severity,
+      message: issue.message,
+      supportedValues: issue.supportedValues,
+    })),
+    [
+      {
+        code: "image_generation.aspect_ratio_mapped",
+        severity: "warning",
+        message: "16:9 is not native to GPT Image.",
+        supportedValues: ["1:1", "2:3", "3:2"],
+      },
+    ],
+  );
+  assert.deepEqual(request.replicate.aspectRatio, {
+    requested: "16:9",
+    providerValue: "3:2",
+    mapped: true,
+  });
+  assert.deepEqual(request.replicate.input, {
+    prompt: "A wide product banner with crisp shadows.",
+    aspect_ratio: "3:2",
+  });
+});
+
+test("image generation provider payload creation uses the shared aspect-ratio compatibility path", () => {
+  const configuredRules =
+    imageGenerationAspectRatioCompatibilityMapping["replicate:openai/gpt-image-1"];
+  const gptImageCapability = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+
+  assert.ok(gptImageCapability);
+
+  for (const configuredRule of configuredRules) {
+    const resolvedRule = resolveImageGenerationAspectRatioCompatibilityRule(
+      gptImageCapability,
+      configuredRule.requestedAspectRatio,
+    );
+    const request = createImageGenerationNodeProviderRequest({
+      properties: createImageGenerationNodeProperties({
+        providerId: configuredRule.providerId,
+        modelSlug: configuredRule.modelSlug,
+        aspectRatio: configuredRule.requestedAspectRatio as ImageGenerationAspectRatio,
+      }),
+      prompt: `Campaign asset in ${configuredRule.requestedAspectRatio}.`,
+    });
+
+    assert.equal(resolvedRule, configuredRule);
+    assert.equal(request.validation.valid, true);
+    assert.deepEqual(
+      request.validation.issues.map((issue) => ({
+        code: issue.code,
+        severity: issue.severity,
+        message: issue.message,
+        guidance: issue.guidance,
+      })),
+      [
+        {
+          code: "image_generation.aspect_ratio_mapped",
+          severity: "warning",
+          message: configuredRule.message,
+          guidance: configuredRule.guidance,
+        },
+      ],
+    );
+    assert.deepEqual(request.replicate.aspectRatio, {
+      requested: configuredRule.requestedAspectRatio,
+      providerValue: configuredRule.providerAspectRatio,
+      mapped: true,
+    });
+    assert.equal(
+      request.replicate.input.aspect_ratio,
+      configuredRule.providerAspectRatio,
+    );
+    assert.notEqual(
+      request.replicate.input.aspect_ratio,
+      configuredRule.requestedAspectRatio,
+    );
+  }
+
+  const seedreamCapability = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+  });
+
+  assert.ok(seedreamCapability);
+
+  const rejectedRule = resolveImageGenerationAspectRatioCompatibilityRule(
+    seedreamCapability,
+    "4:5",
+  );
+  const rejectedValidation = validateImageGenerationNodeModelOptions(
+    seedreamCapability,
+    {
+      aspectRatio: "4:5",
+    },
+  );
+
+  assert.deepEqual(rejectedRule, {
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+    requestedAspectRatio: "4:5",
+    providerAspectRatio: "4:5",
+    behavior: "disable",
+    message: "4:5 is not supported by Seedream 3.",
+    guidance: "Pick a supported aspect ratio or change image model.",
+  });
+  assert.deepEqual(rejectedValidation, {
+    valid: false,
+    issues: [
+      {
+        code: "image_generation.aspect_ratio_unsupported",
+        severity: "error",
+        controlId: "aspect_ratio",
+        message: rejectedRule.message,
+        guidance: rejectedRule.guidance,
+        supportedValues: [
+          "1:1",
+          "3:4",
+          "4:3",
+          "16:9",
+          "9:16",
+          "2:3",
+          "3:2",
+          "21:9",
+          "custom",
+        ],
+      },
+    ],
+    feedback: {
+      state: "invalid",
+      label: "Unsupported",
+      className: "invalid",
+      ariaLabel: "Image generation options include unsupported values",
+      message: rejectedRule.message,
+    },
+  });
+
+  assert.throws(
+    () =>
+      createImageGenerationNodeProviderRequest({
+        properties: createImageGenerationNodeProperties({
+          providerId: "replicate",
+          modelSlug: "bytedance/seedream-3",
+          aspectRatio: "4:5" as ImageGenerationAspectRatio,
+        }),
+        prompt: "Rejected provider payload.",
+      }),
+    {
+      message:
+        "Cannot create image generation provider request: 4:5 is not supported by Seedream 3.",
+    },
+  );
+});
+
+test("image generation provider request rejects disabled unsupported ratios before payload assembly", () => {
+  const properties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+    aspectRatio: "4:5" as ImageGenerationAspectRatio,
+  });
+
+  assert.throws(
+    () =>
+      createImageGenerationNodeProviderRequest({
+        properties,
+        prompt: "A tall product poster with balanced negative space.",
+      }),
+    {
+      message:
+        "Cannot create image generation provider request: 4:5 is not supported by Seedream 3.",
+    },
+  );
+});
+
+test("image generation provider request keeps native aspect ratios unchanged", () => {
+  const properties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+    aspectRatio: "1:1",
+    referenceImages: [
+      {
+        type: "asset",
+        ref: "asset_reference_1",
+      },
+      {
+        type: "url",
+        ref: "https://cdn.example.test/reference-2.png",
+      },
+    ],
+  });
+
+  const request = createImageGenerationNodeProviderRequest({
+    properties,
+    prompt: "Square social ad concept.",
+    controlValues: {
+      output_format: "jpg",
+    },
+  });
+
+  assert.equal(request.validation.valid, true);
+  assert.deepEqual(request.validation.issues, []);
+  assert.deepEqual(request.replicate.aspectRatio, {
+    requested: "1:1",
+    providerValue: "1:1",
+    mapped: false,
+  });
+  assert.deepEqual(request.replicate.input, {
+    prompt: "Square social ad concept.",
+    reference_images: [
+      "asset_reference_1",
+      "https://cdn.example.test/reference-2.png",
+    ],
+    aspect_ratio: "1:1",
+    output_format: "jpg",
+  });
 });
 
 test("model capability fixtures cover vertical defaults and restricted unsupported options", () => {
@@ -1118,6 +2192,1036 @@ test("unsupported model options are hidden disabled or rejected by capability sc
     ],
   );
   assert.equal(rejectedSeedreamReference.feedback.label, "Unsupported");
+});
+
+test("image generation reference attachment drafts validate uploads and URLs before provider requests", () => {
+  const nanoBanana = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+  });
+
+  assert.ok(nanoBanana);
+
+  const uploadedReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "file",
+      fileName: "reference.png",
+      mimeType: "image/png",
+      sizeBytes: 1024,
+    },
+    nanoBanana,
+  );
+
+  assert.equal(uploadedReference.valid, true);
+  assert.equal(uploadedReference.message, null);
+  assert.deepEqual(uploadedReference.referenceInput, {
+    id: createImageGenerationReferenceAttachmentId({
+      type: "asset",
+      ref: "upload:reference.png",
+    }),
+    type: "asset",
+    ref: "upload:reference.png",
+    attachmentMetadata: {
+      schemaVersion: "owncanvas.image-generation.reference-attachment.v1",
+      source: "upload",
+      providerBinding: {
+        providerId: "replicate",
+        modelSlug: "google/nano-banana",
+        credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+        inputControlId: "reference_images",
+        schemaKey: "reference_images",
+        referenceInputMode: "multi",
+        maxImages: 8,
+        acceptedTypes: ["asset", "url", "recent_output"],
+      },
+      file: {
+        fileName: "reference.png",
+        mimeType: "image/png",
+        sizeBytes: 1024,
+      },
+    },
+  });
+
+  assert.deepEqual(
+    validateImageGenerationReferenceAttachmentDraft(
+      {
+        kind: "file",
+        fileName: "reference.svg",
+        mimeType: "image/svg+xml",
+        sizeBytes: 1024,
+      },
+      nanoBanana,
+    ),
+    {
+      valid: false,
+      message: "Reference uploads must be PNG, JPEG, WebP, GIF, or AVIF images.",
+      referenceInput: null,
+    },
+  );
+
+  assert.deepEqual(
+    validateImageGenerationReferenceAttachmentDraft(
+      {
+        kind: "file",
+        fileName: "large.webp",
+        mimeType: "image/webp",
+        sizeBytes: 10 * 1024 * 1024 + 1,
+      },
+      nanoBanana,
+    ),
+    {
+      valid: false,
+      message: "Reference uploads must be 10 MB or smaller.",
+      referenceInput: null,
+    },
+  );
+
+  const urlReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "url",
+      url: " https://cdn.example.test/reference.png ",
+    },
+    nanoBanana,
+  );
+
+  assert.equal(urlReference.valid, true);
+  assert.equal(urlReference.referenceInput?.type, "url");
+  assert.equal(
+    urlReference.referenceInput?.ref,
+    "https://cdn.example.test/reference.png",
+  );
+  assert.deepEqual(urlReference.referenceInput?.attachmentMetadata?.url, {
+    href: "https://cdn.example.test/reference.png",
+    origin: "https://cdn.example.test",
+    pathname: "/reference.png",
+  });
+  assert.deepEqual(
+    urlReference.referenceInput?.attachmentMetadata?.providerBinding,
+    uploadedReference.referenceInput?.attachmentMetadata?.providerBinding,
+  );
+
+  assert.deepEqual(
+    validateImageGenerationReferenceAttachmentDraft(
+      {
+        kind: "url",
+        url: "ftp://cdn.example.test/reference.png",
+      },
+      nanoBanana,
+    ),
+    {
+      valid: false,
+      message: "Reference URLs must start with https:// or http://.",
+      referenceInput: null,
+    },
+  );
+
+  assert.deepEqual(
+    validateImageGenerationReferenceAttachmentDraft(
+      {
+        kind: "url",
+        url: "https://embedded-user:embedded-value@cdn.example.test/reference.png",
+      },
+      nanoBanana,
+    ),
+    {
+      valid: false,
+      message: "Reference URLs cannot include embedded credentials.",
+      referenceInput: null,
+    },
+  );
+});
+
+test("image generation reference attachment metadata normalizes campaign assets and recent outputs into provider bindings", () => {
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+
+  assert.ok(gptImage);
+
+  const campaignAssetReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: " asset_product_reference ",
+      title: " Product reference ",
+      mediaType: " image/png ",
+    },
+    gptImage,
+  );
+
+  assert.deepEqual(campaignAssetReference.referenceInput, {
+    id: createImageGenerationReferenceAttachmentId({
+      type: "asset",
+      ref: "asset_product_reference",
+    }),
+    type: "asset",
+    ref: "asset_product_reference",
+    attachmentMetadata: {
+      schemaVersion: "owncanvas.image-generation.reference-attachment.v1",
+      source: "asset",
+      providerBinding: {
+        providerId: "replicate",
+        modelSlug: "openai/gpt-image-1",
+        credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+        inputControlId: "input_images",
+        schemaKey: "input_images",
+        referenceInputMode: "single",
+        maxImages: 1,
+        acceptedTypes: ["asset", "url", "recent_output"],
+      },
+      asset: {
+        assetId: "asset_product_reference",
+        title: "Product reference",
+        mediaType: "image/png",
+      },
+    },
+  });
+
+  const recentOutputReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "recent_output",
+      assetId: "asset_generated_image_1",
+      sourceNodeId: "image_node_1",
+      outputPortId: "generated_image_asset",
+    },
+    gptImage,
+  );
+
+  assert.equal(recentOutputReference.referenceInput?.type, "recent_output");
+  assert.deepEqual(
+    recentOutputReference.referenceInput?.attachmentMetadata?.recentOutput,
+    {
+      assetId: "asset_generated_image_1",
+      sourceNodeId: "image_node_1",
+      outputPortId: "generated_image_asset",
+    },
+  );
+
+  const serialized = JSON.stringify([
+    campaignAssetReference,
+    recentOutputReference,
+  ]);
+  assert.doesNotMatch(serialized, /sk-[a-z0-9]|ghp_|password=|secretValue/i);
+  assert.match(serialized, /OWNCANVAS_REPLICATE_API_TOKEN/);
+});
+
+test("image generation recent output references attach through reference tray transition", () => {
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+
+  assert.ok(gptImage);
+
+  const baseProperties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+    latestResultRefs: {
+      generatedAssetIds: ["asset_generated_image_1", "asset_generated_image_2"],
+      metadataRunId: "run_recent_metadata",
+      costUsageRunId: "run_recent_cost",
+    },
+    uiState: createImageGenerationNodeUiState({
+      referenceTrayOpen: true,
+      status: "completed",
+      selectedResultAssetId: "asset_generated_image_1",
+      outputConnectionReady: true,
+    }),
+  });
+  const recentOutputReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "recent_output",
+      assetId: "asset_generated_image_2",
+      sourceNodeId: "image_node_1",
+      outputPortId: "generated_image_asset",
+    },
+    gptImage,
+  );
+
+  assert.equal(recentOutputReference.valid, true);
+  assert.ok(recentOutputReference.referenceInput);
+
+  const attachedProperties = attachImageGenerationNodeReferenceTransition(
+    baseProperties,
+    recentOutputReference.referenceInput,
+  );
+
+  assert.deepEqual(
+    attachedProperties.referenceImages.map((referenceImage) => ({
+      type: referenceImage.type,
+      ref: referenceImage.ref,
+      recentOutput: referenceImage.attachmentMetadata?.recentOutput,
+    })),
+    [
+      {
+        type: "recent_output",
+        ref: "asset_generated_image_2",
+        recentOutput: {
+          assetId: "asset_generated_image_2",
+          sourceNodeId: "image_node_1",
+          outputPortId: "generated_image_asset",
+        },
+      },
+    ],
+  );
+  assert.equal(attachedProperties.uiState.referenceTrayOpen, true);
+  assert.equal(attachedProperties.uiState.statusMessage, "Reference asset attached");
+  assert.deepEqual(attachedProperties.latestResultRefs, baseProperties.latestResultRefs);
+
+  const serialized = JSON.stringify(attachedProperties);
+  assert.doesNotMatch(serialized, /sk-[a-z0-9]|ghp_|password=|secretValue/i);
+  assert.match(serialized, /OWNCANVAS_REPLICATE_API_TOKEN/);
+});
+
+test("image generation reference tray normalizes attachments with preview and remove state", () => {
+  const nanoBanana = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+  });
+
+  assert.ok(nanoBanana);
+
+  const uploadedReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "file",
+      fileName: "reference.png",
+      mimeType: "image/png",
+      sizeBytes: 2048,
+    },
+    nanoBanana,
+  );
+  const urlReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "url",
+      url: "https://cdn.example.test/reference.webp",
+    },
+    nanoBanana,
+  );
+  const campaignAssetReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_product_reference",
+      title: "Product reference",
+      mediaType: "image/png",
+    },
+    nanoBanana,
+  );
+  const recentOutputReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "recent_output",
+      assetId: "asset_generated_image_1",
+      sourceNodeId: "image_node_1",
+      outputPortId: "generated_image_asset",
+    },
+    nanoBanana,
+  );
+
+  assert.ok(uploadedReference.referenceInput);
+  assert.ok(urlReference.referenceInput);
+  assert.ok(campaignAssetReference.referenceInput);
+  assert.ok(recentOutputReference.referenceInput);
+
+  const attachedProperties = [
+    uploadedReference.referenceInput,
+    urlReference.referenceInput,
+    campaignAssetReference.referenceInput,
+    recentOutputReference.referenceInput,
+  ].reduce(
+    (properties, referenceInput) =>
+      attachImageGenerationNodeReferenceTransition(properties, referenceInput),
+    createImageGenerationNodeProperties(),
+  );
+
+  assert.deepEqual(
+    listImageGenerationReferenceTrayAttachments(attachedProperties).map(
+      (attachment) => ({
+        id: attachment.id,
+        insertionOrder: attachment.insertionOrder,
+        source: attachment.source,
+        label: attachment.label,
+        previewState: attachment.preview.state,
+        previewSrc: attachment.preview.src,
+        removeLabel: attachment.remove.ariaLabel,
+      }),
+    ),
+    [
+      {
+        id: createImageGenerationReferenceAttachmentId({
+          type: "asset",
+          ref: "upload:reference.png",
+        }),
+        insertionOrder: 0,
+        source: "upload",
+        label: "reference.png",
+        previewState: "pending-upload",
+        previewSrc: null,
+        removeLabel: "Remove reference.png",
+      },
+      {
+        id: createImageGenerationReferenceAttachmentId({
+          type: "url",
+          ref: "https://cdn.example.test/reference.webp",
+        }),
+        insertionOrder: 1,
+        source: "url",
+        label: "URL reference",
+        previewState: "previewable",
+        previewSrc: "https://cdn.example.test/reference.webp",
+        removeLabel: "Remove URL reference",
+      },
+      {
+        id: createImageGenerationReferenceAttachmentId({
+          type: "asset",
+          ref: "asset_product_reference",
+        }),
+        insertionOrder: 2,
+        source: "asset",
+        label: "Product reference",
+        previewState: "asset-reference",
+        previewSrc: null,
+        removeLabel: "Remove Product reference",
+      },
+      {
+        id: createImageGenerationReferenceAttachmentId({
+          type: "recent_output",
+          ref: "asset_generated_image_1",
+        }),
+        insertionOrder: 3,
+        source: "recent_output",
+        label: "Recent output",
+        previewState: "recent-output",
+        previewSrc: null,
+        removeLabel: "Remove asset_generated_image_1",
+      },
+    ],
+  );
+
+  const removedProperties = removeImageGenerationNodeReferenceTransition(
+    attachedProperties,
+    {
+      type: "url",
+      ref: "https://cdn.example.test/reference.webp",
+    },
+  );
+
+  assert.deepEqual(
+    removedProperties.referenceImages.map((referenceImage) => referenceImage.ref),
+    [
+      "upload:reference.png",
+      "asset_product_reference",
+      "asset_generated_image_1",
+    ],
+  );
+  assert.equal(removedProperties.uiState.referenceTrayOpen, true);
+  assert.equal(removedProperties.uiState.statusMessage, "Reference asset removed");
+});
+
+test("image generation reference tray capability gates add and remove controls by selected model", () => {
+  const multiReferenceProperties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+  });
+
+  assert.deepEqual(resolveImageGenerationReferenceTrayCapability(multiReferenceProperties), {
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+    state: "multi-reference",
+    supported: true,
+    acceptedTypes: ["asset", "url", "recent_output"],
+    attachedReferenceCount: 0,
+    maxReferenceCount: 8,
+    remainingReferenceCount: 8,
+    canAddReferences: true,
+    addDisabledReason: null,
+    canRemoveReferences: false,
+    removeDisabledReason: "No reference images are attached.",
+  });
+
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+
+  assert.ok(gptImage);
+
+  const singleReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_single_reference",
+      title: "Single reference",
+      mediaType: "image/png",
+    },
+    gptImage,
+  );
+
+  assert.ok(singleReference.referenceInput);
+
+  const maxedSingleReferenceProperties = attachImageGenerationNodeReferenceTransition(
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+    }),
+    singleReference.referenceInput,
+  );
+
+  assert.deepEqual(
+    resolveImageGenerationReferenceTrayCapability(maxedSingleReferenceProperties),
+    {
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+      state: "single-reference",
+      supported: true,
+      acceptedTypes: ["asset", "url", "recent_output"],
+      attachedReferenceCount: 1,
+      maxReferenceCount: 1,
+      remainingReferenceCount: 0,
+      canAddReferences: false,
+      addDisabledReason: "GPT Image accepts at most 1 reference image(s).",
+      canRemoveReferences: true,
+      removeDisabledReason: null,
+    },
+  );
+
+  const unsupportedReferenceProperties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+  });
+
+  assert.deepEqual(resolveImageGenerationReferenceTrayCapability(unsupportedReferenceProperties), {
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+    state: "unsupported",
+    supported: false,
+    acceptedTypes: [],
+    attachedReferenceCount: 0,
+    maxReferenceCount: 0,
+    remainingReferenceCount: 0,
+    canAddReferences: false,
+    addDisabledReason: "Seedream 3 does not accept reference images.",
+    canRemoveReferences: false,
+    removeDisabledReason: "No reference images are attached.",
+  });
+});
+
+test("image generation reference provider scenarios cover unsupported single and multi reference models", () => {
+  const nanoBanana = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+  });
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+  const seedream = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+  });
+
+  assert.ok(nanoBanana);
+  assert.ok(gptImage);
+  assert.ok(seedream);
+
+  const unsupportedSeedreamProperties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+  });
+  const unsupportedSeedreamDraft = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_seedream_reference",
+      title: "Unsupported Seedream reference",
+      mediaType: "image/png",
+    },
+    seedream,
+  );
+
+  assert.deepEqual(unsupportedSeedreamDraft, {
+    valid: false,
+    message: "Seedream 3 does not accept reference images.",
+    referenceInput: null,
+  });
+  assert.equal(
+    attachImageGenerationNodeReferenceTransition(
+      unsupportedSeedreamProperties,
+      { type: "asset", ref: "asset_seedream_reference" },
+    ),
+    unsupportedSeedreamProperties,
+  );
+  assert.deepEqual(
+    validateImageGenerationNodeModelOptions(seedream, {
+      referenceImages: [{ type: "asset", ref: "asset_seedream_reference" }],
+    }).issues.map((issue) => issue.code),
+    [
+      "image_generation.reference_unsupported",
+      "image_generation.reference_count_invalid",
+      "image_generation.reference_type_invalid",
+    ],
+  );
+  assert.deepEqual(
+    resolveImageGenerationReferenceTrayEmptyState(unsupportedSeedreamProperties),
+    {
+      label: "References unavailable",
+      description: "The selected model does not accept reference images.",
+      actionLabel: "Change model",
+    },
+  );
+
+  const gptFirstReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_gpt_reference_1",
+      title: "GPT reference one",
+      mediaType: "image/png",
+    },
+    gptImage,
+  );
+  const gptSecondReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "url",
+      url: "https://cdn.example.test/gpt-reference-2.png",
+    },
+    gptImage,
+  );
+
+  assert.ok(gptFirstReference.referenceInput);
+  assert.ok(gptSecondReference.referenceInput);
+  assert.equal(
+    gptFirstReference.referenceInput.attachmentMetadata?.providerBinding
+      .referenceInputMode,
+    "single",
+  );
+  assert.equal(
+    gptFirstReference.referenceInput.attachmentMetadata?.providerBinding.schemaKey,
+    "input_images",
+  );
+
+  const maxedGptProperties = attachImageGenerationNodeReferenceTransition(
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+    }),
+    gptFirstReference.referenceInput,
+  );
+  const replacedGptProperties = attachImageGenerationNodeReferenceTransition(
+    maxedGptProperties,
+    gptSecondReference.referenceInput,
+  );
+
+  assert.deepEqual(
+    maxedGptProperties.referenceImages.map((referenceImage) => referenceImage.ref),
+    ["asset_gpt_reference_1"],
+  );
+  assert.deepEqual(
+    replacedGptProperties.referenceImages.map((referenceImage) => referenceImage.ref),
+    ["https://cdn.example.test/gpt-reference-2.png"],
+  );
+  assert.deepEqual(
+    resolveImageGenerationReferenceTrayCapability(maxedGptProperties),
+    {
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+      state: "single-reference",
+      supported: true,
+      acceptedTypes: ["asset", "url", "recent_output"],
+      attachedReferenceCount: 1,
+      maxReferenceCount: 1,
+      remainingReferenceCount: 0,
+      canAddReferences: false,
+      addDisabledReason: "GPT Image accepts at most 1 reference image(s).",
+      canRemoveReferences: true,
+      removeDisabledReason: null,
+    },
+  );
+  assert.deepEqual(
+    validateImageGenerationNodeModelOptions(gptImage, {
+      referenceImages: [
+        gptFirstReference.referenceInput,
+        gptSecondReference.referenceInput,
+      ],
+    }).issues.map((issue) => ({
+      code: issue.code,
+      controlId: issue.controlId,
+      message: issue.message,
+    })),
+    [
+      {
+        code: "image_generation.reference_count_invalid",
+        controlId: "input_images",
+        message: "GPT Image accepts at most 1 reference image(s).",
+      },
+    ],
+  );
+
+  const nanoFirstReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_nano_reference_1",
+      title: "Nano reference one",
+      mediaType: "image/png",
+    },
+    nanoBanana,
+  );
+  const nanoSecondReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "recent_output",
+      assetId: "asset_nano_reference_2",
+      sourceNodeId: "image_node_source",
+      outputPortId: "generated_image_asset",
+    },
+    nanoBanana,
+  );
+
+  assert.ok(nanoFirstReference.referenceInput);
+  assert.ok(nanoSecondReference.referenceInput);
+  assert.equal(
+    nanoFirstReference.referenceInput.attachmentMetadata?.providerBinding
+      .referenceInputMode,
+    "multi",
+  );
+  assert.equal(
+    nanoFirstReference.referenceInput.attachmentMetadata?.providerBinding.schemaKey,
+    "reference_images",
+  );
+
+  const multiNanoProperties = [
+    nanoFirstReference.referenceInput,
+    nanoSecondReference.referenceInput,
+  ].reduce(
+    (properties, referenceInput) =>
+      attachImageGenerationNodeReferenceTransition(properties, referenceInput),
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "google/nano-banana",
+    }),
+  );
+
+  assert.deepEqual(
+    multiNanoProperties.referenceImages.map((referenceImage) => referenceImage.ref),
+    ["asset_nano_reference_1", "asset_nano_reference_2"],
+  );
+  assert.deepEqual(resolveImageGenerationReferenceTrayCapability(multiNanoProperties), {
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+    state: "multi-reference",
+    supported: true,
+    acceptedTypes: ["asset", "url", "recent_output"],
+    attachedReferenceCount: 2,
+    maxReferenceCount: 8,
+    remainingReferenceCount: 6,
+    canAddReferences: true,
+    addDisabledReason: null,
+    canRemoveReferences: true,
+    removeDisabledReason: null,
+  });
+  assert.deepEqual(
+    listImageGenerationReferenceTrayAttachments(multiNanoProperties).map(
+      (attachment) => ({
+        ref: attachment.ref,
+        validation: attachment.validation,
+        canMoveUp: attachment.reorder.canMoveUp,
+        canMoveDown: attachment.reorder.canMoveDown,
+      }),
+    ),
+    [
+      {
+        ref: "asset_nano_reference_1",
+        validation: { state: "valid", message: null },
+        canMoveUp: false,
+        canMoveDown: true,
+      },
+      {
+        ref: "asset_nano_reference_2",
+        validation: { state: "valid", message: null },
+        canMoveUp: true,
+        canMoveDown: false,
+      },
+    ],
+  );
+
+  const serialized = JSON.stringify([
+    unsupportedSeedreamDraft,
+    maxedGptProperties,
+    replacedGptProperties,
+    multiNanoProperties,
+  ]);
+  assert.doesNotMatch(
+    serialized,
+    /sk-[a-z0-9]|ghp_|password=|secretValue|apiKey|credentialValue|tokenValue/i,
+  );
+  assert.match(serialized, /OWNCANVAS_REPLICATE_API_TOKEN/);
+});
+
+test("image generation reference tray preserves stable IDs and insertion order across replacement", () => {
+  const nanoBanana = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+  });
+
+  assert.ok(nanoBanana);
+
+  const firstReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_first_reference",
+      title: "First reference",
+      mediaType: "image/png",
+    },
+    nanoBanana,
+  );
+  const secondReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "url",
+      url: "https://cdn.example.test/second-reference.png",
+    },
+    nanoBanana,
+  );
+  const replacementFirstReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_first_reference",
+      title: "Updated first reference",
+      mediaType: "image/webp",
+    },
+    nanoBanana,
+  );
+
+  assert.ok(firstReference.referenceInput);
+  assert.ok(secondReference.referenceInput);
+  assert.ok(replacementFirstReference.referenceInput);
+
+  const attachedProperties = [
+    firstReference.referenceInput,
+    secondReference.referenceInput,
+    replacementFirstReference.referenceInput,
+  ].reduce(
+    (properties, referenceInput) =>
+      attachImageGenerationNodeReferenceTransition(properties, referenceInput),
+    createImageGenerationNodeProperties(),
+  );
+
+  assert.deepEqual(
+    attachedProperties.referenceImages.map((referenceImage) => ({
+      id: referenceImage.id,
+      ref: referenceImage.ref,
+      title: referenceImage.attachmentMetadata?.asset?.title ?? null,
+    })),
+    [
+      {
+        id: firstReference.referenceInput.id,
+        ref: "asset_first_reference",
+        title: "Updated first reference",
+      },
+      {
+        id: secondReference.referenceInput.id,
+        ref: "https://cdn.example.test/second-reference.png",
+        title: null,
+      },
+    ],
+  );
+  assert.deepEqual(
+    listImageGenerationReferenceTrayAttachments(attachedProperties).map(
+      (attachment) => ({
+        id: attachment.id,
+        insertionOrder: attachment.insertionOrder,
+        ref: attachment.ref,
+      }),
+    ),
+    [
+      {
+        id: firstReference.referenceInput.id,
+        insertionOrder: 0,
+        ref: "asset_first_reference",
+      },
+      {
+        id: secondReference.referenceInput.id,
+        insertionOrder: 1,
+        ref: "https://cdn.example.test/second-reference.png",
+      },
+    ],
+  );
+
+  const removedByStableId = removeImageGenerationNodeReferenceTransition(
+    attachedProperties,
+    { id: secondReference.referenceInput.id },
+  );
+
+  assert.deepEqual(
+    removedByStableId.referenceImages.map((referenceImage) => referenceImage.ref),
+    ["asset_first_reference"],
+  );
+});
+
+test("image generation reference removal exposes empty-state fallback after final attachment", () => {
+  const nanoBanana = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+  });
+
+  assert.ok(nanoBanana);
+
+  const reference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_only_reference",
+      title: "Only reference",
+      mediaType: "image/png",
+    },
+    nanoBanana,
+  );
+
+  assert.ok(reference.referenceInput);
+
+  const attachedProperties = attachImageGenerationNodeReferenceTransition(
+    createImageGenerationNodeProperties({
+      uiState: createImageGenerationNodeUiState({
+        referenceTrayOpen: true,
+        status: "failed",
+        errorReason: "Reference payload failed",
+        failureDetails: {
+          name: "ReferenceError",
+          message: "Reference payload failed",
+          providerId: "replicate",
+          modelSlug: "google/nano-banana",
+          providerRequestId: "prediction_1",
+          retryable: true,
+        },
+      }),
+    }),
+    reference.referenceInput,
+  );
+
+  assert.equal(resolveImageGenerationReferenceTrayEmptyState(attachedProperties), null);
+
+  const removedProperties = removeImageGenerationNodeReferenceTransition(
+    attachedProperties,
+    { id: reference.referenceInput.id },
+  );
+
+  assert.deepEqual(removedProperties.referenceImages, []);
+  assert.equal(removedProperties.uiState.referenceTrayOpen, true);
+  assert.equal(removedProperties.uiState.statusMessage, "Reference tray empty");
+  assert.equal(removedProperties.uiState.errorReason, null);
+  assert.equal(removedProperties.uiState.failureDetails, null);
+  assert.deepEqual(resolveImageGenerationReferenceTrayEmptyState(removedProperties), {
+    label: "No references attached",
+    description: "Attach an upload, URL, campaign asset, or recent output.",
+    actionLabel: "Add a reference",
+  });
+});
+
+test("image generation reference tray reorders attachments deterministically by stable ID", () => {
+  const nanoBanana = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+  });
+
+  assert.ok(nanoBanana);
+
+  const firstReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_first_reference",
+      title: "First reference",
+      mediaType: "image/png",
+    },
+    nanoBanana,
+  );
+  const secondReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "asset",
+      assetId: "asset_second_reference",
+      title: "Second reference",
+      mediaType: "image/png",
+    },
+    nanoBanana,
+  );
+  const thirdReference = validateImageGenerationReferenceAttachmentDraft(
+    {
+      kind: "url",
+      url: "https://cdn.example.test/third-reference.png",
+    },
+    nanoBanana,
+  );
+
+  assert.ok(firstReference.referenceInput);
+  assert.ok(secondReference.referenceInput);
+  assert.ok(thirdReference.referenceInput);
+
+  const attachedProperties = [
+    firstReference.referenceInput,
+    secondReference.referenceInput,
+    thirdReference.referenceInput,
+  ].reduce(
+    (properties, referenceInput) =>
+      attachImageGenerationNodeReferenceTransition(properties, referenceInput),
+    createImageGenerationNodeProperties(),
+  );
+
+  const movedThirdEarlier = reorderImageGenerationNodeReferenceTransition(
+    attachedProperties,
+    { id: thirdReference.referenceInput.id },
+    "up",
+  );
+
+  assert.deepEqual(
+    movedThirdEarlier.referenceImages.map((referenceImage) => referenceImage.ref),
+    [
+      "asset_first_reference",
+      "https://cdn.example.test/third-reference.png",
+      "asset_second_reference",
+    ],
+  );
+  assert.equal(movedThirdEarlier.uiState.referenceTrayOpen, true);
+  assert.equal(movedThirdEarlier.uiState.statusMessage, "Reference order updated");
+
+  const movedFirstLater = reorderImageGenerationNodeReferenceTransition(
+    movedThirdEarlier,
+    {
+      type: "asset",
+      ref: "asset_first_reference",
+    },
+    "down",
+  );
+
+  assert.deepEqual(
+    listImageGenerationReferenceTrayAttachments(movedFirstLater).map(
+      (attachment) => ({
+        ref: attachment.ref,
+        insertionOrder: attachment.insertionOrder,
+        canMoveUp: attachment.reorder.canMoveUp,
+        canMoveDown: attachment.reorder.canMoveDown,
+      }),
+    ),
+    [
+      {
+        ref: "https://cdn.example.test/third-reference.png",
+        insertionOrder: 0,
+        canMoveUp: false,
+        canMoveDown: true,
+      },
+      {
+        ref: "asset_first_reference",
+        insertionOrder: 1,
+        canMoveUp: true,
+        canMoveDown: true,
+      },
+      {
+        ref: "asset_second_reference",
+        insertionOrder: 2,
+        canMoveUp: true,
+        canMoveDown: false,
+      },
+    ],
+  );
+
+  assert.equal(
+    reorderImageGenerationNodeReferenceTransition(
+      movedFirstLater,
+      { id: thirdReference.referenceInput.id },
+      "up",
+    ),
+    movedFirstLater,
+  );
 });
 
 test("replicate image model entries expose provider-specific schema metadata aligned with adapters", () => {

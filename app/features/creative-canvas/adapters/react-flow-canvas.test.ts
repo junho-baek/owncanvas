@@ -10,12 +10,23 @@ import {
   IMAGE_GENERATION_DEFAULT_ASPECT_RATIO,
   IMAGE_GENERATION_DEFAULT_FRAME,
   createImageGenerationFrame,
+  createImageGenerationNodeProperties,
+  createImageGenerationNodeUiState,
+  createImageGenerationReferenceAttachmentId,
+  imageGenerationOutputNextNodeMappings,
   isImageGenerationNodeProperties,
+  resizeImageGenerationNodeFrameTransition,
+  resolveImageGenerationOutputNextNodeActions,
+  resolveImageGenerationOutputNextNodeMapping,
   selectImageGenerationNodeAspectRatioTransition,
 } from "../model/image-generation-node.ts";
 import {
+  applyImageOutputNextNodeActionToCanvas,
   createCreativeCanvasSnapshotFromCampaignSpecJsonEdit,
   createGenerationFlowNode,
+  type CreativeFlowEdge,
+  imageOutputNextNodeActionEdgeLabels,
+  imageOutputNextNodeActionTargetPorts,
   syncCampaignFromCreativeCanvasInteraction,
   toCreativeFlowEdges,
   toCreativeFlowNodes,
@@ -81,6 +92,99 @@ test("Image Block ratio selector change persists selected output aspect-ratio st
     persistedImageNode.properties.frame,
     createImageGenerationFrame("1:1"),
   );
+});
+
+test("Image Block manual resize sync records user resize as frame source", () => {
+  const imageFlowNode = createGenerationFlowNode("image", 1);
+
+  if (!isImageGenerationNodeProperties(imageFlowNode.data.properties)) {
+    throw new Error("expected image generation properties");
+  }
+
+  const campaign = syncCampaignFromCreativeCanvasInteraction(
+    createBlankCampaign(),
+    [
+      {
+        ...imageFlowNode,
+        width: IMAGE_GENERATION_DEFAULT_FRAME.width + 24,
+        height: IMAGE_GENERATION_DEFAULT_FRAME.height,
+      },
+    ],
+    [],
+  );
+  const persistedImageNode = campaign.campaignSpec.nodes[0];
+
+  assert.ok(persistedImageNode);
+  assert.equal(isImageGenerationNodeProperties(persistedImageNode.properties), true);
+
+  if (!isImageGenerationNodeProperties(persistedImageNode.properties)) {
+    throw new Error("expected persisted image generation properties");
+  }
+
+  assert.equal(persistedImageNode.properties.aspectRatio, "9:16");
+  assert.equal(
+    persistedImageNode.properties.frame.width,
+    IMAGE_GENERATION_DEFAULT_FRAME.width + 24,
+  );
+  assert.equal(
+    persistedImageNode.properties.frame.height,
+    IMAGE_GENERATION_DEFAULT_FRAME.height,
+  );
+  assert.equal(persistedImageNode.properties.frame.source, "user-resize");
+});
+
+test("Image Block ratio selector preserves manually resized frame dimensions", () => {
+  const imageFlowNode = createGenerationFlowNode("image", 1);
+
+  if (!isImageGenerationNodeProperties(imageFlowNode.data.properties)) {
+    throw new Error("expected image generation properties");
+  }
+
+  const manuallyResizedProperties = resizeImageGenerationNodeFrameTransition(
+    imageFlowNode.data.properties,
+    {
+      width: IMAGE_GENERATION_DEFAULT_FRAME.width + 32,
+      height: IMAGE_GENERATION_DEFAULT_FRAME.height,
+    },
+  );
+  const nextProperties = selectImageGenerationNodeAspectRatioTransition(
+    manuallyResizedProperties,
+    "1:1",
+  );
+  const updatedFlowNode = {
+    ...imageFlowNode,
+    width: nextProperties.frame.width,
+    height: nextProperties.frame.height,
+    data: {
+      ...imageFlowNode.data,
+      properties: nextProperties,
+    },
+  };
+
+  const campaign = syncCampaignFromCreativeCanvasInteraction(
+    createBlankCampaign(),
+    [updatedFlowNode],
+    [],
+  );
+  const persistedImageNode = campaign.campaignSpec.nodes[0];
+
+  assert.ok(persistedImageNode);
+  assert.equal(isImageGenerationNodeProperties(persistedImageNode.properties), true);
+
+  if (!isImageGenerationNodeProperties(persistedImageNode.properties)) {
+    throw new Error("expected persisted image generation properties");
+  }
+
+  assert.equal(persistedImageNode.properties.aspectRatio, "1:1");
+  assert.equal(
+    persistedImageNode.properties.frame.width,
+    IMAGE_GENERATION_DEFAULT_FRAME.width + 32,
+  );
+  assert.equal(
+    persistedImageNode.properties.frame.height,
+    IMAGE_GENERATION_DEFAULT_FRAME.height,
+  );
+  assert.equal(persistedImageNode.properties.frame.source, "user-resize");
 });
 
 test("React Flow canvas creation and update operations synchronize into the JSON spec", () => {
@@ -266,6 +370,541 @@ test("React Flow canvas interactions synchronize moved nodes and connected ports
   assert.deepEqual(result.campaignSpec, {
     ...expectedCanvas,
     assetGenerationJobs: [],
+  });
+});
+
+test("image output next-node menu actions create downstream nodes, edges, and persisted campaign canvas state", () => {
+  const sourceNode = createGenerationFlowNode("image", 1, { x: 520, y: 160 });
+  const contextualMenuActionKinds = resolveImageGenerationOutputNextNodeActions(
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "google/nano-banana",
+      latestResultRefs: {
+        generatedAssetIds: ["asset_generated_latest"],
+        metadataRunId: "run_generated_latest",
+        costUsageRunId: null,
+      },
+      uiState: createImageGenerationNodeUiState({
+        outputConnectionReady: true,
+        selectedResultAssetId: "asset_generated_latest",
+      }),
+    }),
+  ).map((action) => action.kind);
+
+  assert.deepEqual(
+    contextualMenuActionKinds,
+    imageGenerationOutputNextNodeMappings.map((mapping) => mapping.actionKind),
+  );
+
+  for (const [index, mapping] of imageGenerationOutputNextNodeMappings.entries()) {
+    const selectedResultAssetId = `asset_generated_${mapping.actionKind}`;
+    const nextCanvas = applyImageOutputNextNodeActionToCanvas({
+      nodes: [{ ...sourceNode, selected: true }],
+      edges: [],
+      sourceNodeId: sourceNode.id,
+      actionKind: mapping.actionKind,
+      selectedResultAssetId,
+    });
+
+    assert.ok(nextCanvas.createdNode);
+    assert.equal(nextCanvas.nodes.length, 2);
+    assert.equal(nextCanvas.edges.length, 1);
+    assert.equal(nextCanvas.nodes[0]?.selected, false);
+    assert.equal(nextCanvas.createdNode.selected, true);
+    assert.equal(nextCanvas.createdNode.type, mapping.requiredNodeType);
+    assert.equal(nextCanvas.createdNode.data.kind, mapping.targetNodeKind);
+    assert.equal(nextCanvas.createdNode.data.title, mapping.defaultConfig.nodeTitle);
+    assert.equal(
+      nextCanvas.createdNode.data.subtitle,
+      mapping.defaultConfig.nodeSubtitle,
+    );
+    assert.equal(
+      nextCanvas.createdNode.data.description,
+      mapping.defaultConfig.nodeDescription,
+    );
+    assert.equal(nextCanvas.createdNode.data.status, mapping.defaultConfig.nodeStatus);
+    assert.deepEqual(nextCanvas.createdNode.position, {
+      x: sourceNode.position.x + (sourceNode.width ?? 360) + 180,
+      y: sourceNode.position.y + index * 44,
+    });
+    assert.equal(
+      nextCanvas.createdNode.data.properties?.sourceImageNodeId,
+      sourceNode.id,
+    );
+    assert.equal(
+      nextCanvas.createdNode.data.properties?.sourceOutputAssetId,
+      selectedResultAssetId,
+    );
+    if (mapping.actionKind === "image-edit" || mapping.actionKind === "style-variant") {
+      assert.deepEqual(
+        nextCanvas.createdNode.data.properties?.referenceImages,
+        [
+          {
+            id: createImageGenerationReferenceAttachmentId({
+              type: "recent_output",
+              ref: selectedResultAssetId,
+            }),
+            type: "recent_output",
+            ref: selectedResultAssetId,
+            attachmentMetadata: {
+              schemaVersion: "owncanvas.image-generation.reference-attachment.v1",
+              source: "recent_output",
+              providerBinding: {
+                providerId: "replicate",
+                modelSlug: "google/nano-banana",
+                credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+                inputControlId: "reference_images",
+                schemaKey: "reference_images",
+                referenceInputMode: "multi",
+                maxImages: 8,
+                acceptedTypes: ["asset", "url", "recent_output"],
+              },
+              recentOutput: {
+                assetId: selectedResultAssetId,
+                sourceNodeId: sourceNode.id,
+                outputPortId: "generated_image_asset",
+              },
+            },
+          },
+        ],
+      );
+    }
+    assert.equal(
+      nextCanvas.createdNode.data.properties?.nextNodeActionKind,
+      mapping.actionKind,
+    );
+    assert.deepEqual(
+      nextCanvas.createdNode.data.properties?.nextNodeDefaultConfig,
+      mapping.defaultConfig,
+    );
+    assert.deepEqual(
+      nextCanvas.createdNode.data.properties?.selectedOutputPayloadFields,
+      mapping.selectedOutputPayloadFields,
+    );
+
+    const edge = nextCanvas.edges[0];
+    assert.ok(edge);
+    assert.equal(
+      edge.id,
+      `edge_${sourceNode.id}_${nextCanvas.createdNode.id}_${mapping.actionKind}`,
+    );
+    assert.equal(edge.source, sourceNode.id);
+    assert.equal(edge.sourceHandle, "outputs.generated_image_asset");
+    assert.equal(edge.target, nextCanvas.createdNode.id);
+    assert.equal(
+      edge.targetHandle,
+      imageOutputNextNodeActionTargetPorts[mapping.actionKind],
+    );
+    assert.equal(edge.label, imageOutputNextNodeActionEdgeLabels[mapping.actionKind]);
+    assert.deepEqual(edge.data, {
+      edgeType: "asset-generation",
+      properties: {
+        actionKind: mapping.actionKind,
+        connectionPurpose: mapping.defaultConfig.connectionPurpose,
+        selectedResultAssetId,
+      },
+    });
+
+    const campaign = syncCampaignFromCreativeCanvasInteraction(
+      createBlankCampaign(),
+      nextCanvas.nodes,
+      nextCanvas.edges,
+    );
+    assert.deepEqual(
+      campaign.campaignSpec.nodes.map((node) => ({
+        id: node.id,
+        kind: node.kind,
+        position: node.position,
+        properties: node.properties,
+      })),
+      nextCanvas.nodes.map((node) => ({
+        id: node.id,
+        kind: node.data.kind,
+        position: node.position,
+        properties: node.data.properties,
+      })),
+    );
+    assert.deepEqual(campaign.campaignSpec.edges, [
+      {
+        id: edge.id,
+        source: sourceNode.id,
+        sourcePort: "outputs.generated_image_asset",
+        target: nextCanvas.createdNode.id,
+        targetPort: imageOutputNextNodeActionTargetPorts[mapping.actionKind],
+        type: "asset-generation",
+        label: imageOutputNextNodeActionEdgeLabels[mapping.actionKind],
+        properties: {
+          actionKind: mapping.actionKind,
+          connectionPurpose: mapping.defaultConfig.connectionPurpose,
+          selectedResultAssetId,
+        },
+      },
+    ]);
+  }
+});
+
+test("image output next-node image edit option creates and connects a provider-aware Image Block", () => {
+  const selectedResultAssetId = "asset_selected_output";
+  const sourceProperties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "google/nano-banana",
+    latestResultRefs: {
+      generatedAssetIds: [selectedResultAssetId],
+      metadataRunId: "run_selected_output",
+      costUsageRunId: null,
+    },
+    uiState: createImageGenerationNodeUiState({
+      outputConnectionReady: true,
+      selectedResultAssetId,
+    }),
+  });
+  const imageEditAction = resolveImageGenerationOutputNextNodeActions(
+    sourceProperties,
+  ).find((action) => action.kind === "image-edit");
+  const sourceNode = {
+    ...createGenerationFlowNode("image", 1, { x: 520, y: 160 }),
+    selected: true,
+    data: {
+      ...createGenerationFlowNode("image", 1, { x: 520, y: 160 }).data,
+      properties: sourceProperties,
+    },
+  };
+
+  assert.ok(imageEditAction);
+  assert.equal(imageEditAction.availability, "available");
+
+  const nextCanvas = applyImageOutputNextNodeActionToCanvas({
+    nodes: [sourceNode],
+    edges: [],
+    sourceNodeId: sourceNode.id,
+    actionKind: imageEditAction.kind,
+    selectedResultAssetId,
+  });
+
+  assert.ok(nextCanvas.createdNode);
+  assert.equal(nextCanvas.createdNode.data.kind, "image");
+  assert.equal(nextCanvas.createdNode.data.title, "Image Block");
+  assert.equal(
+    nextCanvas.createdNode.data.subtitle,
+    "Edit selected Creative Output",
+  );
+  assert.equal(nextCanvas.createdNode.data.properties?.sourceImageNodeId, sourceNode.id);
+  assert.equal(
+    nextCanvas.createdNode.data.properties?.sourceOutputAssetId,
+    selectedResultAssetId,
+  );
+  assert.deepEqual(nextCanvas.createdNode.data.properties?.referenceImages, [
+    {
+      id: createImageGenerationReferenceAttachmentId({
+        type: "recent_output",
+        ref: selectedResultAssetId,
+      }),
+      type: "recent_output",
+      ref: selectedResultAssetId,
+      attachmentMetadata: {
+        schemaVersion: "owncanvas.image-generation.reference-attachment.v1",
+        source: "recent_output",
+        providerBinding: {
+          providerId: "replicate",
+          modelSlug: "google/nano-banana",
+          credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+          inputControlId: "reference_images",
+          schemaKey: "reference_images",
+          referenceInputMode: "multi",
+          maxImages: 8,
+          acceptedTypes: ["asset", "url", "recent_output"],
+        },
+        recentOutput: {
+          assetId: selectedResultAssetId,
+          sourceNodeId: sourceNode.id,
+          outputPortId: "generated_image_asset",
+        },
+      },
+    },
+  ]);
+
+  const nextEdge = nextCanvas.edges[0];
+  assert.ok(nextEdge);
+  assert.equal(nextEdge.source, sourceNode.id);
+  assert.equal(nextEdge.sourceHandle, "outputs.generated_image_asset");
+  assert.equal(nextEdge.target, nextCanvas.createdNode.id);
+  assert.equal(nextEdge.targetHandle, "inputs.reference_image");
+  assert.equal(nextEdge.label, "image edit source");
+  assert.deepEqual(nextEdge.data, {
+    edgeType: "asset-generation",
+    properties: {
+      actionKind: "image-edit",
+      connectionPurpose: "edit-source",
+      selectedResultAssetId,
+    },
+  });
+
+  const campaign = syncCampaignFromCreativeCanvasInteraction(
+    createBlankCampaign(),
+    nextCanvas.nodes,
+    nextCanvas.edges,
+  );
+  const persistedImageEditNode = campaign.campaignSpec.nodes.find(
+    (node) => node.id === nextCanvas.createdNode?.id,
+  );
+
+  assert.ok(persistedImageEditNode);
+  assert.equal(persistedImageEditNode.kind, "image");
+  assert.equal(
+    persistedImageEditNode.properties?.sourceOutputAssetId,
+    selectedResultAssetId,
+  );
+  assert.deepEqual(campaign.campaignSpec.edges, [
+    {
+      id: nextEdge.id,
+      source: sourceNode.id,
+      sourcePort: "outputs.generated_image_asset",
+      target: nextCanvas.createdNode.id,
+      targetPort: "inputs.reference_image",
+      type: "asset-generation",
+      label: "image edit source",
+      properties: {
+        actionKind: "image-edit",
+        connectionPurpose: "edit-source",
+        selectedResultAssetId,
+      },
+    },
+  ]);
+});
+
+test("image output next-node upscale option creates and connects a provider-sized Image Block", () => {
+  const selectedResultAssetId = "asset_upscale_source";
+  const sourceProperties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "bytedance/seedream-3",
+    latestResultRefs: {
+      generatedAssetIds: [selectedResultAssetId],
+      metadataRunId: "run_upscale_source",
+      costUsageRunId: null,
+    },
+    uiState: createImageGenerationNodeUiState({
+      outputConnectionReady: true,
+      selectedResultAssetId,
+    }),
+  });
+  const upscaleAction = resolveImageGenerationOutputNextNodeActions(
+    sourceProperties,
+  ).find((action) => action.kind === "upscale");
+  const sourceFlowNode = createGenerationFlowNode("image", 1, { x: 520, y: 160 });
+  const sourceNode = {
+    ...sourceFlowNode,
+    selected: true,
+    data: {
+      ...sourceFlowNode.data,
+      properties: sourceProperties,
+    },
+  };
+
+  assert.ok(upscaleAction);
+  assert.equal(upscaleAction.availability, "available");
+  assert.equal(upscaleAction.disabledReason, null);
+
+  const nextCanvas = applyImageOutputNextNodeActionToCanvas({
+    nodes: [sourceNode],
+    edges: [],
+    sourceNodeId: sourceNode.id,
+    actionKind: upscaleAction.kind,
+    selectedResultAssetId,
+  });
+
+  assert.ok(nextCanvas.createdNode);
+  assert.equal(nextCanvas.nodes.length, 2);
+  assert.equal(nextCanvas.edges.length, 1);
+  assert.equal(nextCanvas.createdNode.selected, true);
+  assert.equal(nextCanvas.createdNode.type, "generation");
+  assert.equal(nextCanvas.createdNode.data.kind, "image");
+  assert.equal(nextCanvas.createdNode.data.title, "Image Block");
+  assert.equal(
+    nextCanvas.createdNode.data.subtitle,
+    "Upscale selected Creative Output",
+  );
+  assert.equal(nextCanvas.createdNode.data.status, "DRAFT");
+  assert.equal(nextCanvas.createdNode.data.properties?.sourceImageNodeId, sourceNode.id);
+  assert.equal(
+    nextCanvas.createdNode.data.properties?.sourceOutputAssetId,
+    selectedResultAssetId,
+  );
+  assert.equal(
+    nextCanvas.createdNode.data.properties?.nextNodeActionKind,
+    "upscale",
+  );
+  assert.deepEqual(
+    nextCanvas.createdNode.data.properties?.nextNodeDefaultConfig,
+    resolveImageGenerationOutputNextNodeMapping("upscale").defaultConfig,
+  );
+  assert.deepEqual(
+    nextCanvas.createdNode.data.properties?.selectedOutputPayloadFields,
+    resolveImageGenerationOutputNextNodeMapping("upscale")
+      .selectedOutputPayloadFields,
+  );
+  assert.deepEqual(nextCanvas.createdNode.data.properties?.referenceImages, [
+    {
+      id: createImageGenerationReferenceAttachmentId({
+        type: "recent_output",
+        ref: selectedResultAssetId,
+      }),
+      type: "recent_output",
+      ref: selectedResultAssetId,
+      attachmentMetadata: {
+        schemaVersion: "owncanvas.image-generation.reference-attachment.v1",
+        source: "recent_output",
+        providerBinding: {
+          providerId: "replicate",
+          modelSlug: "google/nano-banana",
+          credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+          inputControlId: "reference_images",
+          schemaKey: "reference_images",
+          referenceInputMode: "multi",
+          maxImages: 8,
+          acceptedTypes: ["asset", "url", "recent_output"],
+        },
+        recentOutput: {
+          assetId: selectedResultAssetId,
+          sourceNodeId: sourceNode.id,
+          outputPortId: "generated_image_asset",
+        },
+      },
+    },
+  ]);
+
+  const nextEdge = nextCanvas.edges[0];
+  assert.ok(nextEdge);
+  assert.equal(nextEdge.source, sourceNode.id);
+  assert.equal(nextEdge.sourceHandle, "outputs.generated_image_asset");
+  assert.equal(nextEdge.target, nextCanvas.createdNode.id);
+  assert.equal(nextEdge.targetHandle, "inputs.reference_image");
+  assert.equal(nextEdge.label, "upscale source");
+  assert.deepEqual(nextEdge.data, {
+    edgeType: "asset-generation",
+    properties: {
+      actionKind: "upscale",
+      connectionPurpose: "upscale-source",
+      selectedResultAssetId,
+    },
+  });
+
+  const campaign = syncCampaignFromCreativeCanvasInteraction(
+    createBlankCampaign(),
+    nextCanvas.nodes,
+    nextCanvas.edges,
+  );
+  const persistedUpscaleNode = campaign.campaignSpec.nodes.find(
+    (node) => node.id === nextCanvas.createdNode?.id,
+  );
+
+  assert.ok(persistedUpscaleNode);
+  assert.equal(persistedUpscaleNode.kind, "image");
+  assert.equal(
+    persistedUpscaleNode.properties?.sourceOutputAssetId,
+    selectedResultAssetId,
+  );
+  assert.deepEqual(campaign.campaignSpec.edges, [
+    {
+      id: nextEdge.id,
+      source: sourceNode.id,
+      sourcePort: "outputs.generated_image_asset",
+      target: nextCanvas.createdNode.id,
+      targetPort: "inputs.reference_image",
+      type: "asset-generation",
+      label: "upscale source",
+      properties: {
+        actionKind: "upscale",
+        connectionPurpose: "upscale-source",
+        selectedResultAssetId,
+      },
+    },
+  ]);
+});
+
+test("image output next-node actions update an existing downstream target with provider-aware settings", () => {
+  const sourceNode = createGenerationFlowNode("image", 1, { x: 520, y: 160 });
+  const targetNode = createGenerationFlowNode("image", 2, { x: 1080, y: 160 });
+  const existingEdge = {
+    id: `edge_${sourceNode.id}_${targetNode.id}_image-edit`,
+    source: sourceNode.id,
+    sourceHandle: "outputs.generated_image_asset",
+    target: targetNode.id,
+    targetHandle: "inputs.reference_image",
+    type: "smoothstep",
+    label: "stale label",
+    data: {
+      edgeType: "asset-generation",
+      properties: {
+        actionKind: "image-edit",
+        connectionPurpose: "stale",
+        selectedResultAssetId: "asset_old",
+      },
+    },
+  } satisfies CreativeFlowEdge;
+  const selectedResultAssetId = "asset_generated_reused";
+  const nextCanvas = applyImageOutputNextNodeActionToCanvas({
+    nodes: [{ ...sourceNode, selected: true }, targetNode],
+    edges: [existingEdge],
+    sourceNodeId: sourceNode.id,
+    actionKind: "image-edit",
+    selectedResultAssetId,
+  });
+
+  assert.ok(nextCanvas.createdNode);
+  assert.equal(nextCanvas.nodes.length, 2);
+  assert.equal(nextCanvas.edges.length, 1);
+  assert.equal(nextCanvas.createdNode.id, targetNode.id);
+  assert.equal(nextCanvas.nodes[0]?.selected, false);
+  assert.equal(nextCanvas.nodes[1]?.selected, true);
+  assert.equal(nextCanvas.createdNode.data.subtitle, "Edit selected Creative Output");
+  assert.equal(nextCanvas.createdNode.data.status, "DRAFT");
+  assert.equal(
+    nextCanvas.createdNode.data.properties?.sourceOutputAssetId,
+    selectedResultAssetId,
+  );
+  assert.deepEqual(nextCanvas.createdNode.data.properties?.referenceImages, [
+    {
+      id: createImageGenerationReferenceAttachmentId({
+        type: "recent_output",
+        ref: selectedResultAssetId,
+      }),
+      type: "recent_output",
+      ref: selectedResultAssetId,
+      attachmentMetadata: {
+        schemaVersion: "owncanvas.image-generation.reference-attachment.v1",
+        source: "recent_output",
+        providerBinding: {
+          providerId: "replicate",
+          modelSlug: "google/nano-banana",
+          credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+          inputControlId: "reference_images",
+          schemaKey: "reference_images",
+          referenceInputMode: "multi",
+          maxImages: 8,
+          acceptedTypes: ["asset", "url", "recent_output"],
+        },
+        recentOutput: {
+          assetId: selectedResultAssetId,
+          sourceNodeId: sourceNode.id,
+          outputPortId: "generated_image_asset",
+        },
+      },
+    },
+  ]);
+  assert.equal(nextCanvas.edges[0]?.id, existingEdge.id);
+  assert.equal(nextCanvas.edges[0]?.source, sourceNode.id);
+  assert.equal(nextCanvas.edges[0]?.sourceHandle, "outputs.generated_image_asset");
+  assert.equal(nextCanvas.edges[0]?.target, targetNode.id);
+  assert.equal(nextCanvas.edges[0]?.targetHandle, "inputs.reference_image");
+  assert.equal(nextCanvas.edges[0]?.type, "smoothstep");
+  assert.equal(nextCanvas.edges[0]?.label, "image edit source");
+  assert.deepEqual(nextCanvas.edges[0]?.data, {
+    edgeType: "asset-generation",
+    properties: {
+      actionKind: "image-edit",
+      connectionPurpose: "edit-source",
+      selectedResultAssetId,
+    },
   });
 });
 

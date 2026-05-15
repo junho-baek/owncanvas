@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ComponentType, ReactNode } from "react";
+import type { ChangeEvent, ComponentType, FocusEvent, KeyboardEvent, ReactNode } from "react";
 import {
   applyEdgeChanges,
   applyNodeChanges,
@@ -19,7 +19,9 @@ import {
 } from "@xyflow/react";
 import {
   Archive,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Blocks,
   Bot,
   Captions,
@@ -37,6 +39,7 @@ import {
   Play,
   Plug,
   Redo2,
+  Settings2,
   ShoppingBag,
   Sparkles,
   Target,
@@ -46,10 +49,12 @@ import {
   Volume2,
   Undo2,
   Video,
+  X,
 } from "lucide-react";
 
 import { cn } from "~/core/lib/cn";
 import {
+  applyImageOutputNextNodeActionToCanvas,
   createGenerationFlowNode,
   createCreativeCanvasSnapshotFromCampaignSpecJsonEdit,
   syncCampaignFromCreativeCanvasInteraction,
@@ -87,6 +92,7 @@ import {
   setCampaignLandingPageBehaviorMode,
   type CampaignAssetMediaType,
   type CampaignAssetStatus,
+  type CampaignAssetSummary,
   type CampaignAssetUsage,
   type CampaignLandingPageConversionElementConfiguration,
   type CampaignLandingPageConversionElementPlacement,
@@ -108,14 +114,30 @@ import {
 } from "~/features/creative-canvas/model/creative-canvas";
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
-  imageGenerationAspectRatioOptions,
+  attachImageGenerationNodeReferenceTransition,
+  closeImageGenerationNodeInspectorTransition,
   isImageGenerationNodeProperties,
+  listImageGenerationReferenceTrayAttachments,
+  openImageGenerationNodeInspectorTransition,
+  reorderImageGenerationNodeReferenceTransition,
+  removeImageGenerationNodeReferenceTransition,
+  resolveImageGenerationDocsPanelMetadata,
+  resolveImageGenerationAspectRatioSelectorOptions,
+  resolveImageGenerationOutputNextNodeActions,
   resolveImageGenerationNodeOutputView,
+  resolveImageGenerationNodeModelCapability,
+  resolveImageGenerationReferenceTrayCapability,
+  resolveImageGenerationReferenceTrayEmptyState,
   resolveImageGenerationNodeStatus,
   resolveImageGenerationNodeStatusView,
   selectImageGenerationNodeAspectRatioTransition,
+  validateImageGenerationReferenceAttachmentDraft,
   type ImageGenerationAspectRatio,
+  type ImageGenerationInputControlDefaultValue,
+  type ImageGenerationOutputNextNodeActionKind,
+  type ImageGenerationNodeReferenceInput,
   type ImageGenerationNodeProperties,
+  type ImageGenerationReferenceTrayAttachment,
 } from "~/features/creative-canvas/model/image-generation-node";
 
 const blockIcons = {
@@ -130,10 +152,33 @@ const blockIcons = {
   custom: Plug,
 } satisfies Record<GenerationBlockKind, typeof Type>;
 
+const imageOutputNextNodeActionIcons = {
+  "image-edit": ImageIcon,
+  "style-variant": Sparkles,
+  upscale: Maximize2,
+  video: Video,
+  "output-card": Captions,
+  "landing-asset": ShoppingBag,
+} satisfies Record<ImageGenerationOutputNextNodeActionKind, typeof ImageIcon>;
+
 function formatCampaignSpecJson(
   campaign: Pick<CampaignDraft, "campaignSpec">,
 ) {
   return serializeCampaignSpecJson(campaign);
+}
+
+function formatImageGenerationControlDefaultValue(
+  defaultValue: ImageGenerationInputControlDefaultValue,
+) {
+  if (Array.isArray(defaultValue)) {
+    return defaultValue.length === 0 ? "None" : defaultValue.join(", ");
+  }
+
+  if (defaultValue === null) {
+    return "None";
+  }
+
+  return String(defaultValue);
 }
 
 const audienceFieldLabels = {
@@ -298,6 +343,33 @@ export function CreativeCanvasScreen({
     edges: initialEdges,
   });
   const visibleBlocks = useMemo(() => nodes.length, [nodes.length]);
+  const campaignAssetReferences = useMemo(
+    () =>
+      campaign === undefined
+        ? []
+        : listCampaignAssets(campaign).filter(
+            (asset) => asset.mediaType === "image",
+          ),
+    [campaign],
+  );
+  const openImageGenerationInspector = useMemo(() => {
+    for (const node of nodes) {
+      const properties = node.data.properties;
+
+      if (
+        isImageGenerationNodeProperties(properties) &&
+        (properties.uiState.inspectorOpen || properties.uiState.docsPanelOpen)
+      ) {
+        return {
+          nodeId: node.id,
+          title: node.data.title,
+          properties,
+        };
+      }
+    }
+
+    return null;
+  }, [nodes]);
 
   useEffect(() => {
     campaignRef.current = campaign;
@@ -395,6 +467,34 @@ export function CreativeCanvasScreen({
     });
   };
 
+  const handleImageOutputNextNodeAction = useCallback((
+    sourceNodeId: string,
+    actionKind: ImageGenerationOutputNextNodeActionKind,
+    selectedResultAssetId: string,
+  ) => {
+    setNodes((currentNodes) => {
+      const nextCanvas = applyImageOutputNextNodeActionToCanvas({
+        nodes: currentNodes,
+        edges: canvasSnapshotRef.current.edges,
+        sourceNodeId,
+        actionKind,
+        selectedResultAssetId,
+      });
+
+      if (nextCanvas.createdNode === null) {
+        return currentNodes;
+      }
+
+      selectedNodeIdRef.current = nextCanvas.createdNode.id;
+      setEdges(nextCanvas.edges);
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextCanvas.nodes, nextCanvas.edges);
+      });
+
+      return nextCanvas.nodes;
+    });
+  }, [setEdges, setNodes, updateCampaignCanvas]);
+
   const handleImageAspectRatioChange = useCallback((
     nodeId: string,
     aspectRatio: ImageGenerationAspectRatio,
@@ -431,16 +531,194 @@ export function CreativeCanvasScreen({
     });
   }, [setNodes, updateCampaignCanvas]);
 
+  const handleImageInspectorOpen = useCallback((nodeId: string) => {
+    setNodes((currentNodes) => {
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (!isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        if (node.id !== nodeId) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              properties: closeImageGenerationNodeInspectorTransition(properties),
+            },
+          };
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: openImageGenerationNodeInspectorTransition(properties),
+          },
+        };
+      });
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handleImageInspectorClose = useCallback((nodeId: string) => {
+    setNodes((currentNodes) => {
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (node.id !== nodeId || !isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: closeImageGenerationNodeInspectorTransition(properties),
+          },
+        };
+      });
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handleImageReferenceAttach = useCallback((
+    nodeId: string,
+    referenceInput: ImageGenerationNodeReferenceInput,
+  ) => {
+    setNodes((currentNodes) => {
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (node.id !== nodeId || !isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: attachImageGenerationNodeReferenceTransition(
+              properties,
+              referenceInput,
+            ),
+          },
+        };
+      });
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handleImageReferenceRemove = useCallback((
+    nodeId: string,
+    referenceInput:
+      | Pick<ImageGenerationNodeReferenceInput, "type" | "ref">
+      | Pick<ImageGenerationNodeReferenceInput, "id">,
+  ) => {
+    setNodes((currentNodes) => {
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (node.id !== nodeId || !isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: removeImageGenerationNodeReferenceTransition(
+              properties,
+              referenceInput,
+            ),
+          },
+        };
+      });
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handleImageReferenceReorder = useCallback((
+    nodeId: string,
+    referenceInput:
+      | Pick<ImageGenerationNodeReferenceInput, "type" | "ref">
+      | Pick<ImageGenerationNodeReferenceInput, "id">,
+    direction: "up" | "down",
+  ) => {
+    setNodes((currentNodes) => {
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (node.id !== nodeId || !isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: reorderImageGenerationNodeReferenceTransition(
+              properties,
+              referenceInput,
+              direction,
+            ),
+          },
+        };
+      });
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
   const creativeNodeTypes = useMemo<NodeTypes>(
     () => ({
       generation: (props) => (
         <GenerationBlockNode
           {...(props as NodeProps<CreativeFlowNode>)}
           onImageAspectRatioChange={handleImageAspectRatioChange}
+          onImageInspectorOpen={handleImageInspectorOpen}
+          onImageReferenceAttach={handleImageReferenceAttach}
+          onImageReferenceRemove={handleImageReferenceRemove}
+          onImageReferenceReorder={handleImageReferenceReorder}
+          onImageOutputNextNodeAction={handleImageOutputNextNodeAction}
+          campaignAssetReferences={campaignAssetReferences}
         />
       ),
     }),
-    [handleImageAspectRatioChange],
+    [
+      handleImageAspectRatioChange,
+      handleImageInspectorOpen,
+      handleImageReferenceAttach,
+      handleImageReferenceRemove,
+      handleImageReferenceReorder,
+      handleImageOutputNextNodeAction,
+      campaignAssetReferences,
+    ],
   );
 
   const applyCampaignSpecJsonEdit = (
@@ -494,6 +772,14 @@ export function CreativeCanvasScreen({
             onCampaignSpecJsonEdit={applyCampaignSpecJsonEdit}
           />
         ) : null}
+        {openImageGenerationInspector === null ? null : (
+          <ImageGenerationInspectorPanel
+            nodeId={openImageGenerationInspector.nodeId}
+            title={openImageGenerationInspector.title}
+            details={openImageGenerationInspector.properties}
+            onClose={handleImageInspectorClose}
+          />
+        )}
         {campaign ? <PersistentShortFormPlayer campaign={campaign} /> : null}
       </div>
 
@@ -531,6 +817,202 @@ export function CreativeCanvasScreen({
         <CanvasStatus visibleBlocks={visibleBlocks} />
       </section>
     </main>
+  );
+}
+
+function ImageGenerationInspectorPanel({
+  nodeId,
+  title,
+  details,
+  onClose,
+}: {
+  nodeId: string;
+  title: string;
+  details: ImageGenerationNodeProperties;
+  onClose: (nodeId: string) => void;
+}) {
+  const capability = resolveImageGenerationNodeModelCapability(details);
+  const docsMetadata = resolveImageGenerationDocsPanelMetadata(details);
+  const inspectorControls =
+    docsMetadata.optionalControls.filter(
+      (control) => control.visibility === "inspector",
+    );
+  const schemaRows = capability
+    ? [
+        ["Prompt", capability.schemaAdapter.promptField],
+        ["Reference", capability.schemaAdapter.referenceImagesField ?? "Not supported"],
+        ["Aspect ratio", capability.schemaAdapter.aspectRatioField ?? "Not supported"],
+        ["Size", capability.schemaAdapter.sizeField ?? "Frame dimensions"],
+        ["Seed", capability.schemaAdapter.seedField ?? "Not supported"],
+        ["Quality", capability.schemaAdapter.qualityField ?? "Not supported"],
+        ["Format", capability.schemaAdapter.outputFormatField ?? "Not supported"],
+      ]
+    : [];
+  const compatibilityWarnings = docsMetadata.compatibilityWarnings;
+
+  return (
+    <aside
+      className="image-generation-inspector-panel nodrag"
+      aria-label="Image generation inspector and docs"
+      data-node-id={nodeId}
+      data-panel-state="open"
+    >
+      <header className="image-generation-inspector-header">
+        <span>Image Block</span>
+        <strong>{title}</strong>
+        <button
+          type="button"
+          aria-label="Close image inspector and docs"
+          onClick={() => onClose(nodeId)}
+        >
+          <X className="size-4" />
+        </button>
+      </header>
+
+      <div className="image-generation-inspector-grid">
+        <section
+          className="image-generation-inspector-section"
+          aria-label="Provider model settings"
+        >
+          <h2>Provider settings</h2>
+          <dl>
+            <div>
+              <dt>Provider</dt>
+              <dd>{docsMetadata.provider.name}</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>{docsMetadata.selectedModel.name}</dd>
+            </div>
+            <div>
+              <dt>Credential status</dt>
+              <dd
+                className="image-generation-credential-status"
+                data-credential-status={docsMetadata.provider.credentialStatus.state}
+                aria-label={`Credential status: ${docsMetadata.provider.credentialStatus.label}`}
+              >
+                <span>{docsMetadata.provider.credentialStatus.label}</span>
+                <code>
+                  {docsMetadata.provider.credentialStatus.envName ??
+                    "No provider env var"}
+                </code>
+                <small>{docsMetadata.provider.credentialStatus.message}</small>
+              </dd>
+            </div>
+            <div>
+              <dt>Frame source</dt>
+              <dd>{details.frame.source === "user-resize" ? "Manual resize" : "Aspect ratio"}</dd>
+            </div>
+          </dl>
+
+          <h2>Inspector controls</h2>
+          <ul className="image-generation-inspector-list">
+            {inspectorControls.map((control) => (
+              <li key={control.id}>
+                <span>{control.kind.replaceAll("_", " ")}</span>
+                <strong>{control.options?.join(", ") ?? String(control.defaultValue)}</strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section
+          className="image-generation-docs-panel"
+          aria-label="Provider schema and docs"
+        >
+          <h2>Provider model docs</h2>
+          <dl>
+            <div>
+              <dt>Provider</dt>
+              <dd>{docsMetadata.provider.name}</dd>
+            </div>
+            <div>
+              <dt>Selected model</dt>
+              <dd>{docsMetadata.selectedModel.name}</dd>
+            </div>
+            <div>
+              <dt>Supported ratios</dt>
+              <dd>
+                {docsMetadata.supportedRatios.length === 0
+                  ? "No documented ratios"
+                  : docsMetadata.supportedRatios.join(", ")}
+              </dd>
+            </div>
+          </dl>
+
+          <h2>Required inputs</h2>
+          <ul className="image-generation-docs-required-inputs">
+            {docsMetadata.requiredInputs.length === 0 ? (
+              <li>
+                <span>No required inputs documented</span>
+                <strong>Check provider schema</strong>
+              </li>
+            ) : (
+              docsMetadata.requiredInputs.map((control) => (
+                <li key={control.id}>
+                  <span>{control.label}</span>
+                  <strong>{control.schemaKey}</strong>
+                  <em>{control.kind.replaceAll("_", " ")}</em>
+                </li>
+              ))
+            )}
+          </ul>
+
+          <h2>Optional controls</h2>
+          <ul className="image-generation-docs-optional-controls">
+            {docsMetadata.optionalControls.length === 0 ? (
+              <li>
+                <span>No optional controls documented</span>
+                <strong>Check provider schema</strong>
+              </li>
+            ) : (
+              docsMetadata.optionalControls.map((control) => {
+                const controlValue =
+                  control.options.length > 0
+                    ? control.options.join(", ")
+                    : formatImageGenerationControlDefaultValue(control.defaultValue);
+
+                return (
+                  <li key={control.id}>
+                    <span>{control.label}</span>
+                    <strong>{control.schemaKey}</strong>
+                    <em>{controlValue}</em>
+                    <small>{control.visibility}</small>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+
+          <h2>Schema adapter</h2>
+          <dl>
+            {schemaRows.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <h2>Compatibility</h2>
+          <ul className="image-generation-inspector-list">
+            {compatibilityWarnings.length === 0 ? (
+              <li>
+                <span>Model limits</span>
+                <strong>Ready for current settings</strong>
+              </li>
+            ) : (
+              compatibilityWarnings.map((warning) => (
+                <li key={warning} data-warning="compatibility">
+                  <span>Warning</span>
+                  <strong>{warning}</strong>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
+      </div>
+    </aside>
   );
 }
 
@@ -2586,11 +3068,41 @@ function GenerationBlockNode({
   data,
   selected,
   onImageAspectRatioChange,
+  onImageInspectorOpen,
+  onImageReferenceAttach,
+  onImageReferenceRemove,
+  onImageReferenceReorder,
+  onImageOutputNextNodeAction,
+  campaignAssetReferences,
 }: NodeProps<CreativeFlowNode> & {
   onImageAspectRatioChange: (
     nodeId: string,
     aspectRatio: ImageGenerationAspectRatio,
   ) => void;
+  onImageInspectorOpen: (nodeId: string) => void;
+  onImageReferenceAttach: (
+    nodeId: string,
+    referenceInput: ImageGenerationNodeReferenceInput,
+  ) => void;
+  onImageReferenceRemove: (
+    nodeId: string,
+    referenceInput:
+      | Pick<ImageGenerationNodeReferenceInput, "type" | "ref">
+      | Pick<ImageGenerationNodeReferenceInput, "id">,
+  ) => void;
+  onImageReferenceReorder: (
+    nodeId: string,
+    referenceInput:
+      | Pick<ImageGenerationNodeReferenceInput, "type" | "ref">
+      | Pick<ImageGenerationNodeReferenceInput, "id">,
+    direction: "up" | "down",
+  ) => void;
+  onImageOutputNextNodeAction: (
+    nodeId: string,
+    actionKind: ImageGenerationOutputNextNodeActionKind,
+    selectedResultAssetId: string,
+  ) => void;
+  campaignAssetReferences: CampaignAssetSummary[];
 }) {
   const Icon = blockIcons[data.kind];
   const imageGeneration = isImageGenerationNodeProperties(data.properties)
@@ -2623,6 +3135,10 @@ function GenerationBlockNode({
           "image-generation-node",
           selected && "selected",
         )}
+        data-image-aspect-ratio={imageGeneration.aspectRatio}
+        data-image-frame-height={imageGeneration.frame.height}
+        data-image-frame-source={imageGeneration.frame.source}
+        data-image-frame-width={imageGeneration.frame.width}
         style={{ width: frameWidth, height: frameHeight }}
       >
         <NodeResizer
@@ -2642,6 +3158,24 @@ function GenerationBlockNode({
           onAspectRatioChange={(aspectRatio) => {
             onImageAspectRatioChange(data.id, aspectRatio);
           }}
+          onOpenInspector={() => {
+            onImageInspectorOpen(data.id);
+          }}
+          onReferenceAttach={(referenceInput) => {
+            onImageReferenceAttach(data.id, referenceInput);
+          }}
+          onReferenceRemove={(referenceInput) => {
+            onImageReferenceRemove(data.id, referenceInput);
+          }}
+          onReferenceReorder={(referenceInput, direction) => {
+            onImageReferenceReorder(data.id, referenceInput, direction);
+          }}
+          onOutputNextNodeAction={(actionKind, selectedResultAssetId) => {
+            onImageOutputNextNodeAction(data.id, actionKind, selectedResultAssetId);
+          }}
+          campaignAssetReferences={campaignAssetReferences}
+          recentGeneratedAssetIds={imageGeneration.latestResultRefs.generatedAssetIds}
+          sourceImageNodeId={data.id}
           selected={selected}
           tone={data.tone}
         />
@@ -2704,13 +3238,41 @@ function FreepikReferenceImageNode({
   details,
   Icon,
   onAspectRatioChange,
+  onOpenInspector,
+  onReferenceAttach,
+  onReferenceRemove,
+  onReferenceReorder,
+  onOutputNextNodeAction,
+  campaignAssetReferences,
+  recentGeneratedAssetIds,
   selected,
+  sourceImageNodeId,
   tone,
 }: {
   details: ImageGenerationNodeProperties;
   Icon: ComponentType<{ className?: string }>;
   onAspectRatioChange: (aspectRatio: ImageGenerationAspectRatio) => void;
+  onOpenInspector: () => void;
+  onReferenceAttach: (referenceInput: ImageGenerationNodeReferenceInput) => void;
+  onReferenceRemove: (
+    referenceInput:
+      | Pick<ImageGenerationNodeReferenceInput, "type" | "ref">
+      | Pick<ImageGenerationNodeReferenceInput, "id">,
+  ) => void;
+  onReferenceReorder: (
+    referenceInput:
+      | Pick<ImageGenerationNodeReferenceInput, "type" | "ref">
+      | Pick<ImageGenerationNodeReferenceInput, "id">,
+    direction: "up" | "down",
+  ) => void;
+  onOutputNextNodeAction: (
+    actionKind: ImageGenerationOutputNextNodeActionKind,
+    selectedResultAssetId: string,
+  ) => void;
+  campaignAssetReferences: CampaignAssetSummary[];
+  recentGeneratedAssetIds: string[];
   selected: boolean;
+  sourceImageNodeId: string;
   tone: GenerationBlockTone;
 }) {
   const activeProvider = details.providerPresets.find(
@@ -2729,9 +3291,411 @@ function FreepikReferenceImageNode({
   });
   const nodeStatusView = resolveImageGenerationNodeStatusView(nodeStatus);
   const outputView = resolveImageGenerationNodeOutputView(details);
+  const nextNodeMenuActions = resolveImageGenerationOutputNextNodeActions(details);
+  const [nextNodeMenuOpen, setNextNodeMenuOpen] = useState(false);
+  const nextNodeMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const nextNodeMenuRef = useRef<HTMLDivElement | null>(null);
+  const pendingNextNodeMenuFocusRef = useRef<"first" | "last" | null>(null);
+  const canOpenNextNodeMenu =
+    details.uiState.outputConnectionReady &&
+    details.uiState.selectedResultAssetId !== null;
+  const nextNodeMenuId = `${sourceImageNodeId}-output-next-node-menu`;
+  const referenceTrayVisible = selected || details.uiState.referenceTrayOpen;
+  const [referenceUrlDraft, setReferenceUrlDraft] = useState("");
+  const [referenceAttachmentMessage, setReferenceAttachmentMessage] = useState<
+    string | null
+  >(null);
+  const [referenceAttachmentState, setReferenceAttachmentState] = useState<
+    "idle" | "ready" | "invalid"
+  >("idle");
+  const [campaignAssetDraft, setCampaignAssetDraft] = useState("");
+  const [recentOutputDraft, setRecentOutputDraft] = useState("");
+  const referenceTrayAttachments =
+    listImageGenerationReferenceTrayAttachments(details);
+  const referenceTrayCapability =
+    resolveImageGenerationReferenceTrayCapability(details);
+  const referenceTrayEmptyState =
+    resolveImageGenerationReferenceTrayEmptyState(details);
+  const invalidReferenceAttachment =
+    referenceTrayAttachments.find(
+      (attachment) => attachment.validation.state === "error",
+    ) ?? null;
+  const referenceTrayValidationState =
+    invalidReferenceAttachment === null ? referenceAttachmentState : "invalid";
+  const referenceTrayValidationMessage =
+    invalidReferenceAttachment?.validation.message ?? referenceAttachmentMessage;
+  const modelCapability = resolveImageGenerationNodeModelCapability(details);
+  const aspectRatioSelectorOptions =
+    resolveImageGenerationAspectRatioSelectorOptions(modelCapability);
+  const defaultCampaignAssetId = campaignAssetReferences[0]?.id ?? "";
+  const selectedCampaignAsset =
+    campaignAssetReferences.find((asset) => asset.id === campaignAssetDraft) ??
+    campaignAssetReferences[0] ??
+    null;
+  const selectedCampaignAssetId = selectedCampaignAsset?.id ?? defaultCampaignAssetId;
+  const canAttachReference =
+    referenceTrayCapability.canAddReferences &&
+    referenceTrayCapability.acceptedTypes.includes("asset");
+  const canAttachUrlReference =
+    referenceTrayCapability.canAddReferences &&
+    referenceTrayCapability.acceptedTypes.includes("url");
+  const canAttachRecentReference =
+    referenceTrayCapability.canAddReferences &&
+    referenceTrayCapability.acceptedTypes.includes("recent_output");
+  const referenceAddDisabledReason =
+    referenceTrayCapability.addDisabledReason ??
+    "This reference type is not supported by the selected model.";
+  const canAttachCampaignAsset = selectedCampaignAsset !== null && canAttachReference;
+  const defaultRecentGeneratedAssetId = recentGeneratedAssetIds[0] ?? "";
+  const selectedRecentGeneratedAssetId = recentGeneratedAssetIds.includes(
+    recentOutputDraft,
+  )
+    ? recentOutputDraft
+    : defaultRecentGeneratedAssetId;
+  const canAttachRecentGeneratedAsset =
+    selectedRecentGeneratedAssetId !== "" && canAttachRecentReference;
+  const cleanupStaleReferenceSelections = useCallback(() => {
+    if (
+      campaignAssetDraft !== "" &&
+      !campaignAssetReferences.some((asset) => asset.id === campaignAssetDraft)
+    ) {
+      setCampaignAssetDraft("");
+    }
+
+    if (
+      recentOutputDraft !== "" &&
+      !recentGeneratedAssetIds.includes(recentOutputDraft)
+    ) {
+      setRecentOutputDraft("");
+    }
+  }, [
+    campaignAssetDraft,
+    campaignAssetReferences,
+    recentGeneratedAssetIds,
+    recentOutputDraft,
+  ]);
+
+  useEffect(() => {
+    cleanupStaleReferenceSelections();
+  }, [cleanupStaleReferenceSelections]);
   const handleAspectRatioChange = (event: ChangeEvent<HTMLSelectElement>) => {
     onAspectRatioChange(event.currentTarget.value as ImageGenerationAspectRatio);
   };
+  const applyReferenceAttachmentValidation = (
+    validation: ReturnType<typeof validateImageGenerationReferenceAttachmentDraft>,
+  ) => {
+    setReferenceAttachmentState(validation.valid ? "ready" : "invalid");
+    setReferenceAttachmentMessage(
+      validation.valid ? "Reference image is ready to attach." : validation.message,
+    );
+  };
+  const attachValidatedReference = (
+    validation: ReturnType<typeof validateImageGenerationReferenceAttachmentDraft>,
+    successMessage: string,
+  ) => {
+    if (!referenceTrayCapability.canAddReferences) {
+      setReferenceAttachmentState("invalid");
+      setReferenceAttachmentMessage(referenceAddDisabledReason);
+      return;
+    }
+
+    applyReferenceAttachmentValidation(validation);
+
+    if (!validation.valid || validation.referenceInput === null) {
+      return;
+    }
+
+    onReferenceAttach(validation.referenceInput);
+    setReferenceAttachmentState("ready");
+    setReferenceAttachmentMessage(successMessage);
+  };
+  const handleReferenceFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0] ?? null;
+
+    if (!file) {
+      return;
+    }
+
+    if (!canAttachReference) {
+      setReferenceAttachmentState("invalid");
+      setReferenceAttachmentMessage(referenceAddDisabledReason);
+      event.currentTarget.value = "";
+      return;
+    }
+
+    attachValidatedReference(
+      validateImageGenerationReferenceAttachmentDraft(
+        {
+          kind: "file",
+          fileName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+        },
+        modelCapability,
+      ),
+      "Uploaded reference attached.",
+    );
+    event.currentTarget.value = "";
+  };
+  const attachReferenceUrlDraft = () => {
+    if (!canAttachUrlReference) {
+      setReferenceAttachmentState("invalid");
+      setReferenceAttachmentMessage(referenceAddDisabledReason);
+      return;
+    }
+
+    attachValidatedReference(
+      validateImageGenerationReferenceAttachmentDraft(
+        {
+          kind: "url",
+          url: referenceUrlDraft,
+        },
+        modelCapability,
+      ),
+      "URL reference attached.",
+    );
+  };
+  const handleReferenceUrlChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setReferenceUrlDraft(event.currentTarget.value);
+
+    if (referenceAttachmentState === "invalid") {
+      setReferenceAttachmentState("idle");
+      setReferenceAttachmentMessage(null);
+    }
+  };
+  const handleReferenceUrlKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    attachReferenceUrlDraft();
+  };
+  const handleRecentOutputChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setRecentOutputDraft(event.currentTarget.value);
+
+    if (referenceAttachmentState === "invalid") {
+      setReferenceAttachmentState("idle");
+      setReferenceAttachmentMessage(null);
+    }
+  };
+  const handleCampaignAssetChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setCampaignAssetDraft(event.currentTarget.value);
+
+    if (referenceAttachmentState === "invalid") {
+      setReferenceAttachmentState("idle");
+      setReferenceAttachmentMessage(null);
+    }
+  };
+  const attachSelectedCampaignAsset = () => {
+    if (selectedCampaignAsset === null || !canAttachReference) {
+      if (!canAttachReference) {
+        setReferenceAttachmentState("invalid");
+        setReferenceAttachmentMessage(referenceAddDisabledReason);
+      }
+      return;
+    }
+
+    const validation = validateImageGenerationReferenceAttachmentDraft(
+      {
+        kind: "asset",
+        assetId: selectedCampaignAsset.id,
+        title: selectedCampaignAsset.title,
+        mediaType: selectedCampaignAsset.mediaType,
+      },
+      modelCapability,
+    );
+
+    attachValidatedReference(validation, "Campaign asset attached as reference.");
+  };
+  const attachRecentGeneratedOutput = () => {
+    if (!canAttachRecentReference) {
+      setReferenceAttachmentState("invalid");
+      setReferenceAttachmentMessage(referenceAddDisabledReason);
+      return;
+    }
+
+    const validation = validateImageGenerationReferenceAttachmentDraft(
+      {
+        kind: "recent_output",
+        assetId: selectedRecentGeneratedAssetId,
+        sourceNodeId: sourceImageNodeId,
+        outputPortId: "generated_image_asset",
+      },
+      modelCapability,
+    );
+
+    attachValidatedReference(validation, "Recent output attached as reference.");
+  };
+  const handleReferenceRemove = (
+    referenceInput:
+      | Pick<ImageGenerationNodeReferenceInput, "type" | "ref">
+      | Pick<ImageGenerationNodeReferenceInput, "id">,
+  ) => {
+    onReferenceRemove(referenceInput);
+    cleanupStaleReferenceSelections();
+    setReferenceAttachmentState("idle");
+    setReferenceAttachmentMessage(null);
+  };
+  const getNextNodeMenuItems = () =>
+    Array.from(
+      nextNodeMenuRef.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]',
+      ) ?? [],
+    );
+  const focusNextNodeMenuItem = (position: "first" | "last") => {
+    const menuItems = getNextNodeMenuItems();
+    const targetMenuItem =
+      position === "first" ? menuItems[0] : menuItems[menuItems.length - 1];
+
+    targetMenuItem?.focus();
+  };
+  const closeNextNodeMenu = (options?: { restoreFocus?: boolean }) => {
+    setNextNodeMenuOpen(false);
+
+    if (options?.restoreFocus) {
+      nextNodeMenuTriggerRef.current?.focus();
+    }
+  };
+  const openNextNodeMenu = (focusPosition: "first" | "last" = "first") => {
+    if (!canOpenNextNodeMenu) {
+      closeNextNodeMenu();
+      return;
+    }
+
+    pendingNextNodeMenuFocusRef.current = focusPosition;
+    setNextNodeMenuOpen(true);
+  };
+  const toggleNextNodeMenu = () => {
+    if (!canOpenNextNodeMenu) {
+      closeNextNodeMenu();
+      return;
+    }
+
+    setNextNodeMenuOpen((isOpen) => {
+      if (isOpen) {
+        pendingNextNodeMenuFocusRef.current = null;
+        return false;
+      }
+
+      pendingNextNodeMenuFocusRef.current = "first";
+      return true;
+    });
+  };
+  const handleNextNodeTriggerKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      openNextNodeMenu(event.key === "ArrowUp" ? "last" : "first");
+      return;
+    }
+
+    if (event.key === "Escape" && nextNodeMenuOpen) {
+      event.preventDefault();
+      closeNextNodeMenu({ restoreFocus: true });
+    }
+  };
+  const handleNextNodeMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const menuItems = getNextNodeMenuItems();
+    const currentMenuItemIndex = menuItems.indexOf(
+      event.target as HTMLButtonElement,
+    );
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeNextNodeMenu({ restoreFocus: true });
+      return;
+    }
+
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      focusNextNodeMenuItem(event.key === "Home" ? "first" : "last");
+      return;
+    }
+
+    if (
+      (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+      menuItems.length > 0
+    ) {
+      event.preventDefault();
+      const offset = event.key === "ArrowDown" ? 1 : -1;
+      const nextMenuItemIndex =
+        currentMenuItemIndex === -1
+          ? event.key === "ArrowDown"
+            ? 0
+            : menuItems.length - 1
+          : (currentMenuItemIndex + offset + menuItems.length) % menuItems.length;
+
+      menuItems[nextMenuItemIndex]?.focus();
+    }
+  };
+  const handleNextNodeMenuAction = (
+    actionKind: ImageGenerationOutputNextNodeActionKind,
+  ) => {
+    const selectedResultAssetId = details.uiState.selectedResultAssetId;
+
+    if (selectedResultAssetId !== null) {
+      onOutputNextNodeAction(actionKind, selectedResultAssetId);
+    }
+
+    closeNextNodeMenu({ restoreFocus: true });
+  };
+  const handleNextNodeMenuBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const nextFocusedElement = event.relatedTarget;
+
+    if (
+      nextFocusedElement instanceof Node &&
+      (nextNodeMenuRef.current?.contains(nextFocusedElement) ||
+        nextNodeMenuTriggerRef.current?.contains(nextFocusedElement))
+    ) {
+      return;
+    }
+
+    closeNextNodeMenu();
+  };
+
+  useEffect(() => {
+    if (!canOpenNextNodeMenu && nextNodeMenuOpen) {
+      closeNextNodeMenu();
+    }
+  }, [canOpenNextNodeMenu, nextNodeMenuOpen]);
+
+  useEffect(() => {
+    if (!nextNodeMenuOpen) {
+      pendingNextNodeMenuFocusRef.current = null;
+      return;
+    }
+
+    focusNextNodeMenuItem(pendingNextNodeMenuFocusRef.current ?? "first");
+    pendingNextNodeMenuFocusRef.current = null;
+  }, [nextNodeMenuOpen]);
+
+  useEffect(() => {
+    if (!nextNodeMenuOpen) {
+      return;
+    }
+
+    const handleDocumentPointerDown = (event: PointerEvent) => {
+      const eventTarget = event.target;
+
+      if (
+        eventTarget instanceof Node &&
+        (nextNodeMenuRef.current?.contains(eventTarget) ||
+          nextNodeMenuTriggerRef.current?.contains(eventTarget))
+      ) {
+        return;
+      }
+
+      closeNextNodeMenu();
+    };
+
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    };
+  }, [nextNodeMenuOpen]);
 
   return (
     <div
@@ -2809,13 +3773,61 @@ function FreepikReferenceImageNode({
           어떤 이미지를 생성하고 싶은지 설명해주세요...
         </div>
 
-        <div
-          className={cn("space-primary-output-preview", outputView.className)}
-          data-output-state={outputView.state}
-          aria-label={outputView.ariaLabel}
-        >
-          <ImageIcon className="size-4" />
-          <span>{outputView.label}</span>
+        <div className="space-output-next-node-anchor nodrag" onBlur={handleNextNodeMenuBlur}>
+          <button
+            ref={nextNodeMenuTriggerRef}
+            className={cn("space-primary-output-preview", "nodrag", outputView.className)}
+            data-output-state={outputView.state}
+            data-output-next-node-entrypoint="creative-output-action"
+            data-output-next-node-trigger="generated-image"
+            type="button"
+            aria-label={outputView.ariaLabel}
+            aria-haspopup="menu"
+            aria-expanded={nextNodeMenuOpen}
+            aria-controls={nextNodeMenuId}
+            disabled={!canOpenNextNodeMenu}
+            onClick={toggleNextNodeMenu}
+            onKeyDown={handleNextNodeTriggerKeyDown}
+          >
+            <ImageIcon className="size-4" />
+            <span>{outputView.label}</span>
+          </button>
+
+          {nextNodeMenuOpen ? (
+            <div
+              ref={nextNodeMenuRef}
+              id={nextNodeMenuId}
+              className="space-output-next-node-menu nodrag"
+              role="menu"
+              aria-label="Create next generation block from output"
+              onKeyDown={handleNextNodeMenuKeyDown}
+            >
+              {nextNodeMenuActions.map((action) => {
+                const ActionIcon = imageOutputNextNodeActionIcons[action.kind];
+                const disabled = action.availability === "disabled";
+
+                return (
+                  <button
+                    key={action.kind}
+                    type="button"
+                    role="menuitem"
+                    data-next-node-kind={action.kind}
+                    data-provider-availability={action.availability}
+                    aria-disabled={disabled}
+                    disabled={disabled}
+                    title={action.disabledReason ?? action.description}
+                    onClick={() => handleNextNodeMenuAction(action.kind)}
+                  >
+                    <ActionIcon className="size-3" />
+                    <span>{action.label}</span>
+                    {action.disabledReason === null ? null : (
+                      <small>{action.disabledReason}</small>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         <div className="space-node-controls nodrag" aria-label="Image generation settings">
@@ -2836,9 +3848,16 @@ function FreepikReferenceImageNode({
               onChange={handleAspectRatioChange}
               aria-label="Output aspect ratio"
             >
-              {imageGenerationAspectRatioOptions.map((aspectRatio) => (
-                <option key={aspectRatio} value={aspectRatio}>
-                  {aspectRatio}
+              {aspectRatioSelectorOptions.map((option) => (
+                <option
+                  key={option.aspectRatio}
+                  value={option.aspectRatio}
+                  disabled={option.disabled}
+                  data-provider-ratio={option.providerAspectRatio}
+                  data-provider-ratio-availability={option.availability}
+                  title={option.compatibilityMessage ?? undefined}
+                >
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -2848,8 +3867,15 @@ function FreepikReferenceImageNode({
             <span>1K</span>
             <em>⌄</em>
           </button>
-          <button className="space-control-chip icon" type="button" aria-label="Advanced settings">
-            ⚙
+          <button
+            className="space-control-chip icon"
+            type="button"
+            aria-label="Open image inspector and docs"
+            aria-expanded={details.uiState.inspectorOpen || details.uiState.docsPanelOpen}
+            data-inspector-trigger="image-generation"
+            onClick={onOpenInspector}
+          >
+            <Settings2 className="size-3" />
           </button>
         </div>
 
@@ -2878,6 +3904,263 @@ function FreepikReferenceImageNode({
         )}
         <span className="space-node-resize-corner" aria-hidden="true" />
       </div>
+
+      {referencePort === undefined || !referenceTrayVisible ? null : (
+        <div
+          className="space-reference-tray nodrag"
+          aria-label="Reference attachments"
+          data-validation-state={referenceTrayValidationState}
+          data-reference-capability={referenceTrayCapability.state}
+          data-reference-selection-state={
+            invalidReferenceAttachment === null ? "valid" : "error"
+          }
+          data-reference-count={referenceTrayCapability.attachedReferenceCount}
+          data-reference-max={referenceTrayCapability.maxReferenceCount}
+        >
+          <label
+            className="space-reference-upload"
+            aria-disabled={!canAttachReference}
+            title={canAttachReference ? "Upload reference image" : referenceAddDisabledReason}
+          >
+            <Upload className="size-3" />
+            <span>Upload</span>
+            <input
+              type="file"
+              accept="image/*"
+              aria-label="Upload reference image"
+              aria-invalid={referenceAttachmentState === "invalid"}
+              aria-describedby="image-reference-attachment-feedback"
+              disabled={!canAttachReference}
+              onChange={handleReferenceFileChange}
+            />
+          </label>
+          <label
+            className="space-reference-url"
+            aria-disabled={!canAttachUrlReference}
+            title={canAttachUrlReference ? "Attach reference image URL" : referenceAddDisabledReason}
+          >
+            <Link2 className="size-3" />
+            <input
+              type="url"
+              placeholder="Paste image URL"
+              aria-label="Attach reference image URL"
+              value={referenceUrlDraft}
+              aria-invalid={referenceAttachmentState === "invalid"}
+              aria-describedby="image-reference-attachment-feedback"
+              disabled={!canAttachUrlReference}
+              onChange={handleReferenceUrlChange}
+              onKeyDown={handleReferenceUrlKeyDown}
+            />
+            <button
+              type="button"
+              aria-label="Attach reference image URL"
+              disabled={!canAttachUrlReference || referenceUrlDraft.trim() === ""}
+              title={
+                canAttachUrlReference ? "Attach reference image URL" : referenceAddDisabledReason
+              }
+              onClick={attachReferenceUrlDraft}
+            >
+              Attach
+            </button>
+          </label>
+          <div className="space-reference-recent" aria-label="Recent generated assets">
+            <ImageIcon className="size-3" />
+            <select
+              aria-label="Recent generated asset"
+              value={selectedRecentGeneratedAssetId}
+              aria-disabled={!canAttachRecentReference}
+              disabled={!canAttachRecentReference || recentGeneratedAssetIds.length === 0}
+              title={
+                canAttachRecentReference ? "Recent generated asset" : referenceAddDisabledReason
+              }
+              onChange={handleRecentOutputChange}
+            >
+              {recentGeneratedAssetIds.length === 0 ? (
+                <option value="">No recent outputs</option>
+              ) : (
+                recentGeneratedAssetIds.map((assetId, index) => (
+                  <option key={assetId} value={assetId}>
+                    {`Output ${index + 1}`}
+                  </option>
+                ))
+              )}
+            </select>
+            <button
+              type="button"
+              aria-label="Attach recent generated asset as reference"
+              disabled={!canAttachRecentGeneratedAsset}
+              title={
+                canAttachRecentReference
+                  ? "Attach recent generated asset as reference"
+                  : referenceAddDisabledReason
+              }
+              onClick={attachRecentGeneratedOutput}
+            >
+              Attach
+            </button>
+          </div>
+          <div className="space-reference-existing" aria-label="Campaign assets">
+            <ImageIcon className="size-3" />
+            <select
+              aria-label="Selected campaign asset"
+              value={selectedCampaignAssetId}
+              aria-disabled={!canAttachReference}
+              disabled={!canAttachReference || campaignAssetReferences.length === 0}
+              title={
+                canAttachReference ? "Selected campaign asset" : referenceAddDisabledReason
+              }
+              onChange={handleCampaignAssetChange}
+            >
+              {campaignAssetReferences.length === 0 ? (
+                <option value="">No image assets</option>
+              ) : (
+                campaignAssetReferences.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.title}
+                  </option>
+                ))
+              )}
+            </select>
+            <button
+              type="button"
+              aria-label="Attach selected campaign asset as reference"
+              disabled={!canAttachCampaignAsset}
+              title={
+                canAttachReference
+                  ? "Attach selected campaign asset as reference"
+                  : referenceAddDisabledReason
+              }
+              onClick={attachSelectedCampaignAsset}
+            >
+              Attach
+            </button>
+          </div>
+          {referenceTrayAttachments.length === 0 && referenceTrayEmptyState !== null ? (
+            <div className="space-reference-empty-state" aria-live="polite">
+              <strong>{referenceTrayEmptyState.label}</strong>
+              <span>{referenceTrayEmptyState.description}</span>
+            </div>
+          ) : (
+            <div
+              className="space-reference-attachment-list"
+              aria-label="Attached reference images"
+            >
+              {referenceTrayAttachments.map((attachment) => (
+                <ReferenceTrayAttachmentItem
+                  key={attachment.id}
+                  attachment={attachment}
+                  canRemove={referenceTrayCapability.canRemoveReferences}
+                  removeDisabledReason={referenceTrayCapability.removeDisabledReason}
+                  onMoveDown={() => {
+                    onReferenceReorder(
+                      {
+                        id: attachment.id,
+                      },
+                      "down",
+                    );
+                  }}
+                  onMoveUp={() => {
+                    onReferenceReorder(
+                      {
+                        id: attachment.id,
+                      },
+                      "up",
+                    );
+                  }}
+                  onRemove={() => {
+                    handleReferenceRemove({
+                      id: attachment.id,
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {referenceTrayValidationMessage === null ? null : (
+            <p
+              id="image-reference-attachment-feedback"
+              className="space-reference-attachment-feedback"
+              role={referenceTrayValidationState === "invalid" ? "alert" : "status"}
+            >
+              {referenceTrayValidationMessage}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReferenceTrayAttachmentItem({
+  attachment,
+  canRemove,
+  removeDisabledReason,
+  onMoveDown,
+  onMoveUp,
+  onRemove,
+}: {
+  attachment: ImageGenerationReferenceTrayAttachment;
+  canRemove: boolean;
+  removeDisabledReason: string | null;
+  onMoveDown: () => void;
+  onMoveUp: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "space-reference-attachment",
+        attachment.validation.state === "error" && "invalid",
+      )}
+      data-reference-order={attachment.insertionOrder}
+      data-reference-source={attachment.source}
+      data-reference-validation={attachment.validation.state}
+      aria-invalid={attachment.validation.state === "error"}
+      title={attachment.validation.message ?? undefined}
+    >
+      <div
+        className="space-reference-preview"
+        data-preview-state={attachment.preview.state}
+        aria-label={attachment.preview.alt}
+      >
+        {attachment.preview.src === null ? (
+          <ImageIcon className="size-3" />
+        ) : (
+          <img src={attachment.preview.src} alt={attachment.preview.alt} />
+        )}
+      </div>
+      <div className="space-reference-copy">
+        <strong>{attachment.label}</strong>
+        <span>{attachment.detail}</span>
+      </div>
+      <div className="space-reference-order-controls" aria-label="Reference order controls">
+        <button
+          type="button"
+          aria-label={attachment.reorder.moveUpAriaLabel}
+          disabled={!attachment.reorder.canMoveUp}
+          onClick={onMoveUp}
+        >
+          <ArrowUp className="size-3" />
+        </button>
+        <button
+          type="button"
+          aria-label={attachment.reorder.moveDownAriaLabel}
+          disabled={!attachment.reorder.canMoveDown}
+          onClick={onMoveDown}
+        >
+          <ArrowDown className="size-3" />
+        </button>
+      </div>
+      <button
+        type="button"
+        aria-label={attachment.remove.ariaLabel}
+        aria-disabled={!canRemove}
+        disabled={!canRemove}
+        title={removeDisabledReason ?? attachment.remove.ariaLabel}
+        onClick={onRemove}
+      >
+        <X className="size-3" />
+      </button>
     </div>
   );
 }

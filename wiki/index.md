@@ -22,4 +22,4 @@ OwnCanvas 위키의 내용 중심 색인이다. 작업자는 먼저 이 파일�
 
 ## Analyses
 
-- 아직 별도 analysis page 없음.
+- [GPT Image 비율 호환성 규칙 | GPT Image Ratio Compatibility Rules](analyses/image-generation-gpt-ratio-compatibility-rules.md): GPT Image-like provider/model의 비율 제약과 OwnCanvas canonical mapping/warning 규칙.

@@ -3,11 +3,16 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
   IMAGE_GENERATION_DEFAULT_FRAME,
+  closeImageGenerationNodeInspectorTransition,
   createImageGenerationNodeProperties,
+  getImageGenerationModelCapability,
   imageGenerationAspectRatioOptions,
   imageGenerationNodeStatuses,
   imageGenerationNodeV2Statuses,
+  openImageGenerationNodeInspectorTransition,
+  resolveImageGenerationAspectRatioSelectorOptions,
   resolveImageGenerationNodeStatusView,
 } from "../model/image-generation-node.ts";
 import {
@@ -141,14 +146,244 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   assert.match(creativeCanvasScreen, /className="space-control-chip ratio"/);
   assert.match(imageNodeSource, /value=\{details\.aspectRatio\}/);
   assert.match(imageNodeSource, /onChange=\{handleAspectRatioChange\}/);
-  assert.match(imageNodeSource, /imageGenerationAspectRatioOptions\.map/);
+  assert.match(imageNodeSource, /aspectRatioSelectorOptions\.map/);
   assert.doesNotMatch(imageNodeSource, /<span>16:9<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip quality"/);
   assert.match(creativeCanvasScreen, /<span>1K<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip icon"/);
-  assert.match(creativeCanvasScreen, /aria-label="Advanced settings"/);
+  assert.match(creativeCanvasScreen, /aria-label="Open image inspector and docs"/);
   assert.match(appCss, /\.space-node-controls\s*\{[\s\S]*bottom:\s*22px/);
   assert.match(appCss, /\.space-node-controls\s*\{[\s\S]*display:\s*flex/);
+});
+
+test("Spaces-style image generation node has a compact inspector docs trigger", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.match(creativeCanvasScreen, /openImageGenerationNodeInspectorTransition/);
+  assert.match(creativeCanvasScreen, /const handleImageInspectorOpen = useCallback/);
+  assert.match(creativeCanvasScreen, /onImageInspectorOpen=\{handleImageInspectorOpen\}/);
+  assert.match(creativeCanvasScreen, /onOpenInspector=\{\(\) => \{[\s\S]*onImageInspectorOpen\(data\.id\);[\s\S]*\}\}/);
+  assert.match(imageNodeSource, /data-inspector-trigger="image-generation"/);
+  assert.match(imageNodeSource, /aria-expanded=\{details\.uiState\.inspectorOpen \|\| details\.uiState\.docsPanelOpen\}/);
+  assert.match(imageNodeSource, /onClick=\{onOpenInspector\}/);
+  assert.match(imageNodeSource, /<Settings2 className="size-3" \/>/);
+  assert.doesNotMatch(imageNodeSource, /className="[^"]*(?:inspector-panel|docs-panel|settings-panel)[^"]*"/);
+});
+
+test("Image generation docs panel renders provider model documentation", () => {
+  const panelStart = creativeCanvasScreen.indexOf(
+    "function ImageGenerationInspectorPanel",
+  );
+  const panelEnd = creativeCanvasScreen.indexOf(
+    "function PersistentShortFormPlayer",
+  );
+  assert.notEqual(panelStart, -1);
+  assert.notEqual(panelEnd, -1);
+
+  const panelSource = creativeCanvasScreen.slice(panelStart, panelEnd);
+
+  assert.match(panelSource, /className="image-generation-docs-panel"/);
+  assert.match(panelSource, /aria-label="Provider schema and docs"/);
+  assert.match(panelSource, /<h2>Provider model docs<\/h2>/);
+  assert.match(panelSource, /<dt>Provider<\/dt>\s*<dd>\{docsMetadata\.provider\.name\}<\/dd>/);
+  assert.match(
+    panelSource,
+    /<dt>Selected model<\/dt>\s*<dd>\{docsMetadata\.selectedModel\.name\}<\/dd>/,
+  );
+  assert.match(panelSource, /<dt>Credential status<\/dt>/);
+  assert.match(panelSource, /className="image-generation-credential-status"/);
+  assert.match(
+    panelSource,
+    /data-credential-status=\{docsMetadata\.provider\.credentialStatus\.state\}/,
+  );
+  assert.match(
+    panelSource,
+    /<span>\{docsMetadata\.provider\.credentialStatus\.label\}<\/span>/,
+  );
+  assert.match(
+    panelSource,
+    /\{docsMetadata\.provider\.credentialStatus\.envName \?\?\s*"No provider env var"\}/,
+  );
+  assert.doesNotMatch(
+    panelSource,
+    /credentialStatus\.(?:value|secret|apiKey|tokenValue|credentialValue)/i,
+  );
+  assert.match(panelSource, /<dt>Supported ratios<\/dt>/);
+  assert.match(panelSource, /docsMetadata\.supportedRatios\.join\(", "\)/);
+  assert.match(panelSource, /"No documented ratios"/);
+  assert.match(panelSource, /<h2>Required inputs<\/h2>/);
+  assert.match(panelSource, /className="image-generation-docs-required-inputs"/);
+  assert.match(panelSource, /docsMetadata\.requiredInputs\.map/);
+  assert.match(panelSource, /<span>\{control\.label\}<\/span>/);
+  assert.match(panelSource, /<strong>\{control\.schemaKey\}<\/strong>/);
+  assert.match(panelSource, /<em>\{control\.kind\.replaceAll\("_", " "\)\}<\/em>/);
+  assert.match(panelSource, /<span>No required inputs documented<\/span>/);
+  assert.match(panelSource, /<h2>Optional controls<\/h2>/);
+  assert.match(panelSource, /className="image-generation-docs-optional-controls"/);
+  assert.match(panelSource, /docsMetadata\.optionalControls\.map/);
+  assert.match(panelSource, /<span>\{control\.label\}<\/span>/);
+  assert.match(panelSource, /<strong>\{control\.schemaKey\}<\/strong>/);
+  assert.match(panelSource, /control\.options\.length > 0/);
+  assert.match(panelSource, /control\.options\.join\(", "\)/);
+  assert.match(
+    panelSource,
+    /formatImageGenerationControlDefaultValue\(control\.defaultValue\)/,
+  );
+  assert.match(panelSource, /<em>\{controlValue\}<\/em>/);
+  assert.match(panelSource, /<small>\{control\.visibility\}<\/small>/);
+  assert.match(panelSource, /<span>No optional controls documented<\/span>/);
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-panel\s*\{[\s\S]*position:\s*fixed/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-panel\s*\{[\s\S]*right:\s*376px/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-panel\s*\{[\s\S]*top:\s*66px/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-panel\s*\{[\s\S]*z-index:\s*22/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-panel\s*\{[\s\S]*max-height:\s*calc\(100dvh - 90px\)/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-panel\s*\{[\s\S]*overflow:\s*auto/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(180px, 0\.74fr\) minmax\(260px, 1fr\)/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-inspector-section,\s*\.image-generation-docs-panel\s*\{[\s\S]*min-width:\s*0/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-docs-required-inputs,\s*\.image-generation-docs-optional-controls\s*\{[\s\S]*display:\s*grid/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-docs-required-inputs li\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 0\.82fr\) minmax\(0, 1fr\) auto/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-docs-optional-controls li\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 0\.78fr\) minmax\(0, 0\.86fr\) minmax\(0, 1fr\) auto/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-credential-status\s*\{[\s\S]*display:\s*grid/,
+  );
+  assert.match(
+    appCss,
+    /\.image-generation-credential-status code\s*\{[\s\S]*font-family:\s*ui-monospace/,
+  );
+});
+
+test("Image Block compact dimensions stay stable when the external panel opens, closes, and updates", () => {
+  const renderFrame = (properties: ReturnType<typeof createImageGenerationNodeProperties>) => ({
+    width: Math.min(
+      IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxWidth,
+      Math.max(IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minWidth, properties.frame.width),
+    ),
+    height: Math.min(
+      IMAGE_GENERATION_COMPACT_FRAME_LIMITS.maxHeight,
+      Math.max(IMAGE_GENERATION_COMPACT_FRAME_LIMITS.minHeight, properties.frame.height),
+    ),
+  });
+  const properties = createImageGenerationNodeProperties({
+    frame: {
+      ...IMAGE_GENERATION_DEFAULT_FRAME,
+      width: 388,
+      height: 640,
+      source: "user-resize",
+    },
+  });
+  const openedProperties = openImageGenerationNodeInspectorTransition(properties);
+  const updatedPanelProperties = createImageGenerationNodeProperties({
+    ...openedProperties,
+    uiState: {
+      ...openedProperties.uiState,
+      statusMessage: "Inspector metadata refreshed",
+    },
+  });
+  const closedProperties = closeImageGenerationNodeInspectorTransition(
+    updatedPanelProperties,
+  );
+
+  assert.deepEqual(renderFrame(openedProperties), renderFrame(properties));
+  assert.deepEqual(renderFrame(updatedPanelProperties), renderFrame(properties));
+  assert.deepEqual(renderFrame(closedProperties), renderFrame(properties));
+  assert.deepEqual(openedProperties.frame, properties.frame);
+  assert.deepEqual(updatedPanelProperties.frame, properties.frame);
+  assert.deepEqual(closedProperties.frame, properties.frame);
+
+  const generationNodeStart = creativeCanvasScreen.indexOf(
+    "function GenerationBlockNode",
+  );
+  const generationNodeEnd = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const openHandlerStart = creativeCanvasScreen.indexOf(
+    "const handleImageInspectorOpen = useCallback",
+  );
+  const openHandlerEnd = creativeCanvasScreen.indexOf(
+    "const handleImageInspectorClose = useCallback",
+  );
+  const closeHandlerEnd = creativeCanvasScreen.indexOf(
+    "const creativeNodeTypes = useMemo<NodeTypes>",
+  );
+  assert.notEqual(generationNodeStart, -1);
+  assert.notEqual(generationNodeEnd, -1);
+  assert.notEqual(openHandlerStart, -1);
+  assert.notEqual(openHandlerEnd, -1);
+  assert.notEqual(closeHandlerEnd, -1);
+
+  const generationNodeSource = creativeCanvasScreen.slice(
+    generationNodeStart,
+    generationNodeEnd,
+  );
+  const inspectorOpenHandlerSource = creativeCanvasScreen.slice(
+    openHandlerStart,
+    openHandlerEnd,
+  );
+  const inspectorCloseHandlerSource = creativeCanvasScreen.slice(
+    openHandlerEnd,
+    closeHandlerEnd,
+  );
+
+  assert.match(
+    generationNodeSource,
+    /style=\{\{ width: frameWidth, height: frameHeight \}\}/,
+  );
+  assert.match(generationNodeSource, /imageGeneration\.frame\.width/);
+  assert.match(generationNodeSource, /imageGeneration\.frame\.height/);
+  assert.doesNotMatch(generationNodeSource, /uiState\.(?:inspectorOpen|docsPanelOpen)/);
+  assert.doesNotMatch(inspectorOpenHandlerSource, /\b(?:width|height):/);
+  assert.doesNotMatch(inspectorCloseHandlerSource, /\b(?:width|height):/);
+  assert.match(
+    inspectorOpenHandlerSource,
+    /properties: openImageGenerationNodeInspectorTransition\(properties\)/,
+  );
+  assert.match(
+    inspectorCloseHandlerSource,
+    /properties: closeImageGenerationNodeInspectorTransition\(properties\)/,
+  );
 });
 
 test("Spaces-style image generation node ratio selector writes selected output aspect ratio", () => {
@@ -177,7 +412,170 @@ test("Spaces-style image generation node ratio selector writes selected output a
     /onAspectRatioChange\(event\.currentTarget\.value as ImageGenerationAspectRatio\)/,
   );
   assert.match(imageNodeSource, /aria-label="Output aspect ratio"/);
+  assert.match(
+    imageNodeSource,
+    /resolveImageGenerationAspectRatioSelectorOptions\(modelCapability\)/,
+  );
+  assert.match(imageNodeSource, /disabled=\{option\.disabled\}/);
+  assert.match(imageNodeSource, /data-provider-ratio=\{option\.providerAspectRatio\}/);
+  assert.match(
+    imageNodeSource,
+    /data-provider-ratio-availability=\{option\.availability\}/,
+  );
+  assert.match(imageNodeSource, /\{option\.label\}/);
   assert.match(appCss, /\.space-control-select\s*\{[\s\S]*appearance:\s*none/);
+});
+
+test("Spaces-style image generation node exposes GPT Image mapped and disabled ratio states", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+  const gptImage = getImageGenerationModelCapability({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+  });
+
+  assert.ok(gptImage);
+
+  const gptImageRatioOptions =
+    resolveImageGenerationAspectRatioSelectorOptions(gptImage);
+
+  assert.deepEqual(
+    gptImageRatioOptions.map((option) => ({
+      aspectRatio: option.aspectRatio,
+      providerAspectRatio: option.providerAspectRatio,
+      availability: option.availability,
+      disabled: option.disabled,
+      label: option.label,
+      compatibilityMessage: option.compatibilityMessage,
+    })),
+    [
+      {
+        aspectRatio: "9:16",
+        providerAspectRatio: "2:3",
+        availability: "mapped",
+        disabled: false,
+        label: "9:16 -> 2:3",
+        compatibilityMessage: "9:16 is not native to GPT Image.",
+      },
+      {
+        aspectRatio: "1:1",
+        providerAspectRatio: "1:1",
+        availability: "native",
+        disabled: false,
+        label: "1:1",
+        compatibilityMessage: null,
+      },
+      {
+        aspectRatio: "16:9",
+        providerAspectRatio: "3:2",
+        availability: "mapped",
+        disabled: false,
+        label: "16:9 -> 3:2",
+        compatibilityMessage: "16:9 is not native to GPT Image.",
+      },
+    ],
+  );
+
+  const disabledRatioOptions = resolveImageGenerationAspectRatioSelectorOptions({
+    ...gptImage,
+    model: {
+      ...gptImage.model,
+      slug: "custom/disabled-ratio-model",
+      label: "Disabled Ratio Model",
+    },
+    schemaAdapter: {
+      ...gptImage.schemaAdapter,
+      unsupportedRatioBehavior: "disable" as const,
+    },
+  });
+
+  assert.deepEqual(
+    disabledRatioOptions
+      .filter((option) => option.availability === "disabled")
+      .map((option) => ({
+        aspectRatio: option.aspectRatio,
+        disabled: option.disabled,
+        compatibilityMessage: option.compatibilityMessage,
+      })),
+    [
+      {
+        aspectRatio: "9:16",
+        disabled: true,
+        compatibilityMessage: "9:16 is not supported by Disabled Ratio Model.",
+      },
+      {
+        aspectRatio: "16:9",
+        disabled: true,
+        compatibilityMessage: "16:9 is not supported by Disabled Ratio Model.",
+      },
+    ],
+  );
+
+  assert.match(imageNodeSource, /disabled=\{option\.disabled\}/);
+  assert.match(imageNodeSource, /data-provider-ratio=\{option\.providerAspectRatio\}/);
+  assert.match(
+    imageNodeSource,
+    /data-provider-ratio-availability=\{option\.availability\}/,
+  );
+  assert.match(imageNodeSource, /title=\{option\.compatibilityMessage \?\? undefined\}/);
+  assert.match(imageNodeSource, /\{option\.label\}/);
+});
+
+test("Spaces-style image generation node exposes browser-verifiable resize precedence state", () => {
+  const generationNodeStart = creativeCanvasScreen.indexOf(
+    "function GenerationBlockNode",
+  );
+  const generationNodeEnd = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  assert.notEqual(generationNodeStart, -1);
+  assert.notEqual(generationNodeEnd, -1);
+
+  const generationNodeSource = creativeCanvasScreen.slice(
+    generationNodeStart,
+    generationNodeEnd,
+  );
+
+  assert.match(
+    generationNodeSource,
+    /data-image-aspect-ratio=\{imageGeneration\.aspectRatio\}/,
+  );
+  assert.match(
+    generationNodeSource,
+    /data-image-frame-source=\{imageGeneration\.frame\.source\}/,
+  );
+  assert.match(
+    generationNodeSource,
+    /data-image-frame-width=\{imageGeneration\.frame\.width\}/,
+  );
+  assert.match(
+    generationNodeSource,
+    /data-image-frame-height=\{imageGeneration\.frame\.height\}/,
+  );
+  assert.match(
+    generationNodeSource,
+    /<NodeResizer[\s\S]*keepAspectRatio/,
+  );
+  assert.match(
+    generationNodeSource,
+    /minWidth=\{IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.minWidth\}/,
+  );
+  assert.match(
+    generationNodeSource,
+    /maxWidth=\{IMAGE_GENERATION_COMPACT_FRAME_LIMITS\.maxWidth\}/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /const nextProperties = selectImageGenerationNodeAspectRatioTransition\([\s\S]*width:\s*nextProperties\.frame\.width[\s\S]*height:\s*nextProperties\.frame\.height/,
+  );
 });
 
 test("Spaces-style image generation node uses valid DOM containers for embedded handles", () => {
@@ -192,6 +590,128 @@ test("Spaces-style image generation node uses valid DOM containers for embedded 
   assert.match(
     creativeCanvasScreen,
     /<div\s+className="space-side-port space-output-port"[\s\S]*?<Handle[\s\S]*?generated-output-handle[\s\S]*?<\/div>/,
+  );
+});
+
+test("Spaces-style image generation node exposes reference tray upload and URL controls", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.match(
+    imageNodeSource,
+    /const referenceTrayVisible = selected \|\| details\.uiState\.referenceTrayOpen;/,
+  );
+  assert.match(
+    imageNodeSource,
+    /referencePort === undefined \|\| !referenceTrayVisible \? null : \(/,
+  );
+  assert.match(imageNodeSource, /className="space-reference-tray nodrag"/);
+  assert.match(imageNodeSource, /aria-label="Reference attachments"/);
+  assert.match(imageNodeSource, /className="space-reference-upload"/);
+  assert.match(imageNodeSource, /type="file"/);
+  assert.match(imageNodeSource, /accept="image\/\*"/);
+  assert.match(imageNodeSource, /aria-label="Upload reference image"/);
+  assert.match(imageNodeSource, /className="space-reference-url"/);
+  assert.match(imageNodeSource, /type="url"/);
+  assert.match(imageNodeSource, /placeholder="Paste image URL"/);
+  assert.match(imageNodeSource, /aria-label="Attach reference image URL"/);
+  assert.match(imageNodeSource, /attachReferenceUrlDraft/);
+  assert.match(imageNodeSource, /className="space-reference-recent"/);
+  assert.match(imageNodeSource, /aria-label="Recent generated assets"/);
+  assert.match(imageNodeSource, /aria-label="Recent generated asset"/);
+  assert.match(imageNodeSource, /No recent outputs/);
+  assert.match(imageNodeSource, /Output \$\{index \+ 1\}/);
+  assert.match(imageNodeSource, /aria-label="Attach recent generated asset as reference"/);
+  assert.match(imageNodeSource, /kind: "recent_output"/);
+  assert.match(imageNodeSource, /className="space-reference-existing"/);
+  assert.match(imageNodeSource, /aria-label="Campaign assets"/);
+  assert.match(imageNodeSource, /aria-label="Selected campaign asset"/);
+  assert.match(imageNodeSource, /No image assets/);
+  assert.match(imageNodeSource, /aria-label="Attach selected campaign asset as reference"/);
+  assert.match(imageNodeSource, /kind: "asset"/);
+  assert.match(imageNodeSource, /attachSelectedCampaignAsset/);
+  assert.match(imageNodeSource, /campaignAssetReferences\.map/);
+  assert.match(imageNodeSource, /const canAttachReference =/);
+  assert.match(imageNodeSource, /referenceTrayCapability\.canAddReferences/);
+  assert.match(imageNodeSource, /referenceTrayCapability\.acceptedTypes\.includes\("asset"\)/);
+  assert.match(imageNodeSource, /referenceTrayCapability\.acceptedTypes\.includes\("url"\)/);
+  assert.match(imageNodeSource, /referenceTrayCapability\.acceptedTypes\.includes\("recent_output"\)/);
+  assert.match(imageNodeSource, /referenceTrayCapability\.addDisabledReason/);
+  assert.match(imageNodeSource, /disabled=\{!canAttachReference\}/);
+  assert.match(imageNodeSource, /disabled=\{!canAttachUrlReference/);
+  assert.match(imageNodeSource, /aria-disabled=\{!canAttachRecentReference\}/);
+  assert.match(imageNodeSource, /disabled=\{!canAttachRecentReference/);
+  assert.match(imageNodeSource, /disabled=\{!canAttachCampaignAsset\}/);
+  assert.match(imageNodeSource, /canRemove=\{referenceTrayCapability\.canRemoveReferences\}/);
+  assert.match(imageNodeSource, /removeDisabledReason=\{referenceTrayCapability\.removeDisabledReason\}/);
+  assert.match(imageNodeSource, /disabled=\{!canRemove\}/);
+  assert.match(imageNodeSource, /title=\{removeDisabledReason \?\? attachment\.remove\.ariaLabel\}/);
+  assert.match(imageNodeSource, /onReferenceAttach\(validation\.referenceInput\)/);
+  assert.match(imageNodeSource, /listImageGenerationReferenceTrayAttachments\(details\)/);
+  assert.match(imageNodeSource, /className="space-reference-attachment-list"/);
+  assert.match(imageNodeSource, /aria-label="Attached reference images"/);
+  assert.match(imageNodeSource, /ReferenceTrayAttachmentItem/);
+  assert.match(imageNodeSource, /data-reference-order=\{attachment\.insertionOrder\}/);
+  assert.match(imageNodeSource, /onReferenceReorder\(/);
+  assert.match(imageNodeSource, /aria-label="Reference order controls"/);
+  assert.match(imageNodeSource, /aria-label=\{attachment\.reorder\.moveUpAriaLabel\}/);
+  assert.match(imageNodeSource, /aria-label=\{attachment\.reorder\.moveDownAriaLabel\}/);
+  assert.match(imageNodeSource, /disabled=\{!attachment\.reorder\.canMoveUp\}/);
+  assert.match(imageNodeSource, /disabled=\{!attachment\.reorder\.canMoveDown\}/);
+  assert.match(imageNodeSource, /handleReferenceRemove\(\{/);
+  assert.match(imageNodeSource, /id: attachment\.id/);
+  assert.match(imageNodeSource, /resolveImageGenerationReferenceTrayEmptyState\(details\)/);
+  assert.match(imageNodeSource, /className="space-reference-empty-state"/);
+  assert.match(imageNodeSource, /<strong>\{referenceTrayEmptyState\.label\}<\/strong>/);
+  assert.match(imageNodeSource, /<span>\{referenceTrayEmptyState\.description\}<\/span>/);
+  assert.match(imageNodeSource, /cleanupStaleReferenceSelections/);
+  assert.match(imageNodeSource, /setCampaignAssetDraft\(""\)/);
+  assert.match(imageNodeSource, /setRecentOutputDraft\(""\)/);
+  assert.match(
+    creativeCanvasScreen,
+    /recentGeneratedAssetIds=\{imageGeneration\.latestResultRefs\.generatedAssetIds\}/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /campaignAssetReferences=\{campaignAssetReferences\}/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /attachImageGenerationNodeReferenceTransition\([\s\S]*properties,[\s\S]*referenceInput[\s\S]*\)/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /removeImageGenerationNodeReferenceTransition\([\s\S]*properties,[\s\S]*referenceInput[\s\S]*\)/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /reorderImageGenerationNodeReferenceTransition\([\s\S]*properties,[\s\S]*referenceInput,[\s\S]*direction[\s\S]*\)/,
+  );
+  assert.match(appCss, /\.space-reference-tray\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(appCss, /\.space-reference-tray\s*\{[\s\S]*left:\s*22px/);
+  assert.match(appCss, /\.space-reference-tray\s*\{[\s\S]*top:\s*100%/);
+  assert.match(appCss, /\.space-reference-upload\s*\{[\s\S]*display:\s*inline-flex/);
+  assert.match(appCss, /\.space-reference-url\s*\{[\s\S]*min-width:\s*180px/);
+  assert.match(appCss, /\.space-reference-recent\s*\{[\s\S]*min-width:\s*218px/);
+  assert.match(appCss, /\.space-reference-existing\s*\{[\s\S]*min-width:\s*218px/);
+  assert.match(appCss, /\.space-reference-recent button\s*\{[\s\S]*background:\s*#181d26/);
+  assert.match(appCss, /\.space-reference-existing button\s*\{[\s\S]*background:\s*#181d26/);
+  assert.match(appCss, /\.space-reference-attachment-list\s*\{[\s\S]*display:\s*grid/);
+  assert.match(appCss, /\.space-reference-empty-state\s*\{[\s\S]*border:\s*1px dashed #dddddd/);
+  assert.match(appCss, /\.space-reference-order-controls\s*\{[\s\S]*display:\s*inline-flex/);
+  assert.match(appCss, /\.space-reference-preview\s*\{[\s\S]*width:\s*32px/);
+  assert.match(appCss, /\.space-reference-attachment button\s*\{[\s\S]*width:\s*24px/);
+  assert.doesNotMatch(
+    imageNodeSource,
+    /className="[^"]*(?:page|generator-page|fullscreen|preview-grid|preview-panel)[^"]*"/i,
   );
 });
 
@@ -552,10 +1072,23 @@ test("Spaces-style image generation node only allows a single primary output pre
 
   const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
   const primaryPreviewMatches = imageNodeSource.match(
-    /className=\{cn\("space-primary-output-preview", outputView\.className\)\}/g,
+    /className=\{cn\("space-primary-output-preview", "nodrag", outputView\.className\)\}/g,
   ) ?? [];
+  const primaryPreviewStart = imageNodeSource.indexOf(
+    'className={cn("space-primary-output-preview", "nodrag", outputView.className)}',
+  );
+  const primaryPreviewEnd = imageNodeSource.indexOf(
+    '<div className="space-node-controls nodrag"',
+  );
+  assert.notEqual(primaryPreviewStart, -1);
+  assert.notEqual(primaryPreviewEnd, -1);
+  const primaryPreviewSource = imageNodeSource.slice(
+    primaryPreviewStart,
+    primaryPreviewEnd,
+  );
 
   assert.equal(primaryPreviewMatches.length, 1);
+  assert.match(primaryPreviewSource, /<button[\s\S]*type="button"/);
   assert.match(imageNodeSource, /aria-label=\{outputView\.ariaLabel\}/);
   assert.match(appCss, /\.space-primary-output-preview\s*\{[\s\S]*width:\s*46px/);
   assert.match(appCss, /\.space-primary-output-preview\s*\{[\s\S]*height:\s*82px/);
@@ -563,7 +1096,7 @@ test("Spaces-style image generation node only allows a single primary output pre
   assert.doesNotMatch(imageNodeSource, /freepik-preview-panel/);
   assert.doesNotMatch(imageNodeSource, /freepik-preview-\d+\.jpg/);
   assert.doesNotMatch(imageNodeSource, /(?:outputs|generatedAssetIds)\.map\(/);
-  assert.doesNotMatch(imageNodeSource, /<img\b/);
+  assert.doesNotMatch(primaryPreviewSource, /<img\b/);
   assert.doesNotMatch(appCss, /\.freepik-preview-grid\b/);
   assert.doesNotMatch(appCss, /\.freepik-preview-panel\b/);
 });
@@ -583,7 +1116,7 @@ test("Spaces-style image generation node renders output area states", () => {
   assert.match(imageNodeSource, /resolveImageGenerationNodeOutputView\(details\)/);
   assert.match(
     imageNodeSource,
-    /className=\{cn\("space-primary-output-preview", outputView\.className\)\}/,
+    /className=\{cn\("space-primary-output-preview", "nodrag", outputView\.className\)\}/,
   );
   assert.match(imageNodeSource, /data-output-state=\{outputView\.state\}/);
   assert.match(imageNodeSource, /aria-label=\{outputView\.ariaLabel\}/);
@@ -592,6 +1125,174 @@ test("Spaces-style image generation node renders output area states", () => {
   assert.match(appCss, /\.space-primary-output-preview\.error\s*\{[\s\S]*border-color:\s*rgba\(185,\s*28,\s*28,\s*0\.48\)/);
   assert.match(appCss, /\.space-primary-output-preview\.cancelled\s*\{[\s\S]*border-color:\s*rgba\(100,\s*116,\s*139,\s*0\.42\)/);
   assert.match(appCss, /\.space-primary-output-preview\.empty-output\s*\{[\s\S]*border-color:\s*rgba\(226,\s*232,\s*240,\s*0\.92\)/);
+});
+
+test("Image output action is the reliable next-node menu entry point", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+  const outputActionStart = imageNodeSource.indexOf(
+    'data-output-next-node-entrypoint="creative-output-action"',
+  );
+  assert.notEqual(outputActionStart, -1);
+
+  const outputActionEnd = imageNodeSource.indexOf("</button>", outputActionStart);
+  assert.notEqual(outputActionEnd, -1);
+
+  const outputActionSource = imageNodeSource.slice(
+    outputActionStart,
+    outputActionEnd,
+  );
+
+  assert.match(outputActionSource, /data-output-next-node-trigger="generated-image"/);
+  assert.match(outputActionSource, /aria-haspopup="menu"/);
+  assert.match(outputActionSource, /aria-expanded=\{nextNodeMenuOpen\}/);
+  assert.match(outputActionSource, /aria-controls=\{nextNodeMenuId\}/);
+  assert.match(outputActionSource, /disabled=\{!canOpenNextNodeMenu\}/);
+  assert.match(outputActionSource, /onClick=\{toggleNextNodeMenu\}/);
+  assert.match(outputActionSource, /onKeyDown=\{handleNextNodeTriggerKeyDown\}/);
+  assert.doesNotMatch(outputActionSource, /Handle\b/);
+});
+
+test("Spaces-style image generation node opens a next-node contextual menu from the output card", () => {
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  const imageNodeEnd = creativeCanvasScreen.indexOf(
+    "function ContractRow",
+  );
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.match(
+    imageNodeSource,
+    /const \[nextNodeMenuOpen, setNextNodeMenuOpen\] = useState\(false\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /const nextNodeMenuTriggerRef = useRef<HTMLButtonElement \| null>\(null\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /const nextNodeMenuRef = useRef<HTMLDivElement \| null>\(null\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /const pendingNextNodeMenuFocusRef = useRef<"first" \| "last" \| null>\(null\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /const canOpenNextNodeMenu =[\s\S]*details\.uiState\.outputConnectionReady[\s\S]*details\.uiState\.selectedResultAssetId !== null/,
+  );
+  assert.match(
+    imageNodeSource,
+    /const nextNodeMenuId = `\$\{sourceImageNodeId\}-output-next-node-menu`;/,
+  );
+  assert.match(imageNodeSource, /const toggleNextNodeMenu = \(\) => \{/);
+  assert.match(
+    imageNodeSource,
+    /setNextNodeMenuOpen\(\(isOpen\) => \{[\s\S]*pendingNextNodeMenuFocusRef\.current = null;[\s\S]*return false;[\s\S]*pendingNextNodeMenuFocusRef\.current = "first";[\s\S]*return true;[\s\S]*\}\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /useEffect\(\(\) => \{[\s\S]*!canOpenNextNodeMenu && nextNodeMenuOpen[\s\S]*closeNextNodeMenu\(\)/,
+  );
+  assert.match(imageNodeSource, /const closeNextNodeMenu = \(options\?: \{ restoreFocus\?: boolean \}\) => \{/);
+  assert.match(imageNodeSource, /nextNodeMenuTriggerRef\.current\?\.focus\(\)/);
+  assert.match(imageNodeSource, /const openNextNodeMenu = \(focusPosition: "first" \| "last" = "first"\) => \{/);
+  assert.match(imageNodeSource, /const handleNextNodeTriggerKeyDown = \([\s\S]*KeyboardEvent<HTMLButtonElement>/);
+  assert.match(imageNodeSource, /event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"/);
+  assert.match(imageNodeSource, /event\.key === "Escape" && nextNodeMenuOpen/);
+  assert.match(imageNodeSource, /const handleNextNodeMenuKeyDown = \(event: KeyboardEvent<HTMLDivElement>\) => \{/);
+  assert.match(imageNodeSource, /event\.key === "Home" \|\| event\.key === "End"/);
+  assert.match(imageNodeSource, /document\.addEventListener\("pointerdown", handleDocumentPointerDown\)/);
+  assert.match(imageNodeSource, /document\.removeEventListener\("pointerdown", handleDocumentPointerDown\)/);
+  assert.match(imageNodeSource, /const handleNextNodeMenuBlur = \(event: FocusEvent<HTMLDivElement>\) => \{/);
+  assert.match(
+    imageNodeSource,
+    /className="space-output-next-node-anchor nodrag" onBlur=\{handleNextNodeMenuBlur\}/,
+  );
+  assert.match(
+    imageNodeSource,
+    /<button[\s\S]*ref=\{nextNodeMenuTriggerRef\}[\s\S]*className=\{cn\("space-primary-output-preview", "nodrag", outputView\.className\)\}[\s\S]*data-output-next-node-trigger="generated-image"[\s\S]*aria-haspopup="menu"[\s\S]*aria-expanded=\{nextNodeMenuOpen\}[\s\S]*aria-controls=\{nextNodeMenuId\}[\s\S]*disabled=\{!canOpenNextNodeMenu\}[\s\S]*onClick=\{toggleNextNodeMenu\}[\s\S]*onKeyDown=\{handleNextNodeTriggerKeyDown\}/,
+  );
+  assert.match(imageNodeSource, /nextNodeMenuOpen \? \(/);
+  assert.match(imageNodeSource, /ref=\{nextNodeMenuRef\}/);
+  assert.match(imageNodeSource, /className="space-output-next-node-menu nodrag"/);
+  assert.match(imageNodeSource, /role="menu"/);
+  assert.match(imageNodeSource, /aria-label="Create next generation block from output"/);
+  assert.match(imageNodeSource, /onKeyDown=\{handleNextNodeMenuKeyDown\}/);
+  assert.match(imageNodeSource, /resolveImageGenerationOutputNextNodeActions\(details\)/);
+  assert.match(imageNodeSource, /nextNodeMenuActions\.map\(\(action\) =>/);
+  assert.match(imageNodeSource, /data-next-node-kind=\{action\.kind\}/);
+  assert.match(
+    imageNodeSource,
+    /data-provider-availability=\{action\.availability\}/,
+  );
+  assert.match(imageNodeSource, /aria-disabled=\{disabled\}/);
+  assert.match(imageNodeSource, /disabled=\{disabled\}/);
+  assert.match(
+    imageNodeSource,
+    /title=\{action\.disabledReason \?\? action\.description\}/,
+  );
+  assert.match(imageNodeSource, /onClick=\{\(\) => handleNextNodeMenuAction\(action\.kind\)\}/);
+  assert.match(imageNodeSource, /\{action\.label\}/);
+  assert.match(imageNodeSource, /\{action\.disabledReason\}/);
+  assert.match(imageNodeSource, /onOutputNextNodeAction\(actionKind, selectedResultAssetId\)/);
+  assert.match(
+    creativeCanvasScreen,
+    /onImageOutputNextNodeAction=\{handleImageOutputNextNodeAction\}/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /const handleImageOutputNextNodeAction = useCallback\(\([\s\S]*actionKind: ImageGenerationOutputNextNodeActionKind,[\s\S]*selectedResultAssetId: string,[\s\S]*\) => \{/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /applyImageOutputNextNodeActionToCanvas\(\{[\s\S]*nodes: currentNodes,[\s\S]*edges: canvasSnapshotRef\.current\.edges,[\s\S]*sourceNodeId,[\s\S]*actionKind,[\s\S]*selectedResultAssetId,[\s\S]*\}\)/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /if \(nextCanvas\.createdNode === null\) \{[\s\S]*return currentNodes;[\s\S]*\}/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /selectedNodeIdRef\.current = nextCanvas\.createdNode\.id;/,
+  );
+  assert.match(creativeCanvasScreen, /setEdges\(nextCanvas\.edges\)/);
+  assert.match(creativeCanvasScreen, /updateCampaignCanvas\(nextCanvas\.nodes, nextCanvas\.edges\)/);
+  assert.match(creativeCanvasScreen, /return nextCanvas\.nodes;/);
+  assert.match(creativeCanvasScreen, /"image-edit": ImageIcon/);
+  assert.match(creativeCanvasScreen, /"style-variant": Sparkles/);
+  assert.match(creativeCanvasScreen, /upscale: Maximize2/);
+  assert.match(creativeCanvasScreen, /video: Video/);
+  assert.match(creativeCanvasScreen, /"output-card": Captions/);
+  assert.match(creativeCanvasScreen, /"landing-asset": ShoppingBag/);
+  assert.match(appCss, /\.space-output-next-node-anchor\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(appCss, /\.space-output-next-node-anchor\s*\{[\s\S]*top:\s*56px/);
+  assert.match(appCss, /\.space-output-next-node-anchor\s*\{[\s\S]*right:\s*22px/);
+  assert.match(appCss, /\.space-output-next-node-menu\s*\{[\s\S]*position:\s*absolute/);
+  assert.match(appCss, /\.space-output-next-node-menu\s*\{[\s\S]*right:\s*-176px/);
+  assert.match(appCss, /\.space-output-next-node-menu\s*\{[\s\S]*border-radius:\s*8px/);
+  assert.match(appCss, /\.space-output-next-node-menu button\s*\{[\s\S]*min-height:\s*30px/);
+  assert.match(appCss, /\.space-output-next-node-menu button:disabled\s*\{[\s\S]*cursor:\s*not-allowed/);
+  assert.doesNotMatch(
+    imageNodeSource,
+    /className="[^"]*(?:page|generator-page|fullscreen|preview-grid|preview-panel)[^"]*"/i,
+  );
+  assert.doesNotMatch(
+    imageNodeSource,
+    /secret|token|api key|metadata|cost|debug/i,
+  );
 });
 
 test("Spaces-style image generation node hides JSON, secrets, storage, and debug copy", () => {

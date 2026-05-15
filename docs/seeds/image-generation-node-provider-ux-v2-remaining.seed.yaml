@@ -22,7 +22,7 @@ constraints:
   - Do not reintroduce generic circular border handles.
   - Do not expose secret values; environment variable names are allowed.
   - Keep compact node UI as the primary canvas object; deeper controls belong in inspector, docs, trays, or contextual menus.
-  - Preserve already completed checkpoint behavior: 9:16 defaults, capability registry, schema adapter foundations, compact status feedback, and passing tests.
+  - "Preserve already completed checkpoint behavior: 9:16 defaults, capability registry, schema adapter foundations, compact status feedback, and passing tests."
   - Commit/push only after verification and user approval when implementing these issues.
 
 completed_checkpoint_scope:
