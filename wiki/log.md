@@ -2487,3 +2487,10 @@
 - 테스트는 compact node `<option>`이 `disabled`, `data-provider-ratio`, `data-provider-ratio-availability`, compatibility title, visible label을 유지하는지도 고정해 browser evidence 없이도 DOM evidence가 남도록 했다.
 - 검증: `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
 - 참고: `npm run skills:check`는 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `DESIGN.md`, `wiki/` fallback을 사용했다. commit/push는 수행하지 않았다.
+
+## [2026-05-16] non-image-generation-prompt-gating | UI correction
+
+- 비이미지 Generation Block shell에서 직접 프롬프트 입력이 필요한 `Copy`, `Prompt`, `Video`, `Voice`만 하단 textarea를 렌더링하도록 분기했다.
+- `Operator`, `DM`, `Landing`, `Plugin`은 입력/출력 handle stack과 설정/실행 컨트롤만 남기고, 하단 prompt box를 제거했다.
+- 비이미지 프롬프트 입력에는 `space-generation-node-prompt` 전용 스타일을 추가해 이미지 노드 프롬프트 규격은 유지하면서, 카드 안의 카드처럼 보이던 그림자와 강한 박스감을 제거했다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, Playwright QA screenshot `output/playwright/non-image-prompt-gating-evidence.png`.

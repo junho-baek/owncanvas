@@ -1899,6 +1899,11 @@ button {
   color: #41454d;
 }
 
+.space-generation-node-card.promptless .space-generation-node-primary {
+  inset: 56px 42px 92px;
+  min-height: 142px;
+}
+
 .space-generated-image-preview {
   position: absolute;
   inset: 0;
@@ -1988,6 +1993,18 @@ button {
   box-shadow:
     0 12px 28px rgba(15, 23, 42, 0.14),
     0 0 0 3px rgba(24, 119, 242, 0.14);
+}
+
+.space-generation-node-prompt {
+  border-color: rgba(221, 221, 221, 0.34);
+  background: rgba(255, 255, 255, 0.46);
+  box-shadow: none;
+}
+
+.space-generation-node-prompt:focus {
+  border-color: rgba(24, 119, 242, 0.58);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: none;
 }
 
 .space-node-controls {

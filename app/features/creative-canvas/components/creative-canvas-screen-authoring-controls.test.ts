@@ -397,10 +397,15 @@ test("non-image generation nodes use the Image Block-aligned shell", () => {
     /const shellClassName = cn\([\s\S]*"space-image-node-shell"[\s\S]*"space-generation-node-shell"/,
   );
   assert.match(nonImageNodeSource, /className=\{shellClassName\}/);
+  assert.match(nonImageNodeSource, /const needsPrompt = nonImageGenerationNodeNeedsPrompt\(data\.kind\)/);
+  assert.match(nonImageNodeSource, /!needsPrompt && "promptless"/);
   assert.match(nonImageNodeSource, /className="space-node-toolbar nodrag"/);
   assert.match(nonImageNodeSource, /"space-side-port-stack"/);
   assert.match(nonImageNodeSource, /"space-side-port-stack output"/);
-  assert.match(nonImageNodeSource, /className="space-node-prompt nodrag nowheel"/);
+  assert.match(
+    nonImageNodeSource,
+    /needsPrompt \? \([\s\S]*className="space-node-prompt space-generation-node-prompt nodrag nowheel"/,
+  );
   assert.match(nonImageNodeSource, /value=\{promptValue\}/);
   assert.match(
     nonImageNodeSource,
@@ -424,6 +429,18 @@ test("non-image generation nodes use the Image Block-aligned shell", () => {
   );
   assert.match(
     appCss,
+    /\.space-generation-node-card\.promptless \.space-generation-node-primary\s*\{[\s\S]*inset:\s*56px 42px 92px/,
+  );
+  assert.match(
+    appCss,
+    /\.space-generation-node-prompt\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.46\)/,
+  );
+  assert.match(
+    appCss,
+    /\.space-generation-node-prompt\s*\{[\s\S]*box-shadow:\s*none/,
+  );
+  assert.match(
+    appCss,
     /\.space-side-port-stack\.output\s*\{[\s\S]*right:\s*-48px/,
   );
   assert.doesNotMatch(nonImageNodeSource, /generation-node-header/);
@@ -436,6 +453,52 @@ test("non-image generation nodes use the Image Block-aligned shell", () => {
     appCss,
     /generation-node-header|generation-description|generation-contract-row|generation-node-footer|generation-status|node-kicker-inline|generation-node-icon|(^|\n)\.run-button/,
   );
+});
+
+test("non-image generation prompt inputs are only rendered for prompt-driven blocks", () => {
+  const promptGateStart = creativeCanvasScreen.indexOf(
+    "function nonImageGenerationNodeNeedsPrompt",
+  );
+  const placeholderStart = creativeCanvasScreen.indexOf(
+    "function resolveNonImageGenerationPromptPlaceholder",
+  );
+  const shellStart = creativeCanvasScreen.indexOf(
+    "function NonImageGenerationNodeShell",
+  );
+  assert.notEqual(promptGateStart, -1);
+  assert.notEqual(placeholderStart, -1);
+  assert.notEqual(shellStart, -1);
+
+  const promptGateSource = creativeCanvasScreen.slice(
+    promptGateStart,
+    placeholderStart,
+  );
+  const shellSource = creativeCanvasScreen.slice(
+    shellStart,
+    creativeCanvasScreen.indexOf("function FreepikReferenceImageNode"),
+  );
+
+  for (const kind of ["text", "llm", "video", "voice"]) {
+    assert.match(
+      promptGateSource,
+      new RegExp(`case "${kind}":[\\s\\S]*?return true;`),
+      `${kind} should keep the direct prompt lane`,
+    );
+  }
+
+  for (const kind of ["agent", "dm", "landing", "custom"]) {
+    assert.match(
+      promptGateSource,
+      new RegExp(`case "${kind}":[\\s\\S]*?return false;`),
+      `${kind} should rely on ports and controls instead of a direct prompt lane`,
+    );
+  }
+
+  assert.match(shellSource, /needsPrompt \? \(/);
+  assert.match(shellSource, /\) : null/);
+  assert.match(creativeCanvasScreen, /case "text":[\s\S]*return "Brief";/);
+  assert.match(creativeCanvasScreen, /case "video":[\s\S]*return "Prompt";/);
+  assert.match(creativeCanvasScreen, /case "voice":[\s\S]*return "Script";/);
 });
 
 test("non-image generation node ports cover every palette kind except image", () => {

@@ -3643,14 +3643,40 @@ function resolveNonImageGenerationPrimaryIcon(kind: GenerationBlockKind) {
   }
 }
 
+function nonImageGenerationNodeNeedsPrompt(kind: GenerationBlockKind) {
+  switch (kind) {
+    case "text":
+    case "llm":
+    case "video":
+    case "voice":
+      return true;
+    case "agent":
+    case "dm":
+    case "landing":
+    case "custom":
+    case "image":
+      return false;
+  }
+}
+
 function resolveNonImageGenerationPromptPlaceholder(
   data: CreativeFlowNode["data"],
 ) {
-  const briefContract = data.contracts.find(
-    (contract) => contract.label === "Brief",
-  );
-
-  return briefContract?.value ?? data.title;
+  switch (data.kind) {
+    case "text":
+      return "Brief";
+    case "llm":
+    case "video":
+      return "Prompt";
+    case "voice":
+      return "Script";
+    case "agent":
+    case "dm":
+    case "landing":
+    case "custom":
+    case "image":
+      return data.title;
+  }
 }
 
 function resolveNonImageGenerationPromptValue(
@@ -3806,6 +3832,7 @@ function NonImageGenerationNodeShell({
   const inputPorts = ports.filter((port) => port.direction === "input");
   const outputPorts = ports.filter((port) => port.direction === "output");
   const PrimaryIcon = resolveNonImageGenerationPrimaryIcon(data.kind);
+  const needsPrompt = nonImageGenerationNodeNeedsPrompt(data.kind);
   const promptPlaceholder = resolveNonImageGenerationPromptPlaceholder(data);
   const promptValue = resolveNonImageGenerationPromptValue(data);
   const shellClassName = cn(
@@ -3854,6 +3881,7 @@ function NonImageGenerationNodeShell({
             "space-image-node-card",
             "space-generation-node-card",
             data.kind,
+            !needsPrompt && "promptless",
           )}
         >
           <GenerationNodePortStack ports={inputPorts} tone={data.tone} />
@@ -3862,14 +3890,16 @@ function NonImageGenerationNodeShell({
             <PrimaryIcon className="size-8" />
           </div>
 
-          <textarea
-            className="space-node-prompt nodrag nowheel"
-            aria-label={`${data.title} brief`}
-            placeholder={promptPlaceholder}
-            value={promptValue}
-            onChange={(event) => onPromptChange(event.target.value)}
-            rows={2}
-          />
+          {needsPrompt ? (
+            <textarea
+              className="space-node-prompt space-generation-node-prompt nodrag nowheel"
+              aria-label={`${data.title} brief`}
+              placeholder={promptPlaceholder}
+              value={promptValue}
+              onChange={(event) => onPromptChange(event.target.value)}
+              rows={2}
+            />
+          ) : null}
 
           <div
             className="space-node-controls nodrag"
