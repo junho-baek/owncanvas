@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-16] image-node-bottom-prompt-palette-drag-pan | UI interaction pass
+
+- Image Block prompt 입력을 노드 하단 컨트롤 바로 위로 이동하고, 생성 이미지가 카드 전체를 채우는 상태에서도 반투명 `over-image` 입력층으로 남도록 했다. 입력값은 `ImageGenerationNodeProperties.prompt`에 저장되어 local-first campaign state와 함께 유지된다.
+- Image Block control tower는 한 줄 compact chip row로 줄였고, run button과 설정 chip이 prompt 아래에 붙도록 정리했다. 생성 결과 preview는 계속 Image Block 카드 전체를 `object-fit: cover`로 채운다.
+- Generation Palette는 `DESIGN.md`의 불필요한 설명/라벨 제거 원칙에 맞춰 visible description과 `CREATE` kicker를 제거하고, 클릭 추가 대신 draggable palette item을 React Flow canvas drop 위치에 생성하도록 변경했다.
+- Trackpad/two-finger wheel은 `panOnScroll` + `PanOnScrollMode.Free` + `zoomOnScroll={false}`로 캔버스 pan 동작에 연결했다.
+- 검증: `node --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck` 통과. Playwright QA에서 palette Image drag-to-canvas 생성, generated asset seeded 상태에서 image full-card render, prompt 입력/저장, wheel pan transform 변경을 확인했다. Evidence는 `output/node-prompt-overlay-generated-evidence.png`에 남겼다.
+
 ## [2026-05-16] image-node-remove-redundant-output-preview | UI cleanup
 
 - Image Block 내부의 작은 `space-primary-output-preview` 박스, top-right `space-node-status` 상태 pill, 해당 클릭 기반 next-node contextual menu를 제거했다. 생성 결과는 Image Block 전체 출력 영역에 반영되는 방향이므로, 별도 초록 preview box와 `Ready`/`Selected` label은 중복 UI로 판단했다.

@@ -1555,7 +1555,7 @@ button {
 .palette-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
 }
 
@@ -1565,16 +1565,9 @@ button {
   color: #25212b;
 }
 
-.palette-kicker {
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  color: #9b92a3;
-}
-
 .palette-item {
   display: flex;
-  min-height: 52px;
+  min-height: 42px;
   width: auto;
   min-width: 0;
   justify-self: stretch;
@@ -1586,6 +1579,11 @@ button {
   padding: 9px 10px;
   color: #181d26;
   text-align: left;
+  cursor: grab;
+}
+
+.palette-item:active {
+  cursor: grabbing;
 }
 
 .palette-icon {
@@ -1614,8 +1612,7 @@ button {
   color: #059669;
 }
 
-.palette-item strong,
-.palette-item small {
+.palette-item strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1625,13 +1622,6 @@ button {
 .palette-item strong {
   font-size: 12px;
   font-weight: 900;
-}
-
-.palette-item small {
-  margin-top: 2px;
-  font-size: 10px;
-  font-weight: 800;
-  color: #786f80;
 }
 
 .generation-node {
@@ -2064,47 +2054,74 @@ button {
 
 .space-node-prompt {
   position: absolute;
-  top: 54px;
   left: 22px;
   right: 22px;
-  bottom: 76px;
-  display: flex;
-  min-height: 120px;
-  align-items: flex-start;
-  color: #9aa0a6;
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  line-height: 1.5;
+  bottom: 66px;
+  z-index: 1;
+  min-height: 46px;
+  max-height: 74px;
+  resize: none;
+  border: 1px solid rgba(221, 221, 221, 0.78);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 11px 13px;
+  color: #181d26;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.35;
+  outline: none;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.space-node-prompt::placeholder {
+  color: #626970;
+}
+
+.space-node-prompt.over-image {
+  border-color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+}
+
+.space-node-prompt:focus {
+  border-color: #1877f2;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.14),
+    0 0 0 3px rgba(24, 119, 242, 0.14);
 }
 
 .space-node-controls {
   position: absolute;
   z-index: 1;
   left: 22px;
-  right: 82px;
+  right: 64px;
   bottom: 22px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
+  overflow: hidden;
 }
 
 .space-control-chip {
   display: inline-flex;
-  max-width: 220px;
-  min-height: 32px;
+  max-width: 160px;
+  min-height: 28px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: 0;
   border-radius: 999px;
-  background: #f1f3f4;
-  padding: 0 13px;
+  background: rgba(241, 243, 244, 0.88);
+  padding: 0 10px;
   color: #3c4043;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
+  backdrop-filter: blur(10px);
 }
 
 .space-control-chip span,
@@ -2136,17 +2153,23 @@ button {
 }
 
 .space-control-chip.count {
-  gap: 10px;
-  padding: 0 12px;
+  gap: 7px;
+  padding: 0 8px;
 }
 
 .space-control-chip.model {
-  min-width: 176px;
+  min-width: 0;
+  max-width: 132px;
   justify-content: space-between;
 }
 
+.space-control-chip.quality {
+  max-width: 48px;
+  padding: 0 9px;
+}
+
 .space-control-chip.icon {
-  width: 32px;
+  width: 28px;
   justify-content: center;
   padding: 0;
 }
@@ -2157,12 +2180,12 @@ button {
   right: 18px;
   bottom: 22px;
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border: 0;
   border-radius: 999px;
-  background: #f1f3f4;
+  background: rgba(241, 243, 244, 0.9);
   color: #3c4043;
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(60, 64, 67, 0.12);
@@ -3008,7 +3031,7 @@ button {
   }
 
   .palette-item {
-    min-height: 56px;
+    min-height: 44px;
   }
 
   .generation-node {

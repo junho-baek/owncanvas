@@ -88,26 +88,55 @@ test("campaign blocks palette uses concise creative labels without visible techn
     generationPalette.map((item) => ({
       kind: item.kind,
       title: item.title,
-      description: item.description,
     })),
     [
-      { kind: "text", title: "Copy", description: "Hooks, captions, prompts" },
-      { kind: "llm", title: "Prompt", description: "Structured drafts from a brief" },
-      { kind: "image", title: "Image", description: "Generate, edit, remix" },
-      { kind: "video", title: "Video", description: "Turn frames into motion" },
-      { kind: "voice", title: "Voice", description: "Narration variants" },
-      { kind: "agent", title: "Operator", description: "Repeat campaign steps" },
-      { kind: "dm", title: "DM", description: "Replies and comment triggers" },
-      { kind: "landing", title: "Landing", description: "Publishable offer page" },
-      { kind: "custom", title: "Plugin", description: "Add-on creative action" },
+      { kind: "text", title: "Copy" },
+      { kind: "llm", title: "Prompt" },
+      { kind: "image", title: "Image" },
+      { kind: "video", title: "Video" },
+      { kind: "voice", title: "Voice" },
+      { kind: "agent", title: "Operator" },
+      { kind: "dm", title: "DM" },
+      { kind: "landing", title: "Landing" },
+      { kind: "custom", title: "Plugin" },
     ],
   );
 
   assert.match(paletteSource, /aria-label="Campaign blocks"/);
-  assert.match(paletteSource, /<span className="palette-kicker">CREATE<\/span>/);
   assert.match(paletteSource, /<strong>Blocks<\/strong>/);
+  assert.match(paletteSource, /draggable/);
+  assert.match(paletteSource, /onDragStart=\{\(event\) => onDragBlockStart\(event, item\.kind\)\}/);
+  assert.doesNotMatch(paletteSource, /onClick=\{\(\) => onAddBlock\(item\.kind\)\}/);
+  assert.doesNotMatch(paletteSource, /<small>\{item\.description\}<\/small>/);
+  assert.doesNotMatch(paletteSource, /palette-kicker|CREATE/);
   assert.doesNotMatch(paletteSource, /GENERATION PALETTE|palette-badge|LLM Block|Agent Block|Custom Block/);
+  assert.doesNotMatch(appCss, /\.palette-kicker/);
+  assert.doesNotMatch(appCss, /\.palette-item small/);
   assert.doesNotMatch(appCss, /\.palette-item:hover/);
+});
+
+test("creative canvas accepts palette blocks by drag and pans on trackpad scroll", () => {
+  const screenStart = creativeCanvasScreen.indexOf("export function CreativeCanvasScreen");
+  const paletteStart = creativeCanvasScreen.indexOf("function GenerationPalette");
+  const paletteEnd = creativeCanvasScreen.indexOf("function CanvasStatus");
+  assert.notEqual(screenStart, -1);
+  assert.notEqual(paletteStart, -1);
+  assert.notEqual(paletteEnd, -1);
+
+  const screenSource = creativeCanvasScreen.slice(screenStart, paletteStart);
+  const paletteSource = creativeCanvasScreen.slice(paletteStart, paletteEnd);
+
+  assert.match(creativeCanvasScreen, /const GENERATION_BLOCK_DRAG_TYPE = "application\/x-owncanvas-generation-block"/);
+  assert.match(creativeCanvasScreen, /function isGenerationBlockKind\(value: string\): value is GenerationBlockKind/);
+  assert.match(paletteSource, /onDragStart=\{\(event\) => onDragBlockStart\(event, item\.kind\)\}/);
+  assert.match(screenSource, /event\.dataTransfer\.setData\(GENERATION_BLOCK_DRAG_TYPE, kind\)/);
+  assert.match(screenSource, /onDragOver=\{handleCanvasDragOver\}/);
+  assert.match(screenSource, /onDrop=\{handleCanvasDrop\}/);
+  assert.match(screenSource, /screenToFlowPosition\(\{\s*x: event\.clientX,\s*y: event\.clientY,/);
+  assert.match(screenSource, /createGenerationFlowNode\(kind, current\.length, position\)/);
+  assert.match(screenSource, /panOnScroll/);
+  assert.match(screenSource, /panOnScrollMode=\{PanOnScrollMode\.Free\}/);
+  assert.match(screenSource, /zoomOnScroll=\{false\}/);
 });
 
 test("created generation blocks avoid console labels and provider setup copy", () => {
@@ -359,16 +388,35 @@ test("Spaces-style image generation node keeps the top-right floating action too
   assert.match(appCss, /\.space-node-toolbar\s*\{[\s\S]*display:\s*inline-flex/);
 });
 
-test("Spaces-style image generation node keeps a large prompt area", () => {
-  assert.match(creativeCanvasScreen, /className="space-node-prompt"/);
+test("Spaces-style image generation node keeps prompt entry above compact controls", () => {
+  const promptRule = getCssRuleBlock(".space-node-prompt");
+  const controlsRule = getCssRuleBlock(".space-node-controls");
+
+  assert.match(creativeCanvasScreen, /className=\{cn\(\s*"space-node-prompt nodrag nowheel"/);
   assert.match(creativeCanvasScreen, /aria-label="Prompt"/);
+  assert.equal(createImageGenerationNodeProperties().prompt, "");
+  assert.equal(
+    createImageGenerationNodeProperties({ prompt: "행복하게 달리는 강아지" }).prompt,
+    "행복하게 달리는 강아지",
+  );
   assert.match(
     creativeCanvasScreen,
-    /어떤 이미지를 생성하고 싶은지 설명해주세요\.\.\./,
+    /placeholder="어떤 이미지를 생성하고 싶은지 설명해주세요\.\.\."/,
   );
-  assert.match(appCss, /\.space-node-prompt\s*\{[\s\S]*top:\s*54px/);
-  assert.match(appCss, /\.space-node-prompt\s*\{[\s\S]*bottom:\s*76px/);
-  assert.match(appCss, /\.space-node-prompt\s*\{[\s\S]*min-height:\s*120px/);
+  assert.match(creativeCanvasScreen, /const handleImagePromptChange = useCallback/);
+  assert.match(creativeCanvasScreen, /properties:\s*\{\s*\.\.\.properties,\s*prompt,/);
+  assert.match(creativeCanvasScreen, /value=\{details\.prompt \?\? ""\}/);
+  assert.match(
+    creativeCanvasScreen,
+    /onChange=\{\(event\) => onPromptChange\(event\.target\.value\)\}/,
+  );
+  assert.match(promptRule, /bottom:\s*66px/);
+  assert.match(promptRule, /min-height:\s*46px/);
+  assert.match(promptRule, /letter-spacing:\s*0/);
+  assert.match(appCss, /\.space-node-prompt\.over-image\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.68\)/);
+  assert.match(controlsRule, /flex-wrap:\s*nowrap/);
+  assert.doesNotMatch(promptRule, /top:\s*54px/);
+  assert.doesNotMatch(promptRule, /min-height:\s*120px/);
 });
 
 test("Spaces-style image generation node fills the card with a generated image asset", () => {
@@ -393,8 +441,9 @@ test("Spaces-style image generation node fills the card with a generated image a
   assert.match(imageNodeSource, /alt=\{selectedGeneratedAssetPreview\.altText\}/);
   assert.match(
     imageNodeSource,
-    /selectedGeneratedAssetPreview === null \? \([\s\S]*space-node-prompt[\s\S]*\) : null/,
+    /selectedGeneratedAssetPreview !== null && "over-image"/,
   );
+  assert.match(imageNodeSource, /className=\{cn\(\s*"space-node-prompt nodrag nowheel"/);
   assert.match(appCss, /\.space-generated-image-preview\s*\{[\s\S]*position:\s*absolute/);
   assert.match(appCss, /\.space-generated-image-preview\s*\{[\s\S]*inset:\s*0/);
   assert.match(appCss, /\.space-generated-image-preview img\s*\{[\s\S]*width:\s*100%/);

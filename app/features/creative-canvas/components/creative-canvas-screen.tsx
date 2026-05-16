@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ComponentType, KeyboardEvent, ReactNode } from "react";
+import type { ChangeEvent, ComponentType, DragEvent, KeyboardEvent, ReactNode } from "react";
 import {
   applyEdgeChanges,
   applyNodeChanges,
@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   Handle,
   NodeResizer,
+  PanOnScrollMode,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -16,6 +17,7 @@ import {
   type NodeChange,
   type NodeProps,
   type NodeTypes,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import {
   Archive,
@@ -152,6 +154,12 @@ const blockIcons = {
   landing: Globe2,
   custom: Plug,
 } satisfies Record<GenerationBlockKind, typeof Type>;
+
+const GENERATION_BLOCK_DRAG_TYPE = "application/x-owncanvas-generation-block";
+
+function isGenerationBlockKind(value: string): value is GenerationBlockKind {
+  return generationPalette.some((item) => item.kind === value);
+}
 
 const imageOutputNextNodeActionIcons = {
   "image-edit": ImageIcon,
@@ -345,6 +353,8 @@ export function CreativeCanvasScreen({
   const [edges, setEdges] = useEdgesState<CreativeFlowEdge>(initialEdges);
   const [activeTool, setActiveTool] = useState("select");
   const selectedNodeIdRef = useRef<string | null>(null);
+  const reactFlowInstanceRef =
+    useRef<ReactFlowInstance<CreativeFlowNode, CreativeFlowEdge> | null>(null);
   const campaignRef = useRef(campaign);
   const canvasSnapshotRef = useRef<{
     nodes: CreativeFlowNode[];
@@ -479,9 +489,12 @@ export function CreativeCanvasScreen({
     });
   };
 
-  const addGenerationBlock = (kind: GenerationBlockKind) => {
+  const addGenerationBlock = useCallback((
+    kind: GenerationBlockKind,
+    position?: { x: number; y: number },
+  ) => {
     setNodes((current) => {
-      const createdNode = createGenerationFlowNode(kind, current.length);
+      const createdNode = createGenerationFlowNode(kind, current.length, position);
       selectedNodeIdRef.current = createdNode.id;
       const nextNodes = [
         ...current.map((node) => ({ ...node, selected: false })),
@@ -494,7 +507,42 @@ export function CreativeCanvasScreen({
 
       return nextNodes;
     });
-  };
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handlePaletteDragStart = useCallback((
+    event: DragEvent<HTMLButtonElement>,
+    kind: GenerationBlockKind,
+  ) => {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(GENERATION_BLOCK_DRAG_TYPE, kind);
+  }, []);
+
+  const handleCanvasDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!Array.from(event.dataTransfer.types).includes(GENERATION_BLOCK_DRAG_TYPE)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const handleCanvasDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    const kind = event.dataTransfer.getData(GENERATION_BLOCK_DRAG_TYPE);
+
+    if (!isGenerationBlockKind(kind)) {
+      return;
+    }
+
+    event.preventDefault();
+    closeImageOutputDropMenu();
+    addGenerationBlock(
+      kind,
+      reactFlowInstanceRef.current?.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      }),
+    );
+  }, [addGenerationBlock, closeImageOutputDropMenu]);
 
   const handleImageOutputNextNodeAction = useCallback((
     sourceNodeId: string,
@@ -746,6 +794,46 @@ export function CreativeCanvasScreen({
     });
   }, [setNodes, updateCampaignCanvas]);
 
+  const handleImagePromptChange = useCallback((nodeId: string, prompt: string) => {
+    setNodes((currentNodes) => {
+      let didUpdate = false;
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (
+          node.id !== nodeId ||
+          !isImageGenerationNodeProperties(properties) ||
+          (properties.prompt ?? "") === prompt
+        ) {
+          return node;
+        }
+
+        didUpdate = true;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: {
+              ...properties,
+              prompt,
+            },
+          },
+        };
+      });
+
+      if (!didUpdate) {
+        return currentNodes;
+      }
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
   const creativeNodeTypes = useMemo<NodeTypes>(
     () => ({
       generation: (props) => (
@@ -756,6 +844,7 @@ export function CreativeCanvasScreen({
           onImageReferenceAttach={handleImageReferenceAttach}
           onImageReferenceRemove={handleImageReferenceRemove}
           onImageReferenceReorder={handleImageReferenceReorder}
+          onImagePromptChange={handleImagePromptChange}
           campaignAssetReferences={campaignAssetReferences}
           campaignImageAssets={campaignImageAssets}
         />
@@ -767,6 +856,7 @@ export function CreativeCanvasScreen({
       handleImageReferenceAttach,
       handleImageReferenceRemove,
       handleImageReferenceReorder,
+      handleImagePromptChange,
       campaignAssetReferences,
       campaignImageAssets,
     ],
@@ -835,7 +925,7 @@ export function CreativeCanvasScreen({
 
       <div className="canvas-overlays">
         <FloatingToolbar activeTool={activeTool} onToolChange={setActiveTool} />
-        <GenerationPalette onAddBlock={addGenerationBlock} />
+        <GenerationPalette onDragBlockStart={handlePaletteDragStart} />
         {campaign ? (
           <CampaignMetadataPanel
             campaign={campaign}
@@ -931,8 +1021,13 @@ export function CreativeCanvasScreen({
             nodes={nodes}
             edges={edges}
             nodeTypes={creativeNodeTypes}
+            onInit={(instance) => {
+              reactFlowInstanceRef.current = instance;
+            }}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
+            onDragOver={handleCanvasDragOver}
+            onDrop={handleCanvasDrop}
             onNodeClick={(_, node) => {
               selectedNodeIdRef.current = node.id;
             }}
@@ -1003,6 +1098,9 @@ export function CreativeCanvasScreen({
             fitViewOptions={{ padding: 0.24 }}
             minZoom={0.45}
             maxZoom={1.35}
+            panOnScroll
+            panOnScrollMode={PanOnScrollMode.Free}
+            zoomOnScroll={false}
             nodesConnectable
             nodesDraggable
             elementsSelectable
@@ -3236,14 +3334,16 @@ function FloatingToolbar({
 }
 
 function GenerationPalette({
-  onAddBlock,
+  onDragBlockStart,
 }: {
-  onAddBlock: (kind: GenerationBlockKind) => void;
+  onDragBlockStart: (
+    event: DragEvent<HTMLButtonElement>,
+    kind: GenerationBlockKind,
+  ) => void;
 }) {
   return (
     <section className="generation-palette canvas-generation-palette" aria-label="Campaign blocks">
       <div className="palette-header">
-        <span className="palette-kicker">CREATE</span>
         <strong>Blocks</strong>
       </div>
       <div className="mt-3 grid gap-2">
@@ -3255,14 +3355,15 @@ function GenerationPalette({
               key={item.kind}
               className={cn("palette-item", item.kind)}
               type="button"
-              onClick={() => onAddBlock(item.kind)}
+              draggable
+              onDragStart={(event) => onDragBlockStart(event, item.kind)}
+              aria-label={`Drag ${item.title} block to canvas`}
             >
               <span className="palette-icon">
                 <Icon className="size-4" />
               </span>
               <span className="min-w-0 flex-1 text-left">
                 <strong>{item.title}</strong>
-                <small>{item.description}</small>
               </span>
             </button>
           );
@@ -3295,6 +3396,7 @@ function GenerationBlockNode({
   onImageReferenceAttach,
   onImageReferenceRemove,
   onImageReferenceReorder,
+  onImagePromptChange,
   campaignAssetReferences,
   campaignImageAssets,
 }: NodeProps<CreativeFlowNode> & {
@@ -3320,6 +3422,7 @@ function GenerationBlockNode({
       | Pick<ImageGenerationNodeReferenceInput, "id">,
     direction: "up" | "down",
   ) => void;
+  onImagePromptChange: (nodeId: string, prompt: string) => void;
   campaignAssetReferences: CampaignAssetSummary[];
   campaignImageAssets: CampaignAsset[];
 }) {
@@ -3388,6 +3491,9 @@ function GenerationBlockNode({
           }}
           onReferenceReorder={(referenceInput, direction) => {
             onImageReferenceReorder(data.id, referenceInput, direction);
+          }}
+          onPromptChange={(prompt) => {
+            onImagePromptChange(data.id, prompt);
           }}
           campaignAssetReferences={campaignAssetReferences}
           campaignImageAssets={campaignImageAssets}
@@ -3461,6 +3567,7 @@ function FreepikReferenceImageNode({
   onReferenceAttach,
   onReferenceRemove,
   onReferenceReorder,
+  onPromptChange,
   campaignAssetReferences,
   campaignImageAssets,
   recentGeneratedAssetIds,
@@ -3484,6 +3591,7 @@ function FreepikReferenceImageNode({
       | Pick<ImageGenerationNodeReferenceInput, "id">,
     direction: "up" | "down",
   ) => void;
+  onPromptChange: (prompt: string) => void;
   campaignAssetReferences: CampaignAssetSummary[];
   campaignImageAssets: CampaignAsset[];
   recentGeneratedAssetIds: string[];
@@ -3843,11 +3951,17 @@ function FreepikReferenceImageNode({
           )}
         </div>
 
-        {selectedGeneratedAssetPreview === null ? (
-          <div className="space-node-prompt" role="textbox" aria-label="Prompt" aria-readonly="true">
-            어떤 이미지를 생성하고 싶은지 설명해주세요...
-          </div>
-        ) : null}
+        <textarea
+          className={cn(
+            "space-node-prompt nodrag nowheel",
+            selectedGeneratedAssetPreview !== null && "over-image",
+          )}
+          aria-label="Prompt"
+          placeholder="어떤 이미지를 생성하고 싶은지 설명해주세요..."
+          value={details.prompt ?? ""}
+          onChange={(event) => onPromptChange(event.target.value)}
+          rows={2}
+        />
 
         <div className="space-node-controls nodrag" aria-label="Image generation settings">
           <button className="space-control-chip count" type="button" aria-label="Output count">

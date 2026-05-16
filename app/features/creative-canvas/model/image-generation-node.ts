@@ -842,6 +842,7 @@ export type ImageGenerationNodeProperties = {
   providerAgnostic: true;
   providerId: ImageGenerationProviderPreset["providerId"];
   modelSlug: string;
+  prompt: string;
   batchCount: 1 | 2 | 3 | 4 | 5;
   aspectRatio: ImageGenerationAspectRatio;
   frame: ImageGenerationFrame;
@@ -2672,6 +2673,7 @@ export function createImageGenerationNodeProperties(
       ImageGenerationNodeProperties,
       | "providerId"
       | "modelSlug"
+      | "prompt"
       | "batchCount"
       | "aspectRatio"
       | "frame"
@@ -2697,6 +2699,7 @@ export function createImageGenerationNodeProperties(
     providerAgnostic: true,
     providerId,
     modelSlug,
+    prompt: input.prompt ?? "",
     batchCount: input.batchCount ?? 1,
     aspectRatio,
     frame: input.frame ?? createImageGenerationFrame(aspectRatio),
