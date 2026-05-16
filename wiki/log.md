@@ -2502,3 +2502,9 @@
 - 검증: focused 실패 3건 재실행 3/3 pass, full `node --experimental-strip-types --test $(rg --files app scripts | rg '\.test\.(ts|tsx|js|mjs)$')` 491/491 pass, `npm run typecheck` pass, `npm run build` pass.
 - Browser QA는 팔레트에서 `Copy`, `Prompt`, `Image`, `Video`, `Voice`, `Operator`, `DM`, `Landing`, `Plugin` drag 생성 흐름을 확인했다. DOM evidence는 비이미지 generation card 8개, direct prompt input 4개(`Copy`, `Prompt`, `Video`, `Voice`), promptless card 4개(`Operator`, `DM`, `Landing`, `Plugin`), image prompt 1개, 비이미지 prompt `box-shadow: none`이었다.
 - Canvas wheel/trackpad pan은 React Flow viewport transform 변화로 확인했다. Ouroboros QA는 `qa-8e6d7a81`에서 PASS 0.86을 반환했다. Screenshot artifact는 `output/playwright/all-generation-nodes-qa-evidence.png`.
+
+## [2026-05-17] go-backed-parallel-generation-seed-publish | Ouroboros publish
+
+- Ouroboros interview `interview_20260516_130002`에서 Seed `seed_afa105c8af04`를 생성했다. 목표는 Go-backed provider 실행 경로, xN Image Block fan-out, per-node job status, persisted Creative Output을 포함한 첫 병렬 생성 slice다.
+- GitHub repo `junho-baek/owncanvas`에 1 Epic + 5 Task 이슈로 publish했다: `#19` Epic, `#20` Go generation service/Replicate adapter, `#21` React Router API bridge, `#22` xN Image Block fan-out canvas UX, `#23` per-node status/Creative Output persistence, `#24` verification/demo path.
+- Publish 중 shell quoting으로 task body 일부가 백틱 command substitution을 받은 것을 확인하고 `#20`-`#24` body와 `#19` task-link comment를 즉시 정상 Markdown으로 재작성했다. 해당 과정에서 생긴 빈 untracked 파일 `GenerationBatch`, `GenerationJobs`는 제거했고 worktree를 clean 상태로 복구했다.
