@@ -2508,3 +2508,9 @@
 - Ouroboros interview `interview_20260516_130002`에서 Seed `seed_afa105c8af04`를 생성했다. 목표는 Go-backed provider 실행 경로, xN Image Block fan-out, per-node job status, persisted Creative Output을 포함한 첫 병렬 생성 slice다.
 - GitHub repo `junho-baek/owncanvas`에 1 Epic + 5 Task 이슈로 publish했다: `#19` Epic, `#20` Go generation service/Replicate adapter, `#21` React Router API bridge, `#22` xN Image Block fan-out canvas UX, `#23` per-node status/Creative Output persistence, `#24` verification/demo path.
 - Publish 중 shell quoting으로 task body 일부가 백틱 command substitution을 받은 것을 확인하고 `#20`-`#24` body와 `#19` task-link comment를 즉시 정상 Markdown으로 재작성했다. 해당 과정에서 생긴 빈 untracked 파일 `GenerationBatch`, `GenerationJobs`는 제거했고 worktree를 clean 상태로 복구했다.
+
+## [2026-05-17] go-backed-parallel-generation-superpowers-plan | Planning
+
+- Superpowers `writing-plans`로 첫 실행 액션용 plan `docs/superpowers/plans/2026-05-17-go-backed-parallel-generation-slice.md`를 작성했다.
+- 전체 Epic `#19`를 한 번에 실행하지 않고, `#20`/`#21`/`#22` 초반을 contract-first vertical slice로 좁혔다. 범위는 local Go generation service runner, mock provider HTTP server, React Router generation bridge, Image Block xN same-type fan-out planner, run button wiring, focused QA다.
+- 계획은 context 오염을 줄이기 위해 Seed/issue 전체가 아니라 plan task 단위로 subagent에 넘기는 구조를 전제로 한다. 실제 Replicate provider smoke, completed-result persistence, failed retry UX는 다음 plan에서 이어가도록 경계를 명시했다.
