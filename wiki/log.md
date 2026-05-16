@@ -2514,3 +2514,12 @@
 - Superpowers `writing-plans`로 첫 실행 액션용 plan `docs/superpowers/plans/2026-05-17-go-backed-parallel-generation-slice.md`를 작성했다.
 - 전체 Epic `#19`를 한 번에 실행하지 않고, `#20`/`#21`/`#22` 초반을 contract-first vertical slice로 좁혔다. 범위는 local Go generation service runner, mock provider HTTP server, React Router generation bridge, Image Block xN same-type fan-out planner, run button wiring, focused QA다.
 - 계획은 context 오염을 줄이기 위해 Seed/issue 전체가 아니라 plan task 단위로 subagent에 넘기는 구조를 전제로 한다. 실제 Replicate provider smoke, completed-result persistence, failed retry UX는 다음 plan에서 이어가도록 경계를 명시했다.
+
+## [2026-05-17] go-backed-parallel-generation-slice | Superpowers execution
+
+- Superpowers `subagent-driven-development`로 Go-backed Image Block fan-out 첫 vertical slice를 실행했다. 각 task는 구현 subagent 후 spec review, code quality review를 거쳤고, 필요한 경우 같은 subagent에게 수정 지시 후 재리뷰했다.
+- Go `generation/` 모듈을 추가해 `GenerationBatch`/`GenerationJob`/`GenerationResult` 계약, bounded concurrency runner, deterministic mock provider HTTP server, `owncanvas-generation` entrypoint를 만들었다. mock provider의 `generatedAt`은 deterministic contract를 위해 고정 RFC3339 문자열을 사용한다.
+- React Router API bridge `/api/campaigns/:campaignId/generation/batches`를 추가했다. route는 client batch shape, service response shape, campaignId mismatch, Go 4xx/5xx mapping, blank service URL fallback, 405 `Allow: POST`를 검증한다.
+- Image Block `batchCount`를 x10까지 확장하고, run action은 같은 타입의 queued Image Blocks를 즉시 생성한 뒤 generation batch를 제출한다. `existingNodes` 기반 collision guard로 같은 millisecond 중복 실행 시 node/job id가 충돌하지 않게 했다.
+- 검증: `go test ./...`, focused TS suite 55개, `npm run typecheck`, `npm run build`, `git diff --check`를 통과했다. Headless browser QA에서는 seeded x3 Image Block 실행이 `fanOutCount: 3` 요청, 200 route 응답, mock result 3개, 캔버스 Image Block 4개(원본 1 + queued 3)를 확인했다.
+- QA evidence: `output/playwright/go-generation-fanout-slice.png`.
