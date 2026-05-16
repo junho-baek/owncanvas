@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ComponentType, FocusEvent, KeyboardEvent, ReactNode } from "react";
+import type { ChangeEvent, ComponentType, KeyboardEvent, ReactNode } from "react";
 import {
   applyEdgeChanges,
   applyNodeChanges,
@@ -91,6 +91,7 @@ import {
   serializeCampaignSpecJson,
   setCampaignLandingPageAuthoringControls,
   setCampaignLandingPageBehaviorMode,
+  type CampaignAsset,
   type CampaignAssetMediaType,
   type CampaignAssetStatus,
   type CampaignAssetSummary,
@@ -125,7 +126,6 @@ import {
   resolveImageGenerationDocsPanelMetadata,
   resolveImageGenerationAspectRatioSelectorOptions,
   resolveImageGenerationOutputNextNodeActions,
-  resolveImageGenerationNodeOutputView,
   resolveImageGenerationNodeModelCapability,
   resolveImageGenerationReferenceTrayCapability,
   resolveImageGenerationReferenceTrayEmptyState,
@@ -370,6 +370,13 @@ export function CreativeCanvasScreen({
         : listCampaignAssets(campaign).filter(
             (asset) => asset.mediaType === "image",
           ),
+    [campaign],
+  );
+  const campaignImageAssets = useMemo(
+    () =>
+      campaign === undefined
+        ? []
+        : campaign.assets.filter((asset) => asset.mediaType === "image"),
     [campaign],
   );
   const openImageGenerationInspector = useMemo(() => {
@@ -749,8 +756,8 @@ export function CreativeCanvasScreen({
           onImageReferenceAttach={handleImageReferenceAttach}
           onImageReferenceRemove={handleImageReferenceRemove}
           onImageReferenceReorder={handleImageReferenceReorder}
-          onImageOutputNextNodeAction={handleImageOutputNextNodeAction}
           campaignAssetReferences={campaignAssetReferences}
+          campaignImageAssets={campaignImageAssets}
         />
       ),
     }),
@@ -760,8 +767,8 @@ export function CreativeCanvasScreen({
       handleImageReferenceAttach,
       handleImageReferenceRemove,
       handleImageReferenceReorder,
-      handleImageOutputNextNodeAction,
       campaignAssetReferences,
+      campaignImageAssets,
     ],
   );
 
@@ -3288,8 +3295,8 @@ function GenerationBlockNode({
   onImageReferenceAttach,
   onImageReferenceRemove,
   onImageReferenceReorder,
-  onImageOutputNextNodeAction,
   campaignAssetReferences,
+  campaignImageAssets,
 }: NodeProps<CreativeFlowNode> & {
   onImageAspectRatioChange: (
     nodeId: string,
@@ -3313,12 +3320,8 @@ function GenerationBlockNode({
       | Pick<ImageGenerationNodeReferenceInput, "id">,
     direction: "up" | "down",
   ) => void;
-  onImageOutputNextNodeAction: (
-    nodeId: string,
-    actionKind: ImageGenerationOutputNextNodeActionKind,
-    selectedResultAssetId: string,
-  ) => void;
   campaignAssetReferences: CampaignAssetSummary[];
+  campaignImageAssets: CampaignAsset[];
 }) {
   const Icon = blockIcons[data.kind];
   const imageGeneration = isImageGenerationNodeProperties(data.properties)
@@ -3386,10 +3389,8 @@ function GenerationBlockNode({
           onReferenceReorder={(referenceInput, direction) => {
             onImageReferenceReorder(data.id, referenceInput, direction);
           }}
-          onOutputNextNodeAction={(actionKind, selectedResultAssetId) => {
-            onImageOutputNextNodeAction(data.id, actionKind, selectedResultAssetId);
-          }}
           campaignAssetReferences={campaignAssetReferences}
+          campaignImageAssets={campaignImageAssets}
           recentGeneratedAssetIds={imageGeneration.latestResultRefs.generatedAssetIds}
           sourceImageNodeId={data.id}
           selected={selected}
@@ -3460,8 +3461,8 @@ function FreepikReferenceImageNode({
   onReferenceAttach,
   onReferenceRemove,
   onReferenceReorder,
-  onOutputNextNodeAction,
   campaignAssetReferences,
+  campaignImageAssets,
   recentGeneratedAssetIds,
   selected,
   sourceImageNodeId,
@@ -3483,11 +3484,8 @@ function FreepikReferenceImageNode({
       | Pick<ImageGenerationNodeReferenceInput, "id">,
     direction: "up" | "down",
   ) => void;
-  onOutputNextNodeAction: (
-    actionKind: ImageGenerationOutputNextNodeActionKind,
-    selectedResultAssetId: string,
-  ) => void;
   campaignAssetReferences: CampaignAssetSummary[];
+  campaignImageAssets: CampaignAsset[];
   recentGeneratedAssetIds: string[];
   selected: boolean;
   sourceImageNodeId: string;
@@ -3503,21 +3501,32 @@ function FreepikReferenceImageNode({
   const generatedPort = details.outputs.find(
     (port) => port.id === "generated_image_asset" && port.dataType === "asset",
   );
-  const nodeStatus = resolveImageGenerationNodeStatus({
-    selected,
-    uiState: details.uiState,
-  });
-  const nodeStatusView = resolveImageGenerationNodeStatusView(nodeStatus);
-  const outputView = resolveImageGenerationNodeOutputView(details);
-  const nextNodeMenuActions = resolveImageGenerationOutputNextNodeActions(details);
-  const [nextNodeMenuOpen, setNextNodeMenuOpen] = useState(false);
-  const nextNodeMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const nextNodeMenuRef = useRef<HTMLDivElement | null>(null);
-  const pendingNextNodeMenuFocusRef = useRef<"first" | "last" | null>(null);
   const canOpenNextNodeMenu =
     details.uiState.outputConnectionReady &&
     details.uiState.selectedResultAssetId !== null;
-  const nextNodeMenuId = `${sourceImageNodeId}-output-next-node-menu`;
+  const selectedGeneratedAsset =
+    details.uiState.selectedResultAssetId === null
+      ? null
+      : campaignImageAssets.find(
+          (asset) =>
+            asset.id === details.uiState.selectedResultAssetId &&
+            asset.status !== "archived",
+        ) ?? null;
+  const selectedGeneratedAssetUri =
+    selectedGeneratedAsset?.outputLocations?.primaryUri.trim() ||
+    selectedGeneratedAsset?.uri.trim() ||
+    "";
+  const selectedGeneratedAssetPreview =
+    selectedGeneratedAsset !== null && selectedGeneratedAssetUri !== ""
+      ? {
+          id: selectedGeneratedAsset.id,
+          title: selectedGeneratedAsset.title,
+          uri: selectedGeneratedAssetUri,
+          altText:
+            selectedGeneratedAsset.altText.trim() ||
+            selectedGeneratedAsset.title,
+        }
+      : null;
   const referenceTrayVisible = selected || details.uiState.referenceTrayOpen;
   const [referenceUrlDraft, setReferenceUrlDraft] = useState("");
   const [referenceAttachmentMessage, setReferenceAttachmentMessage] = useState<
@@ -3755,165 +3764,6 @@ function FreepikReferenceImageNode({
     setReferenceAttachmentState("idle");
     setReferenceAttachmentMessage(null);
   };
-  const getNextNodeMenuItems = () =>
-    Array.from(
-      nextNodeMenuRef.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]',
-      ) ?? [],
-    );
-  const focusNextNodeMenuItem = (position: "first" | "last") => {
-    const menuItems = getNextNodeMenuItems();
-    const targetMenuItem =
-      position === "first" ? menuItems[0] : menuItems[menuItems.length - 1];
-
-    targetMenuItem?.focus();
-  };
-  const closeNextNodeMenu = (options?: { restoreFocus?: boolean }) => {
-    setNextNodeMenuOpen(false);
-
-    if (options?.restoreFocus) {
-      nextNodeMenuTriggerRef.current?.focus();
-    }
-  };
-  const openNextNodeMenu = (focusPosition: "first" | "last" = "first") => {
-    if (!canOpenNextNodeMenu) {
-      closeNextNodeMenu();
-      return;
-    }
-
-    pendingNextNodeMenuFocusRef.current = focusPosition;
-    setNextNodeMenuOpen(true);
-  };
-  const toggleNextNodeMenu = () => {
-    if (!canOpenNextNodeMenu) {
-      closeNextNodeMenu();
-      return;
-    }
-
-    setNextNodeMenuOpen((isOpen) => {
-      if (isOpen) {
-        pendingNextNodeMenuFocusRef.current = null;
-        return false;
-      }
-
-      pendingNextNodeMenuFocusRef.current = "first";
-      return true;
-    });
-  };
-  const handleNextNodeTriggerKeyDown = (
-    event: KeyboardEvent<HTMLButtonElement>,
-  ) => {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      openNextNodeMenu(event.key === "ArrowUp" ? "last" : "first");
-      return;
-    }
-
-    if (event.key === "Escape" && nextNodeMenuOpen) {
-      event.preventDefault();
-      closeNextNodeMenu({ restoreFocus: true });
-    }
-  };
-  const handleNextNodeMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const menuItems = getNextNodeMenuItems();
-    const currentMenuItemIndex = menuItems.indexOf(
-      event.target as HTMLButtonElement,
-    );
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeNextNodeMenu({ restoreFocus: true });
-      return;
-    }
-
-    if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      focusNextNodeMenuItem(event.key === "Home" ? "first" : "last");
-      return;
-    }
-
-    if (
-      (event.key === "ArrowDown" || event.key === "ArrowUp") &&
-      menuItems.length > 0
-    ) {
-      event.preventDefault();
-      const offset = event.key === "ArrowDown" ? 1 : -1;
-      const nextMenuItemIndex =
-        currentMenuItemIndex === -1
-          ? event.key === "ArrowDown"
-            ? 0
-            : menuItems.length - 1
-          : (currentMenuItemIndex + offset + menuItems.length) % menuItems.length;
-
-      menuItems[nextMenuItemIndex]?.focus();
-    }
-  };
-  const handleNextNodeMenuAction = (
-    actionKind: ImageGenerationOutputNextNodeActionKind,
-  ) => {
-    const selectedResultAssetId = details.uiState.selectedResultAssetId;
-
-    if (selectedResultAssetId !== null) {
-      onOutputNextNodeAction(actionKind, selectedResultAssetId);
-    }
-
-    closeNextNodeMenu({ restoreFocus: true });
-  };
-  const handleNextNodeMenuBlur = (event: FocusEvent<HTMLDivElement>) => {
-    const nextFocusedElement = event.relatedTarget;
-
-    if (
-      nextFocusedElement instanceof Node &&
-      (nextNodeMenuRef.current?.contains(nextFocusedElement) ||
-        nextNodeMenuTriggerRef.current?.contains(nextFocusedElement))
-    ) {
-      return;
-    }
-
-    closeNextNodeMenu();
-  };
-
-  useEffect(() => {
-    if (!canOpenNextNodeMenu && nextNodeMenuOpen) {
-      closeNextNodeMenu();
-    }
-  }, [canOpenNextNodeMenu, nextNodeMenuOpen]);
-
-  useEffect(() => {
-    if (!nextNodeMenuOpen) {
-      pendingNextNodeMenuFocusRef.current = null;
-      return;
-    }
-
-    focusNextNodeMenuItem(pendingNextNodeMenuFocusRef.current ?? "first");
-    pendingNextNodeMenuFocusRef.current = null;
-  }, [nextNodeMenuOpen]);
-
-  useEffect(() => {
-    if (!nextNodeMenuOpen) {
-      return;
-    }
-
-    const handleDocumentPointerDown = (event: PointerEvent) => {
-      const eventTarget = event.target;
-
-      if (
-        eventTarget instanceof Node &&
-        (nextNodeMenuRef.current?.contains(eventTarget) ||
-          nextNodeMenuTriggerRef.current?.contains(eventTarget))
-      ) {
-        return;
-      }
-
-      closeNextNodeMenu();
-    };
-
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
-    };
-  }, [nextNodeMenuOpen]);
 
   return (
     <div
@@ -3935,14 +3785,18 @@ function FreepikReferenceImageNode({
       </div>
 
       <div className="space-image-node-card">
-        <span
-          className={cn("space-node-status", nodeStatusView.className)}
-          data-status={nodeStatusView.status}
-          role="status"
-          aria-label={nodeStatusView.ariaLabel}
-        >
-          {nodeStatusView.label}
-        </span>
+        {selectedGeneratedAssetPreview === null ? null : (
+          <figure
+            className="space-generated-image-preview"
+            data-generated-asset-id={selectedGeneratedAssetPreview.id}
+            aria-label={selectedGeneratedAssetPreview.title}
+          >
+            <img
+              src={selectedGeneratedAssetPreview.uri}
+              alt={selectedGeneratedAssetPreview.altText}
+            />
+          </figure>
+        )}
 
         <div className="space-side-port-stack" aria-label="Image node input connections">
           <div
@@ -3989,66 +3843,11 @@ function FreepikReferenceImageNode({
           )}
         </div>
 
-        <div className="space-node-prompt" role="textbox" aria-label="Prompt" aria-readonly="true">
-          어떤 이미지를 생성하고 싶은지 설명해주세요...
-        </div>
-
-        <div className="space-output-next-node-anchor nodrag" onBlur={handleNextNodeMenuBlur}>
-          <button
-            ref={nextNodeMenuTriggerRef}
-            className={cn("space-primary-output-preview", "nodrag", outputView.className)}
-            data-output-state={outputView.state}
-            data-output-next-node-entrypoint="creative-output-action"
-            data-output-next-node-trigger="generated-image"
-            type="button"
-            aria-label={outputView.ariaLabel}
-            aria-haspopup="menu"
-            aria-expanded={nextNodeMenuOpen}
-            aria-controls={nextNodeMenuId}
-            disabled={!canOpenNextNodeMenu}
-            onClick={toggleNextNodeMenu}
-            onKeyDown={handleNextNodeTriggerKeyDown}
-          >
-            <ImageIcon className="size-4" />
-            <span>{outputView.label}</span>
-          </button>
-
-          {nextNodeMenuOpen ? (
-            <div
-              ref={nextNodeMenuRef}
-              id={nextNodeMenuId}
-              className="space-output-next-node-menu nodrag"
-              role="menu"
-              aria-label="Create next generation block from output"
-              onKeyDown={handleNextNodeMenuKeyDown}
-            >
-              {nextNodeMenuActions.map((action) => {
-                const ActionIcon = imageOutputNextNodeActionIcons[action.kind];
-                const disabled = action.availability === "disabled";
-
-                return (
-                  <button
-                    key={action.kind}
-                    type="button"
-                    role="menuitem"
-                    data-next-node-kind={action.kind}
-                    data-provider-availability={action.availability}
-                    aria-disabled={disabled}
-                    disabled={disabled}
-                    title={action.disabledReason ?? action.description}
-                    onClick={() => handleNextNodeMenuAction(action.kind)}
-                  >
-                    <ActionIcon className="size-3" />
-                    <span>{action.label}</span>
-                    {action.disabledReason === null ? null : (
-                      <small>{action.disabledReason}</small>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
+        {selectedGeneratedAssetPreview === null ? (
+          <div className="space-node-prompt" role="textbox" aria-label="Prompt" aria-readonly="true">
+            어떤 이미지를 생성하고 싶은지 설명해주세요...
+          </div>
+        ) : null}
 
         <div className="space-node-controls nodrag" aria-label="Image generation settings">
           <button className="space-control-chip count" type="button" aria-label="Output count">

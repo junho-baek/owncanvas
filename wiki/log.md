@@ -2,6 +2,13 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-16] image-node-remove-redundant-output-preview | UI cleanup
+
+- Image Block 내부의 작은 `space-primary-output-preview` 박스, top-right `space-node-status` 상태 pill, 해당 클릭 기반 next-node contextual menu를 제거했다. 생성 결과는 Image Block 전체 출력 영역에 반영되는 방향이므로, 별도 초록 preview box와 `Ready`/`Selected` label은 중복 UI로 판단했다.
+- 생성 완료 상태에서는 `selectedResultAssetId`가 가리키는 image asset을 `space-generated-image-preview`로 Image Block 카드 전체에 `object-fit: cover` 렌더링하도록 했다. 생성 결과가 있으면 prompt placeholder는 숨긴다.
+- 후속 블록 생성 경로는 Image Block의 `outputs.generated_image_asset` handle 드래그와 canvas-level line-end menu로 유지했다. Prompt 영역은 오른쪽 reserved gap을 제거해 `right: 22px`까지 넓혔다.
+- 검증: `creative-canvas-screen-authoring-controls.test.ts`, Image model/adapter/component 통합 node test 91개, `npm run typecheck`, `git diff --check`가 통과했다. Browser QA에서는 새 Image Block 생성 후 `.space-primary-output-preview`, `.space-output-next-node-anchor`, `.space-output-next-node-menu`, `.space-node-status`가 없고 output handle이 유지되는 것을 확인했다. Mock generated asset QA에서는 `.space-generated-image-preview`가 있고 prompt placeholder가 사라지며 image `object-fit: cover`로 카드 전체를 채우는 것을 확인했다.
+
 ## [2026-05-16] de-console-creative-campaign-canvas-pass | Issues #9-#12
 
 - `#9` 팔레트 카피를 Creative Operator가 바로 이해할 수 있는 Campaign block 언어로 줄이고, primary palette의 기술 배지를 숨겼다.

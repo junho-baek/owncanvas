@@ -4,25 +4,14 @@ import {
   failImageGenerationNodeTransition,
   imageGenerationNodeV2Statuses,
   queueImageGenerationNodeV2Transition,
-  resolveImageGenerationNodeOutputView,
-  resolveImageGenerationNodeStatusView,
   succeedImageGenerationNodeV2Transition,
   type ImageGenerationNodeUiStatus,
 } from "../model/image-generation-node.ts";
 
-type ImageGenerationNodeStatusFeedbackBadgeFixture = {
-  role: "status";
-  className: string;
-  dataStatus: ImageGenerationNodeUiStatus;
-  ariaLabel: string;
-  text: string;
-};
-
 type ImageGenerationNodeStatusFeedbackStoryFixture = {
   id: string;
   status: ImageGenerationNodeUiStatus;
-  badge: ImageGenerationNodeStatusFeedbackBadgeFixture;
-  renderedHtml: string;
+  renderedHtml: "";
 };
 
 type ImageGenerationNodeRecoveryFeedbackFixture = {
@@ -34,56 +23,15 @@ type ImageGenerationNodeRecoveryFeedbackFixture = {
   errorReason: string | null;
   selectedResultAssetId: string | null;
   outputConnectionReady: boolean;
-  statusBadge: ImageGenerationNodeStatusFeedbackBadgeFixture;
-  outputBadge: {
-    className: string;
-    dataOutputState: string;
-    ariaLabel: string;
-    text: string;
-  };
-  renderedHtml: string;
+  renderedHtml: "";
 };
 
-function renderStatusFeedbackBadgeFixture(
-  badge: ImageGenerationNodeStatusFeedbackBadgeFixture,
-): string {
-  return `<span class="${badge.className}" data-status="${badge.dataStatus}" role="${badge.role}" aria-label="${badge.ariaLabel}">${badge.text}</span>`;
-}
-
-function createStatusFeedbackBadgeFixture(
-  status: ImageGenerationNodeUiStatus,
-): ImageGenerationNodeStatusFeedbackBadgeFixture {
-  const view = resolveImageGenerationNodeStatusView(status);
-
-  return {
-    role: "status",
-    className: `space-node-status ${view.className}`,
-    dataStatus: view.status,
-    ariaLabel: view.ariaLabel,
-    text: view.label,
-  };
-}
-
-function renderRecoveryFeedbackFixture(
-  fixture: Omit<ImageGenerationNodeRecoveryFeedbackFixture, "renderedHtml">,
-): string {
-  return [
-    renderStatusFeedbackBadgeFixture(fixture.statusBadge),
-    `<div class="${fixture.outputBadge.className}" data-output-state="${fixture.outputBadge.dataOutputState}" aria-label="${fixture.outputBadge.ariaLabel}"><span>${fixture.outputBadge.text}</span></div>`,
-  ].join("");
-}
-
 export const imageGenerationNodeStatusFeedbackStoryFixtures =
-  imageGenerationNodeV2Statuses.map((status) => {
-    const badge = createStatusFeedbackBadgeFixture(status);
-
-    return {
-      id: `image-generation-node-status-${status}`,
-      status,
-      badge,
-      renderedHtml: renderStatusFeedbackBadgeFixture(badge),
-    };
-  }) satisfies readonly ImageGenerationNodeStatusFeedbackStoryFixture[];
+  imageGenerationNodeV2Statuses.map((status) => ({
+    id: `image-generation-node-status-${status}`,
+    status,
+    renderedHtml: "",
+  })) satisfies readonly ImageGenerationNodeStatusFeedbackStoryFixture[];
 
 const retryableErrorNode = failImageGenerationNodeTransition(
   createImageGenerationNodeProperties({
@@ -160,8 +108,6 @@ const imageGenerationNodeErrorRecoveryFeedbackFixtureCases = [
 export const imageGenerationNodeErrorRecoveryFeedbackFixtures =
   imageGenerationNodeErrorRecoveryFeedbackFixtureCases.map(
     ({ id, phase, retryable, node }) => {
-      const statusBadge = createStatusFeedbackBadgeFixture(node.uiState.status);
-      const outputView = resolveImageGenerationNodeOutputView(node);
       const fixture = {
         id,
         phase,
@@ -171,18 +117,11 @@ export const imageGenerationNodeErrorRecoveryFeedbackFixtures =
         errorReason: node.uiState.errorReason,
         selectedResultAssetId: node.uiState.selectedResultAssetId,
         outputConnectionReady: node.uiState.outputConnectionReady,
-        statusBadge,
-        outputBadge: {
-          className: `space-primary-output-preview ${outputView.className}`,
-          dataOutputState: outputView.state,
-          ariaLabel: outputView.ariaLabel,
-          text: outputView.label,
-        },
       } as const satisfies Omit<ImageGenerationNodeRecoveryFeedbackFixture, "renderedHtml">;
 
       return {
         ...fixture,
-        renderedHtml: renderRecoveryFeedbackFixture(fixture),
+        renderedHtml: "",
       };
     },
   ) satisfies readonly ImageGenerationNodeRecoveryFeedbackFixture[];
