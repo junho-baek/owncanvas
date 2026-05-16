@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 const MaxFanOutCount = 10
@@ -70,9 +71,10 @@ func (s *Service) ExecuteBatch(ctx context.Context, batch GenerationBatch) (Gene
 				result, err := s.provider.Generate(ctx, job)
 				if err != nil {
 					response.Results[index] = GenerationResult{
-						JobID:  job.JobID,
-						NodeID: job.NodeID,
-						Status: JobStatusFailed,
+						JobID:       job.JobID,
+						NodeID:      job.NodeID,
+						Status:      JobStatusFailed,
+						GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 						Error: &GenerationError{
 							Name:      "provider_error",
 							Message:   err.Error(),

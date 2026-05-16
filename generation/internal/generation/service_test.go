@@ -2,6 +2,7 @@ package generation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -46,6 +47,11 @@ func TestExecuteBatchRunsConcurrentlyAndPreservesInputOrder(t *testing.T) {
 		return GenerationResult{
 			Status:            JobStatusSucceeded,
 			ProviderRequestID: fmt.Sprintf("request_%s", job.JobID),
+			ProviderURL:       fmt.Sprintf("https://provider.example.test/%s.png", job.JobID),
+			MimeType:          "image/png",
+			Width:             1024,
+			Height:            1024,
+			GeneratedAt:       "2026-05-17T00:00:00Z",
 		}, nil
 	})
 
@@ -89,9 +95,10 @@ func TestExecuteBatchIsolatesPartialProviderFailures(t *testing.T) {
 		}
 
 		return GenerationResult{
-			JobID:  job.JobID,
-			NodeID: job.NodeID,
-			Status: JobStatusSucceeded,
+			JobID:       job.JobID,
+			NodeID:      job.NodeID,
+			Status:      JobStatusSucceeded,
+			GeneratedAt: "2026-05-17T00:00:00Z",
 		}, nil
 	})
 
@@ -135,6 +142,9 @@ func TestExecuteBatchIsolatesPartialProviderFailures(t *testing.T) {
 	if !failed.Error.Retryable {
 		t.Fatal("node_2 error retryable = false, want true")
 	}
+	if _, err := time.Parse(time.RFC3339, failed.GeneratedAt); err != nil {
+		t.Fatalf("node_2 generatedAt = %q, want RFC3339 string: %v", failed.GeneratedAt, err)
+	}
 }
 
 func TestExecuteBatchRejectsFanOutAboveHardCap(t *testing.T) {
@@ -149,4 +159,145 @@ func TestExecuteBatchRejectsFanOutAboveHardCap(t *testing.T) {
 	if err.Error() != "fanOutCount must be between 1 and 10" {
 		t.Fatalf("error = %q", err.Error())
 	}
+}
+
+func TestGenerationJSONContractUsesPlanBodyKeys(t *testing.T) {
+	batch := GenerationBatch{
+		BatchID:      "batch_json",
+		CampaignID:   "campaign_json",
+		SourceNodeID: "source_image",
+		FanOutCount:  1,
+		Spec: &GenerationSpec{
+			SpecID:       "spec_1",
+			CampaignID:   "campaign_json",
+			SourceNodeID: "source_image",
+			Prompt:       "coral product shot",
+			Provider:     "mock",
+			Model:        "mock-image",
+			AspectRatio:  "1:1",
+			Parameters: map[string]interface{}{
+				"seed": float64(123),
+			},
+		},
+		Jobs: []GenerationJob{
+			{
+				JobID:       "job_1",
+				NodeID:      "node_1",
+				Prompt:      "coral product shot",
+				Provider:    "mock",
+				Model:       "mock-image",
+				AspectRatio: "1:1",
+				Parameters: map[string]interface{}{
+					"temperature": float64(0.2),
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(GenerationBatchResponse{
+		BatchID: batch.BatchID,
+		Results: []GenerationResult{
+			{
+				JobID:             "job_1",
+				NodeID:            "node_1",
+				Status:            JobStatusSucceeded,
+				ProviderRequestID: "request_job_1",
+				ProviderURL:       "https://provider.example.test/job_1.png",
+				MimeType:          "image/png",
+				Width:             1024,
+				Height:            1024,
+				GeneratedAt:       "2026-05-17T00:00:00Z",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal response: %v", err)
+	}
+
+	var responseJSON map[string]interface{}
+	if err := json.Unmarshal(body, &responseJSON); err != nil {
+		t.Fatalf("Unmarshal response JSON: %v", err)
+	}
+	results := responseJSON["results"].([]interface{})
+	result := results[0].(map[string]interface{})
+	assertKeys(t, result, []string{
+		"jobId",
+		"nodeId",
+		"status",
+		"providerRequestId",
+		"providerUrl",
+		"mimeType",
+		"width",
+		"height",
+		"generatedAt",
+	})
+	if _, ok := result["generatedAt"].(string); !ok {
+		t.Fatalf("generatedAt JSON type = %T, want string", result["generatedAt"])
+	}
+	if _, ok := result["providerUrl"]; !ok {
+		t.Fatal("providerUrl key missing")
+	}
+	if _, ok := result["outputURL"]; ok {
+		t.Fatal("unexpected outputURL key")
+	}
+
+	batchBody, err := json.Marshal(batch)
+	if err != nil {
+		t.Fatalf("Marshal batch: %v", err)
+	}
+	var batchJSON map[string]interface{}
+	if err := json.Unmarshal(batchBody, &batchJSON); err != nil {
+		t.Fatalf("Unmarshal batch JSON: %v", err)
+	}
+	assertKeys(t, batchJSON, []string{
+		"batchId",
+		"campaignId",
+		"sourceNodeId",
+		"fanOutCount",
+		"spec",
+		"jobs",
+	})
+	spec := batchJSON["spec"].(map[string]interface{})
+	assertKeys(t, spec, []string{
+		"specId",
+		"campaignId",
+		"sourceNodeId",
+		"prompt",
+		"provider",
+		"model",
+		"aspectRatio",
+		"parameters",
+	})
+	jobs := batchJSON["jobs"].([]interface{})
+	job := jobs[0].(map[string]interface{})
+	assertKeys(t, job, []string{
+		"jobId",
+		"nodeId",
+		"prompt",
+		"provider",
+		"model",
+		"aspectRatio",
+		"parameters",
+	})
+}
+
+func assertKeys(t *testing.T, got map[string]interface{}, want []string) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("keys = %v, want exactly %v", mapKeys(got), want)
+	}
+	for _, key := range want {
+		if _, ok := got[key]; !ok {
+			t.Fatalf("key %q missing from %v", key, mapKeys(got))
+		}
+	}
+}
+
+func mapKeys(values map[string]interface{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }

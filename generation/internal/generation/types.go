@@ -1,7 +1,5 @@
 package generation
 
-import "time"
-
 type JobStatus string
 
 const (
@@ -56,7 +54,7 @@ type GenerationResult struct {
 	MimeType          string           `json:"mimeType"`
 	Width             int              `json:"width"`
 	Height            int              `json:"height"`
-	GeneratedAt       time.Time        `json:"generatedAt"`
+	GeneratedAt       string           `json:"generatedAt"`
 	Error             *GenerationError `json:"error,omitempty"`
 }
 
