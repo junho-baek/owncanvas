@@ -57,6 +57,9 @@ import {
 
 import { cn } from "~/core/lib/cn";
 import {
+  createImageGenerationFanOutPlan,
+} from "~/features/creative-canvas/adapters/image-generation-fanout";
+import {
   applyImageOutputNextNodeActionToCanvas,
   createGenerationFlowNode,
   createCreativeCanvasSnapshotFromCampaignSpecJsonEdit,
@@ -116,6 +119,11 @@ import {
   type GenerationBlockKind,
   type GenerationBlockTone,
 } from "~/features/creative-canvas/model/creative-canvas";
+import {
+  isGenerationBatchResponse,
+  type GenerationBatchRequest,
+  type GenerationBatchResponse,
+} from "~/features/creative-canvas/model/generation-batch";
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
   attachImageGenerationNodeReferenceTransition,
@@ -481,6 +489,39 @@ export function CreativeCanvasScreen({
     onCampaignChange?.(nextCampaign);
   }, [onCampaignChange]);
 
+  const submitImageGenerationBatch = async (
+    batch: GenerationBatchRequest,
+  ): Promise<GenerationBatchResponse | null> => {
+    const currentCampaign = campaignRef.current;
+
+    if (!currentCampaign) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/campaigns/${encodeURIComponent(currentCampaign.id)}/generation/batches`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(batch),
+        },
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const body = (await response.json()) as {
+        batch?: unknown;
+      };
+
+      return isGenerationBatchResponse(body.batch) ? body.batch : null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleNodesChange = (changes: NodeChange<CreativeFlowNode>[]) => {
     const selectedChange = changes.find(
       (change): change is Extract<NodeChange<CreativeFlowNode>, { type: "select" }> =>
@@ -592,6 +633,69 @@ export function CreativeCanvasScreen({
       return nextCanvas.nodes;
     });
   }, [setEdges, setNodes, updateCampaignCanvas]);
+
+  const runImageGenerationNode = useCallback(async (nodeId: string) => {
+    try {
+      const currentCampaign = campaignRef.current;
+      const sourceNode = canvasSnapshotRef.current.nodes.find(
+        (node) => node.id === nodeId,
+      );
+
+      if (
+        !currentCampaign ||
+        !sourceNode ||
+        !isImageGenerationNodeProperties(sourceNode.data.properties)
+      ) {
+        return;
+      }
+
+      const plan = createImageGenerationFanOutPlan({
+        campaignId: currentCampaign.id,
+        sourceNode,
+        existingNodes: canvasSnapshotRef.current.nodes,
+        now: () => new Date().toISOString(),
+      });
+      const nextNodes = [
+        ...canvasSnapshotRef.current.nodes.map((node) => ({
+          ...node,
+          selected: false,
+        })),
+        ...plan.createdNodes,
+      ];
+      const nextEdges = canvasSnapshotRef.current.edges;
+      const nextCampaign = syncCampaignFromCreativeCanvasInteraction(
+        currentCampaign,
+        nextNodes,
+        nextEdges,
+      );
+
+      selectedNodeIdRef.current = plan.createdNodes[0]?.id ?? null;
+      canvasSnapshotRef.current = {
+        nodes: nextNodes,
+        edges: nextEdges,
+      };
+      campaignRef.current = nextCampaign;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      onCampaignChange?.(nextCampaign);
+
+      window.setTimeout(() => {
+        reactFlowInstanceRef.current?.fitView({
+          nodes: plan.createdNodes.map((node) => ({ id: node.id })),
+          padding: 0.24,
+          duration: 420,
+        });
+      }, 0);
+
+      const response = await submitImageGenerationBatch(plan.batch);
+
+      if (response !== null && response.results.length === 0) {
+        return;
+      }
+    } catch {
+      return;
+    }
+  }, [onCampaignChange, setEdges, setNodes]);
 
   const getConnectionEventPoint = (event: MouseEvent | TouchEvent) => {
     const clampDropMenuPoint = (point: { x: number; y: number }) => {
@@ -905,6 +1009,7 @@ export function CreativeCanvasScreen({
           onImageReferenceAttach={handleImageReferenceAttach}
           onImageReferenceRemove={handleImageReferenceRemove}
           onImageReferenceReorder={handleImageReferenceReorder}
+          onRunImageGeneration={runImageGenerationNode}
           onImagePromptChange={handleImagePromptChange}
           onNonImagePromptChange={handleNonImagePromptChange}
           campaignAssetReferences={campaignAssetReferences}
@@ -918,6 +1023,7 @@ export function CreativeCanvasScreen({
       handleImageReferenceAttach,
       handleImageReferenceRemove,
       handleImageReferenceReorder,
+      runImageGenerationNode,
       handleImagePromptChange,
       handleNonImagePromptChange,
       campaignAssetReferences,
@@ -3695,6 +3801,7 @@ function GenerationBlockNode({
   onImageReferenceReorder,
   onImagePromptChange,
   onNonImagePromptChange,
+  onRunImageGeneration,
   campaignAssetReferences,
   campaignImageAssets,
 }: NodeProps<CreativeFlowNode> & {
@@ -3722,6 +3829,7 @@ function GenerationBlockNode({
   ) => void;
   onImagePromptChange: (nodeId: string, prompt: string) => void;
   onNonImagePromptChange: (nodeId: string, prompt: string) => void;
+  onRunImageGeneration: (nodeId: string) => void;
   campaignAssetReferences: CampaignAssetSummary[];
   campaignImageAssets: CampaignAsset[];
 }) {
@@ -3794,6 +3902,7 @@ function GenerationBlockNode({
           onPromptChange={(prompt) => {
             onImagePromptChange(data.id, prompt);
           }}
+          onRunImageGeneration={() => onRunImageGeneration(data.id)}
           campaignAssetReferences={campaignAssetReferences}
           campaignImageAssets={campaignImageAssets}
           recentGeneratedAssetIds={imageGeneration.latestResultRefs.generatedAssetIds}
@@ -3990,6 +4099,7 @@ function FreepikReferenceImageNode({
   onReferenceRemove,
   onReferenceReorder,
   onPromptChange,
+  onRunImageGeneration,
   campaignAssetReferences,
   campaignImageAssets,
   recentGeneratedAssetIds,
@@ -4014,6 +4124,7 @@ function FreepikReferenceImageNode({
     direction: "up" | "down",
   ) => void;
   onPromptChange: (prompt: string) => void;
+  onRunImageGeneration: () => void;
   campaignAssetReferences: CampaignAssetSummary[];
   campaignImageAssets: CampaignAsset[];
   recentGeneratedAssetIds: string[];
@@ -4306,7 +4417,9 @@ function FreepikReferenceImageNode({
       </div>
 
       <div className="space-node-toolbar nodrag" aria-label="Node actions">
-        <button type="button" aria-label="Run image node"><Play className="size-4" fill="currentColor" /></button>
+        <button type="button" aria-label="Run image node" onClick={onRunImageGeneration}>
+          <Play className="size-4" fill="currentColor" />
+        </button>
         <button type="button" aria-label="Action menu">⌄</button>
         <button type="button" aria-label="Connect node"><Link2 className="size-4" /></button>
         <button type="button" aria-label="Connection menu">⌄</button>
@@ -4434,7 +4547,12 @@ function FreepikReferenceImageNode({
           </button>
         </div>
 
-        <button className="space-run-button nodrag" type="button" aria-label="Generate image">
+        <button
+          className="space-run-button nodrag"
+          type="button"
+          aria-label="Generate image"
+          onClick={onRunImageGeneration}
+        >
           <Play className="size-4" fill="currentColor" />
         </button>
         {generatedPort === undefined ? null : (

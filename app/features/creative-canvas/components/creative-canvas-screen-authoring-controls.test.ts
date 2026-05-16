@@ -59,6 +59,18 @@ function getCssRuleBlock(selector: string) {
   return appCss.slice(start, end + 2);
 }
 
+function getFunctionSource(source: string, functionName: string) {
+  const functionStart = source.indexOf(functionName);
+  assert.notEqual(functionStart, -1, `${functionName} should exist`);
+
+  const nextFunctionStart = source.indexOf("\nfunction ", functionStart + functionName.length);
+
+  return source.slice(
+    functionStart,
+    nextFunctionStart === -1 ? source.length : nextFunctionStart,
+  );
+}
+
 test("campaign editor exposes landing navigation and conversion authoring controls", () => {
   assert.match(
     creativeCanvasScreen,
@@ -1515,5 +1527,37 @@ test("Spaces-style image generation node hides JSON, secrets, storage, and debug
   assert.doesNotMatch(
     imageNodeSource,
     /(?:metadata|cost_usage|style_template_vars|payload|raw|debug|trace|request|response)/i,
+  );
+});
+
+test("Image Block run buttons call the fan-out run handler", () => {
+  const imageNodeSource = getFunctionSource(
+    creativeCanvasScreen,
+    "function FreepikReferenceImageNode",
+  );
+
+  assert.match(creativeCanvasScreen, /createImageGenerationFanOutPlan/);
+  assert.match(creativeCanvasScreen, /submitImageGenerationBatch/);
+  assert.match(creativeCanvasScreen, /GenerationBatchRequest/);
+  assert.match(creativeCanvasScreen, /GenerationBatchResponse/);
+  assert.match(creativeCanvasScreen, /isGenerationBatchResponse/);
+  assert.match(creativeCanvasScreen, /try \{[\s\S]*await fetch/);
+  assert.match(creativeCanvasScreen, /catch \{[\s\S]*return null/);
+  assert.match(
+    creativeCanvasScreen,
+    /return isGenerationBatchResponse\(body\.batch\) \? body\.batch : null/,
+  );
+  assert.match(imageNodeSource, /onRunImageGeneration/);
+  assert.match(
+    creativeCanvasScreen,
+    /const runImageGenerationNode = useCallback\(async[\s\S]*try \{[\s\S]*catch \{[\s\S]*return;/,
+  );
+  assert.match(
+    imageNodeSource,
+    /aria-label="Run image node"[\s\S]*onClick=\{onRunImageGeneration\}/,
+  );
+  assert.match(
+    imageNodeSource,
+    /aria-label="Generate image"[\s\S]*onClick=\{onRunImageGeneration\}/,
   );
 });

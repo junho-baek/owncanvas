@@ -157,6 +157,80 @@ test("createImageGenerationFanOutPlan lays out ten nodes in rows", () => {
   ]);
 });
 
+test("createImageGenerationFanOutPlan avoids duplicate node and job IDs for same-millisecond runs", () => {
+  const timestamp = "2026-05-17T00:00:00.000Z";
+  const source = imageNode({ id: "image_source", x: 100, y: 200, batchCount: 3 });
+  const firstPlan = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: source,
+    existingNodes: [source],
+    now: () => timestamp,
+  });
+  const secondPlan = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: source,
+    existingNodes: [source, ...firstPlan.createdNodes],
+    now: () => timestamp,
+  });
+
+  assert.equal(firstPlan.batchId, "image_source_batch_20260517000000000");
+  assert.equal(secondPlan.batchId, "image_source_batch_20260517000000000_run_2");
+
+  const allNodeIds = [
+    source.id,
+    ...firstPlan.createdNodes.map((node) => node.id),
+    ...secondPlan.createdNodes.map((node) => node.id),
+  ];
+  const allJobIds = [
+    ...firstPlan.batch.jobs.map((job) => job.jobId),
+    ...secondPlan.batch.jobs.map((job) => job.jobId),
+  ];
+
+  assert.equal(new Set(allNodeIds).size, allNodeIds.length);
+  assert.equal(new Set(allJobIds).size, allJobIds.length);
+  assert.deepEqual(
+    secondPlan.createdNodes.map((node) => node.id),
+    [
+      "image_source_batch_20260517000000000_run_2_1",
+      "image_source_batch_20260517000000000_run_2_2",
+      "image_source_batch_20260517000000000_run_2_3",
+    ],
+  );
+  assert.deepEqual(
+    secondPlan.batch.jobs.map((job) => job.jobId),
+    [
+      "image_source_batch_20260517000000000_run_2_job_1",
+      "image_source_batch_20260517000000000_run_2_job_2",
+      "image_source_batch_20260517000000000_run_2_job_3",
+    ],
+  );
+});
+
+test("createImageGenerationFanOutPlan avoids a direct batch-id collision", () => {
+  const timestamp = "2026-05-17T00:00:00.000Z";
+  const source = imageNode({ id: "image_source", x: 100, y: 200, batchCount: 1 });
+  const collidingBatchNode = {
+    ...source,
+    id: "image_source_batch_20260517000000000",
+    data: {
+      ...source.data,
+      id: "image_source_batch_20260517000000000",
+    },
+  };
+  const plan = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: source,
+    existingNodes: [source, collidingBatchNode],
+    now: () => timestamp,
+  });
+
+  assert.equal(plan.batchId, "image_source_batch_20260517000000000_run_2");
+  assert.deepEqual(
+    plan.createdNodes.map((node) => node.id),
+    ["image_source_batch_20260517000000000_run_2_1"],
+  );
+});
+
 test("createImageGenerationFanOutPlan rejects non Image Block source nodes", () => {
   const node = createGenerationFlowNode("text", 1, { x: 0, y: 0 });
   const source: CreativeFlowNode = {

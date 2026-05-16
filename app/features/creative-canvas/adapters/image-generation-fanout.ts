@@ -30,8 +30,13 @@ export function createImageGenerationFanOutPlan(input: {
     throw new Error("source node must be an Image Block");
   }
 
-  const batchId = createStableBatchId(input.sourceNode.id, input.now());
   const count = properties.batchCount;
+  const batchId = createStableBatchId({
+    sourceNodeId: input.sourceNode.id,
+    isoTimestamp: input.now(),
+    fanOutCount: count,
+    existingNodes: input.existingNodes,
+  });
   const createdNodes = Array.from({ length: count }, (_, index) =>
     createQueuedImageGenerationNode({
       sourceNode: input.sourceNode,
@@ -103,7 +108,41 @@ function createQueuedImageGenerationNode(input: {
   };
 }
 
-function createStableBatchId(sourceNodeId: string, isoTimestamp: string): string {
-  const timestampDigits = isoTimestamp.replace(/\D/g, "").slice(0, 17);
-  return `${sourceNodeId}_batch_${timestampDigits}`;
+function createStableBatchId(input: {
+  sourceNodeId: string;
+  isoTimestamp: string;
+  fanOutCount: number;
+  existingNodes: CreativeFlowNode[];
+}): string {
+  const timestampDigits = input.isoTimestamp.replace(/\D/g, "").slice(0, 17);
+  const baseBatchId = `${input.sourceNodeId}_batch_${timestampDigits}`;
+  const existingNodeIds = new Set(input.existingNodes.map((node) => node.id));
+
+  for (let suffix = 0; suffix < 1_000; suffix += 1) {
+    const batchId = suffix === 0 ? baseBatchId : `${baseBatchId}_run_${suffix + 1}`;
+
+    if (!fanOutBatchIdConflicts(batchId, input.fanOutCount, existingNodeIds)) {
+      return batchId;
+    }
+  }
+
+  throw new Error("could not allocate unique Image Block fan-out batch id");
+}
+
+function fanOutBatchIdConflicts(
+  batchId: string,
+  fanOutCount: number,
+  existingNodeIds: Set<string>,
+) {
+  if (existingNodeIds.has(batchId)) {
+    return true;
+  }
+
+  for (let index = 0; index < fanOutCount; index += 1) {
+    if (existingNodeIds.has(`${batchId}_${index + 1}`)) {
+      return true;
+    }
+  }
+
+  return false;
 }
