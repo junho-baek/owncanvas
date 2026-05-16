@@ -177,9 +177,18 @@ test("URL routing fixture has matching app routes for plugin APIs and canvas ent
       "api/agent/plugins",
       "api/campaigns/:campaignId",
       "api/campaigns/:campaignId/measurement-goals",
+      "api/campaigns/:campaignId/tracking/exposures",
+      "api/campaigns/:campaignId/tracking/clicks",
+      "api/campaigns/:campaignId/tracking/conversions",
+      "api/campaigns/:campaignId/tracking/engagement",
+      "api/campaigns/:campaignId/tracking/immersion",
+      "api/campaigns/:campaignId/tracking/metrics",
+      "api/campaigns/:campaignId/tracking/revisits",
       "api/plugin-kinds",
       "api/plugin-kinds/:pluginType",
       "campaigns/:campaignId/canvas",
+      "campaigns/:campaignId/landing",
+      "campaigns/:campaignId/reporting",
     ],
   );
 });

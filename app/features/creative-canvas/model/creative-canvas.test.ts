@@ -7826,6 +7826,7 @@ test("canvas edit sync normalizes JSON spec structure and preserves generation j
     title: "Image variants",
     position: { x: 300, y: 80 },
   };
+  const imageDefaults = createCampaignBlock("image", 1);
 
   const editedCampaign = createCampaignCanvasEdit(
     {
@@ -7848,9 +7849,15 @@ test("canvas edit sync normalizes JSON spec structure and preserves generation j
   );
 
   const normalizedImageNode = {
-    ...createCampaignBlock("image", 1, { x: 300, y: 80 }),
+    ...imageNode,
+    subtitle: imageDefaults.subtitle,
+    description: imageDefaults.description,
+    tone: imageDefaults.tone,
+    status: imageDefaults.status,
+    contracts: imageDefaults.contracts,
     id: "image_custom",
     title: "Image variants",
+    position: { x: 300, y: 80 },
   };
 
   assert.deepEqual(editedCampaign.canvasState, {
@@ -8909,8 +8916,8 @@ test("campaign spec serialization is stable for identical canvas edit sequences"
     {
       "id": "text_block_1",
       "kind": "text",
-      "title": "Text Block",
-      "subtitle": "campaign angles + prompt copy",
+      "title": "Copy",
+      "subtitle": "campaign angles + captions",
       "description": "Turns a campaign brief into hooks, captions, and prompts.",
       "tone": "ink",
       "status": "READY",
@@ -8930,10 +8937,10 @@ test("campaign spec serialization is stable for identical canvas edit sequences"
       "id": "image_block_2",
       "kind": "image",
       "title": "Image Block",
-      "subtitle": "product shots + visual variants",
-      "description": "Creates still images from prompts, references, and edits.",
+      "subtitle": "prompt + reference + image assets",
+      "description": "Creates still images from prompt, reference image, and style/template variables.",
       "tone": "blue",
-      "status": "DRAFT",
+      "status": "READY",
       "position": {
         "x": 520,
         "y": 160
