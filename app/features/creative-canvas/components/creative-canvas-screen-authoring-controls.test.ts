@@ -197,7 +197,7 @@ test("created generation blocks avoid console labels and provider setup copy", (
     generationNodeStart,
     generationNodeEnd,
   );
-  assert.match(generationNodeSource, /Ready to create/);
+  assert.doesNotMatch(generationNodeSource, /Ready to create|Run block|GENERATION BLOCK/);
   assert.doesNotMatch(
     generationNodeSource,
     /LLM Block|Agent Block|Custom Block|MODEL|PLUGIN|BYO LLM account|BYO provider|Configured LLM provider|Agent plugin|Custom plugin/,
@@ -375,6 +375,114 @@ test("Spaces-style image generation node keeps the visible Korean generator labe
   assert.match(creativeCanvasScreen, />이미지 생성기 #1</);
 });
 
+test("non-image generation nodes use the Image Block-aligned shell", () => {
+  const generationNodeStart = creativeCanvasScreen.indexOf(
+    "function GenerationBlockNode",
+  );
+  const imageNodeStart = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  assert.notEqual(generationNodeStart, -1);
+  assert.notEqual(imageNodeStart, -1);
+
+  const nonImageNodeSource = creativeCanvasScreen.slice(
+    generationNodeStart,
+    imageNodeStart,
+  );
+
+  assert.match(nonImageNodeSource, /function NonImageGenerationNodeShell/);
+  assert.match(nonImageNodeSource, /resolveNonImageGenerationNodePorts/);
+  assert.match(
+    nonImageNodeSource,
+    /const shellClassName = cn\([\s\S]*"space-image-node-shell"[\s\S]*"space-generation-node-shell"/,
+  );
+  assert.match(nonImageNodeSource, /className=\{shellClassName\}/);
+  assert.match(nonImageNodeSource, /className="space-node-toolbar nodrag"/);
+  assert.match(nonImageNodeSource, /"space-side-port-stack"/);
+  assert.match(nonImageNodeSource, /"space-side-port-stack output"/);
+  assert.match(nonImageNodeSource, /className="space-node-prompt nodrag nowheel"/);
+  assert.match(nonImageNodeSource, /value=\{promptValue\}/);
+  assert.match(
+    nonImageNodeSource,
+    /onChange=\{\(event\) => onPromptChange\(event\.target\.value\)\}/,
+  );
+  assert.match(nonImageNodeSource, /onNonImagePromptChange\(data\.id, prompt\)/);
+  assert.match(creativeCanvasScreen, /const handleNonImagePromptChange = useCallback/);
+  assert.match(creativeCanvasScreen, /properties:\s*\{\s*\.\.\.\(properties \?\? \{\}\),\s*prompt,/);
+  assert.match(nonImageNodeSource, /className="space-node-controls nodrag"/);
+  assert.match(
+    appCss,
+    /\.generation-node\.non-image-generation-node\s*\{[\s\S]*border:\s*0/,
+  );
+  assert.match(
+    appCss,
+    /\.space-generation-node-card\s*\{[\s\S]*min-height:\s*260px/,
+  );
+  assert.match(
+    appCss,
+    /\.space-generation-node-primary\s*\{[\s\S]*place-items:\s*center/,
+  );
+  assert.match(
+    appCss,
+    /\.space-side-port-stack\.output\s*\{[\s\S]*right:\s*-48px/,
+  );
+  assert.doesNotMatch(nonImageNodeSource, /generation-node-header/);
+  assert.doesNotMatch(nonImageNodeSource, /generation-description/);
+  assert.doesNotMatch(nonImageNodeSource, /generation-contracts/);
+  assert.doesNotMatch(nonImageNodeSource, /generation-node-footer/);
+  assert.doesNotMatch(nonImageNodeSource, /Ready to create|Run block|GENERATION BLOCK/);
+  assert.doesNotMatch(creativeCanvasScreen, /function ContractRow|function statusTone/);
+  assert.doesNotMatch(
+    appCss,
+    /generation-node-header|generation-description|generation-contract-row|generation-node-footer|generation-status|node-kicker-inline|generation-node-icon|(^|\n)\.run-button/,
+  );
+});
+
+test("non-image generation node ports cover every palette kind except image", () => {
+  const expectedKinds = generationPalette
+    .map((item) => item.kind)
+    .filter((kind) => kind !== "image");
+
+  assert.deepEqual(expectedKinds, [
+    "text",
+    "llm",
+    "video",
+    "voice",
+    "agent",
+    "dm",
+    "landing",
+    "custom",
+  ]);
+
+  const resolverStart = creativeCanvasScreen.indexOf(
+    "function resolveNonImageGenerationNodePorts",
+  );
+  const resolverEnd = creativeCanvasScreen.indexOf(
+    "function NonImageGenerationNodeShell",
+  );
+  assert.notEqual(resolverStart, -1);
+  assert.notEqual(resolverEnd, -1);
+
+  const resolverSource = creativeCanvasScreen.slice(resolverStart, resolverEnd);
+
+  for (const kind of expectedKinds) {
+    assert.match(
+      resolverSource,
+      new RegExp(`case "${kind}"`),
+      `${kind} should have explicit port projection`,
+    );
+  }
+
+  assert.match(resolverSource, /direction: "input"/);
+  assert.match(resolverSource, /direction: "output"/);
+  assert.match(resolverSource, /mediaType: "text"/);
+  assert.match(resolverSource, /mediaType: "image"/);
+  assert.match(resolverSource, /mediaType: "video"/);
+  assert.match(resolverSource, /mediaType: "audio"/);
+  assert.match(resolverSource, /mediaType: "web"/);
+  assert.match(resolverSource, /mediaType: "action"/);
+});
+
 test("Spaces-style image generation node keeps the top-right floating action toolbar", () => {
   assert.match(creativeCanvasScreen, /className="space-node-toolbar nodrag"/);
   assert.match(creativeCanvasScreen, /aria-label="Node actions"/);
@@ -423,9 +531,7 @@ test("Spaces-style image generation node fills the card with a generated image a
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -457,9 +563,7 @@ test("Spaces-style image generation node stays compact and not page-like", () =>
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -506,9 +610,7 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -540,9 +642,7 @@ test("Spaces-style image generation node has a compact inspector docs trigger", 
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -729,9 +829,7 @@ test("Spaces-style image generation node ratio selector writes selected output a
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -768,9 +866,7 @@ test("Spaces-style image generation node exposes GPT Image mapped and disabled r
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -935,9 +1031,7 @@ test("Spaces-style image generation node exposes reference tray upload and URL c
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -1054,24 +1148,24 @@ test("Spaces-style image generation node exposes reference tray upload and URL c
 });
 
 test("Spaces-style image generation node keeps the bottom-right circular run button", () => {
+  const runButtonRule = getCssRuleBlock(".space-run-button");
+
   assert.match(creativeCanvasScreen, /className="space-run-button nodrag"/);
   assert.match(creativeCanvasScreen, /aria-label="Generate image"/);
   assert.match(creativeCanvasScreen, /<Play className="size-4" fill="currentColor" \/>/);
-  assert.match(appCss, /\.space-run-button\s*\{[\s\S]*position:\s*absolute/);
-  assert.match(appCss, /\.space-run-button\s*\{[\s\S]*right:\s*18px/);
-  assert.match(appCss, /\.space-run-button\s*\{[\s\S]*bottom:\s*22px/);
-  assert.match(appCss, /\.space-run-button\s*\{[\s\S]*width:\s*34px/);
-  assert.match(appCss, /\.space-run-button\s*\{[\s\S]*height:\s*34px/);
-  assert.match(appCss, /\.space-run-button\s*\{[\s\S]*border-radius:\s*999px/);
+  assert.match(runButtonRule, /position:\s*absolute/);
+  assert.match(runButtonRule, /right:\s*18px/);
+  assert.match(runButtonRule, /bottom:\s*22px/);
+  assert.match(runButtonRule, /width:\s*32px/);
+  assert.match(runButtonRule, /height:\s*32px/);
+  assert.match(runButtonRule, /border-radius:\s*999px/);
 });
 
 test("Spaces-style image generation node does not overlay lifecycle status labels on the preview surface", () => {
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -1092,9 +1186,7 @@ test("Spaces-style image generation node keeps lifecycle state out of node badge
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -1208,9 +1300,7 @@ test("Spaces-style image generation node removes the redundant output preview bo
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -1240,9 +1330,7 @@ test("Image output handle remains the next-node menu entry point", () => {
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 
@@ -1266,7 +1354,7 @@ test("Image output drag to empty canvas opens the next-node menu", () => {
   const genericNodeStart = creativeCanvasScreen.indexOf("function GenerationBlockNode");
   const genericNodeEnd = creativeCanvasScreen.indexOf("function FreepikReferenceImageNode");
   const imageNodeStart = creativeCanvasScreen.indexOf("function FreepikReferenceImageNode");
-  const imageNodeEnd = creativeCanvasScreen.indexOf("function ContractRow");
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(screenStart, -1);
   assert.notEqual(screenEnd, -1);
   assert.notEqual(genericNodeStart, -1);
@@ -1314,14 +1402,11 @@ test("Image output drag to empty canvas opens the next-node menu", () => {
   assert.match(appCss, /\.canvas-output-drop-menu\s*\{[\s\S]*border:\s*1px solid #dddddd/);
   assert.match(appCss, /\.canvas-output-drop-menu\s*\{[\s\S]*background:\s*#ffffff/);
   assert.match(appCss, /\.canvas-output-drop-search\s*\{[\s\S]*background:\s*#f8fafc/);
-  assert.match(
-    genericNodeSource,
-    /<Handle[\s\S]*type="target"[\s\S]*className=\{cn\("canvas-handle", `\$\{data\.tone\}-handle`\)\}[\s\S]*isConnectable=\{false\}/,
-  );
-  assert.match(
-    genericNodeSource,
-    /<Handle[\s\S]*type="source"[\s\S]*className=\{cn\("canvas-handle", `\$\{data\.tone\}-handle`\)\}[\s\S]*isConnectable=\{false\}/,
-  );
+  assert.match(genericNodeSource, /function GenerationNodePortStack/);
+  assert.match(genericNodeSource, /type=\{output \? "source" : "target"\}/);
+  assert.match(genericNodeSource, /position=\{output \? Position\.Right : Position\.Left\}/);
+  assert.match(genericNodeSource, /isConnectable=\{port\.connectable\}/);
+  assert.match(creativeCanvasScreen, /connectable: false/);
   assert.match(
     imageNodeSource,
     /id=\{`inputs\.\$\{promptPort\.id\}`\}[\s\S]*type="target"[\s\S]*isConnectable=\{false\}/,
@@ -1340,9 +1425,7 @@ test("Spaces-style image generation node hides JSON, secrets, storage, and debug
   const imageNodeStart = creativeCanvasScreen.indexOf(
     "function FreepikReferenceImageNode",
   );
-  const imageNodeEnd = creativeCanvasScreen.indexOf(
-    "function ContractRow",
-  );
+  const imageNodeEnd = creativeCanvasScreen.length;
   assert.notEqual(imageNodeStart, -1);
   assert.notEqual(imageNodeEnd, -1);
 

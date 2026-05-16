@@ -1682,157 +1682,6 @@ button {
   opacity: 0;
 }
 
-.generation-node-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid #ece8df;
-  padding: 14px;
-}
-
-.generation-node-header strong,
-.generation-node-header small,
-.node-kicker-inline {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.node-kicker-inline {
-  margin-bottom: 2px;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  color: #aaa1b1;
-}
-
-.generation-node-header strong {
-  font-size: 15px;
-  font-weight: 900;
-  color: #15131a;
-}
-
-.generation-node-header small {
-  margin-top: 1px;
-  font-size: 11px;
-  font-weight: 800;
-  color: #7d7485;
-}
-
-.generation-node-icon {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  flex: none;
-  place-items: center;
-  border-radius: 14px;
-  background: #f2eee7;
-  color: #25212b;
-}
-
-.generation-node-icon.blue {
-  background: #eaf4ff;
-  color: #2563eb;
-}
-
-.generation-node-icon.violet {
-  background: #f3e8ff;
-  color: #7c3aed;
-}
-
-.generation-node-icon.green {
-  background: #ecfdf5;
-  color: #059669;
-}
-
-.generation-status {
-  flex: none;
-  border-radius: 999px;
-  padding: 6px 8px;
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 900;
-  letter-spacing: 0.07em;
-}
-
-.generation-status.ready {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.generation-status.draft {
-  background: #eef4fb;
-  color: #64748b;
-}
-
-.generation-status.needs-input {
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.generation-description {
-  margin: 0;
-  padding: 12px 14px;
-  border-bottom: 1px solid #ece8df;
-  color: #5f5868;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.generation-contract-row {
-  display: grid;
-  min-height: 34px;
-  grid-template-columns: 64px 1fr auto;
-  align-items: center;
-  gap: 9px;
-  border-bottom: 1px solid #f0ece4;
-  padding: 7px 14px;
-  font-size: 10px;
-}
-
-.generation-contract-row span {
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  color: #aaa1b1;
-}
-
-.generation-contract-row strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 800;
-  color: #24202a;
-}
-
-.generation-contract-row em {
-  border-radius: 999px;
-  background: #edf2fb;
-  padding: 5px 7px;
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  color: #64748b;
-}
-
-.generation-contract-row em.blue {
-  background: #eaf4ff;
-  color: #2563eb;
-}
-
-.generation-contract-row em.violet {
-  background: #f3e8ff;
-  color: #7c3aed;
-}
-
-.generation-contract-row em.green {
-  background: #ecfdf5;
-  color: #059669;
-}
-
 .space-image-node-shell {
   position: relative;
   display: grid;
@@ -2000,6 +1849,54 @@ button {
     0 0 0 1px rgba(255, 255, 255, 0.68) inset,
     0 18px 42px rgba(15, 23, 42, 0.07),
     0 0 0 1px rgba(24, 119, 242, 0.16);
+}
+
+.generation-node.non-image-generation-node {
+  position: relative;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.space-generation-node-card {
+  min-height: 260px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+}
+
+.space-generation-node-card.text,
+.space-generation-node-card.llm,
+.space-generation-node-card.custom {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(246, 245, 242, 0.92));
+}
+
+.space-generation-node-card.video,
+.space-generation-node-card.landing {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(246, 242, 255, 0.88));
+}
+
+.space-generation-node-card.voice,
+.space-generation-node-card.agent {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(236, 253, 245, 0.82));
+}
+
+.space-generation-node-primary {
+  position: absolute;
+  inset: 56px 42px 142px;
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  color: #333840;
+  text-align: center;
+}
+
+.space-generation-node-primary svg {
+  color: #41454d;
 }
 
 .space-generated-image-preview {
@@ -2219,6 +2116,11 @@ button {
   right: -48px;
   bottom: 20px;
   color: #2563eb;
+}
+
+.space-side-port-stack.output {
+  right: -48px;
+  left: auto;
 }
 
 .prompt-input-affordance {
@@ -2627,23 +2529,6 @@ button {
   font-weight: 650;
 }
 
-.generation-node-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-}
-
-.generation-node-footer span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #6f687a;
-  font-size: 11px;
-  font-weight: 900;
-}
-
 .timed-node {
   position: relative;
   width: 434px;
@@ -2706,17 +2591,6 @@ button {
   background: #f6f5f2;
   padding: 0 12px;
   color: #24202a;
-  font-weight: 900;
-}
-
-.run-button {
-  height: 31px;
-  border: 0;
-  border-radius: 10px;
-  background: #18141d;
-  padding: 0 15px;
-  color: #ffffff;
-  font-size: 12px;
   font-weight: 900;
 }
 

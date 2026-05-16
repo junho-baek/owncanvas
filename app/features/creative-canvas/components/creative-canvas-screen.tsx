@@ -157,6 +157,27 @@ const blockIcons = {
 
 const GENERATION_BLOCK_DRAG_TYPE = "application/x-owncanvas-generation-block";
 
+const NON_IMAGE_GENERATION_NODE_FRAME = {
+  width: 360,
+  height: 420,
+} as const;
+
+type NonImageGenerationNodePortMediaType =
+  | "text"
+  | "image"
+  | "video"
+  | "audio"
+  | "web"
+  | "action";
+
+type NonImageGenerationNodePort = {
+  id: string;
+  label: string;
+  direction: "input" | "output";
+  mediaType: NonImageGenerationNodePortMediaType;
+  connectable: boolean;
+};
+
 function isGenerationBlockKind(value: string): value is GenerationBlockKind {
   return generationPalette.some((item) => item.kind === value);
 }
@@ -834,6 +855,46 @@ export function CreativeCanvasScreen({
     });
   }, [setNodes, updateCampaignCanvas]);
 
+  const handleNonImagePromptChange = useCallback((nodeId: string, prompt: string) => {
+    setNodes((currentNodes) => {
+      let didUpdate = false;
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (
+          node.id !== nodeId ||
+          isImageGenerationNodeProperties(properties) ||
+          (typeof properties?.prompt === "string" ? properties.prompt : "") === prompt
+        ) {
+          return node;
+        }
+
+        didUpdate = true;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: {
+              ...(properties ?? {}),
+              prompt,
+            },
+          },
+        };
+      });
+
+      if (!didUpdate) {
+        return currentNodes;
+      }
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
   const creativeNodeTypes = useMemo<NodeTypes>(
     () => ({
       generation: (props) => (
@@ -845,6 +906,7 @@ export function CreativeCanvasScreen({
           onImageReferenceRemove={handleImageReferenceRemove}
           onImageReferenceReorder={handleImageReferenceReorder}
           onImagePromptChange={handleImagePromptChange}
+          onNonImagePromptChange={handleNonImagePromptChange}
           campaignAssetReferences={campaignAssetReferences}
           campaignImageAssets={campaignImageAssets}
         />
@@ -857,6 +919,7 @@ export function CreativeCanvasScreen({
       handleImageReferenceRemove,
       handleImageReferenceReorder,
       handleImagePromptChange,
+      handleNonImagePromptChange,
       campaignAssetReferences,
       campaignImageAssets,
     ],
@@ -3388,6 +3451,214 @@ function CanvasStatus({ visibleBlocks }: { visibleBlocks: number }) {
   );
 }
 
+function resolveNonImageGenerationNodePorts(
+  kind: GenerationBlockKind,
+): NonImageGenerationNodePort[] {
+  switch (kind) {
+    case "text":
+      return [
+        {
+          id: "brief",
+          label: "Brief",
+          direction: "input",
+          mediaType: "text",
+          connectable: false,
+        },
+        {
+          id: "copy",
+          label: "Copy",
+          direction: "output",
+          mediaType: "text",
+          connectable: false,
+        },
+      ];
+    case "llm":
+      return [
+        {
+          id: "brief",
+          label: "Brief",
+          direction: "input",
+          mediaType: "text",
+          connectable: false,
+        },
+        {
+          id: "prompt",
+          label: "Prompt",
+          direction: "output",
+          mediaType: "text",
+          connectable: false,
+        },
+      ];
+    case "video":
+      return [
+        {
+          id: "prompt",
+          label: "Prompt",
+          direction: "input",
+          mediaType: "text",
+          connectable: false,
+        },
+        {
+          id: "frame",
+          label: "Frame",
+          direction: "input",
+          mediaType: "image",
+          connectable: false,
+        },
+        {
+          id: "video",
+          label: "Video",
+          direction: "output",
+          mediaType: "video",
+          connectable: false,
+        },
+      ];
+    case "voice":
+      return [
+        {
+          id: "script",
+          label: "Script",
+          direction: "input",
+          mediaType: "text",
+          connectable: false,
+        },
+        {
+          id: "voice",
+          label: "Voice",
+          direction: "output",
+          mediaType: "audio",
+          connectable: false,
+        },
+      ];
+    case "agent":
+      return [
+        {
+          id: "campaign",
+          label: "Campaign",
+          direction: "input",
+          mediaType: "action",
+          connectable: false,
+        },
+        {
+          id: "action",
+          label: "Action",
+          direction: "output",
+          mediaType: "action",
+          connectable: false,
+        },
+      ];
+    case "dm":
+      return [
+        {
+          id: "trigger",
+          label: "Trigger",
+          direction: "input",
+          mediaType: "text",
+          connectable: false,
+        },
+        {
+          id: "dm",
+          label: "DM",
+          direction: "output",
+          mediaType: "text",
+          connectable: false,
+        },
+      ];
+    case "landing":
+      return [
+        {
+          id: "offer",
+          label: "Offer",
+          direction: "input",
+          mediaType: "text",
+          connectable: false,
+        },
+        {
+          id: "page",
+          label: "Landing",
+          direction: "output",
+          mediaType: "web",
+          connectable: false,
+        },
+      ];
+    case "custom":
+      return [
+        {
+          id: "input",
+          label: "Input",
+          direction: "input",
+          mediaType: "action",
+          connectable: false,
+        },
+        {
+          id: "output",
+          label: "Output",
+          direction: "output",
+          mediaType: "action",
+          connectable: false,
+        },
+      ];
+    case "image":
+      return [];
+  }
+}
+
+function resolveNonImageGenerationPortIcon(
+  mediaType: NonImageGenerationNodePortMediaType,
+) {
+  switch (mediaType) {
+    case "text":
+      return Type;
+    case "image":
+      return ImageIcon;
+    case "video":
+      return Video;
+    case "audio":
+      return Volume2;
+    case "web":
+      return Globe2;
+    case "action":
+      return Plug;
+  }
+}
+
+function resolveNonImageGenerationPrimaryIcon(kind: GenerationBlockKind) {
+  switch (kind) {
+    case "video":
+      return Video;
+    case "voice":
+      return Volume2;
+    case "agent":
+      return Bot;
+    case "dm":
+      return MessageSquare;
+    case "landing":
+      return Globe2;
+    case "custom":
+      return Plug;
+    case "text":
+    case "llm":
+    case "image":
+      return Type;
+  }
+}
+
+function resolveNonImageGenerationPromptPlaceholder(
+  data: CreativeFlowNode["data"],
+) {
+  const briefContract = data.contracts.find(
+    (contract) => contract.label === "Brief",
+  );
+
+  return briefContract?.value ?? data.title;
+}
+
+function resolveNonImageGenerationPromptValue(
+  data: CreativeFlowNode["data"],
+) {
+  return typeof data.properties?.prompt === "string" ? data.properties.prompt : "";
+}
+
 function GenerationBlockNode({
   data,
   selected,
@@ -3397,6 +3668,7 @@ function GenerationBlockNode({
   onImageReferenceRemove,
   onImageReferenceReorder,
   onImagePromptChange,
+  onNonImagePromptChange,
   campaignAssetReferences,
   campaignImageAssets,
 }: NodeProps<CreativeFlowNode> & {
@@ -3423,6 +3695,7 @@ function GenerationBlockNode({
     direction: "up" | "down",
   ) => void;
   onImagePromptChange: (nodeId: string, prompt: string) => void;
+  onNonImagePromptChange: (nodeId: string, prompt: string) => void;
   campaignAssetReferences: CampaignAssetSummary[];
   campaignImageAssets: CampaignAsset[];
 }) {
@@ -3507,55 +3780,174 @@ function GenerationBlockNode({
   }
 
   return (
-    <article className={cn("generation-node", data.tone, selected && "selected")}>
-      <Handle
-        type="target"
-        position={Position.Left}
-        className={cn("canvas-handle", `${data.tone}-handle`)}
-        isConnectable={false}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        className={cn("canvas-handle", `${data.tone}-handle`)}
-        isConnectable={false}
-      />
+    <NonImageGenerationNodeShell
+      data={data}
+      Icon={Icon}
+      onPromptChange={(prompt) => {
+        onNonImagePromptChange(data.id, prompt);
+      }}
+      selected={selected}
+    />
+  );
+}
 
-      <header className="generation-node-header">
-        <span className={cn("generation-node-icon", data.tone)}>
-          <Icon className="size-5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="node-kicker-inline">GENERATION BLOCK</span>
-          <strong>{data.title}</strong>
-          <small>{data.subtitle}</small>
-        </span>
-        <span className={cn("generation-status", statusTone(data.status))}>
-          {data.status}
-        </span>
-      </header>
+function NonImageGenerationNodeShell({
+  data,
+  Icon,
+  onPromptChange,
+  selected,
+}: {
+  data: CreativeFlowNode["data"];
+  Icon: ComponentType<{ className?: string }>;
+  onPromptChange: (prompt: string) => void;
+  selected: boolean;
+}) {
+  const ports = resolveNonImageGenerationNodePorts(data.kind);
+  const inputPorts = ports.filter((port) => port.direction === "input");
+  const outputPorts = ports.filter((port) => port.direction === "output");
+  const PrimaryIcon = resolveNonImageGenerationPrimaryIcon(data.kind);
+  const promptPlaceholder = resolveNonImageGenerationPromptPlaceholder(data);
+  const promptValue = resolveNonImageGenerationPromptValue(data);
+  const shellClassName = cn(
+    "space-image-node-shell",
+    "space-generation-node-shell",
+    selected && "selected",
+  );
 
-      <p className="generation-description">{data.description}</p>
+  return (
+    <article
+      className={cn(
+        "generation-node",
+        data.tone,
+        "image-generation-node",
+        "non-image-generation-node",
+        selected && "selected",
+      )}
+      style={{
+        width: NON_IMAGE_GENERATION_NODE_FRAME.width,
+        height: NON_IMAGE_GENERATION_NODE_FRAME.height,
+      }}
+    >
+      <div className={shellClassName} aria-label={`${data.title} node`}>
+        <div className="space-image-node-label">
+          <Icon className="size-3" />
+          <span>{data.title}</span>
+        </div>
 
-      <div className="generation-contracts">
-        {data.contracts.map((contract) => (
-          <ContractRow
-            key={`${data.id}-${contract.label}`}
-            label={contract.label}
-            value={contract.value}
-            state={contract.state}
-            tone={data.tone}
+        <div className="space-node-toolbar nodrag" aria-label="Node actions">
+          <button type="button" aria-label={`Run ${data.title} node`}>
+            <Play className="size-4" fill="currentColor" />
+          </button>
+          <button type="button" aria-label="Action menu">⌄</button>
+          <button type="button" aria-label="Connect node">
+            <Link2 className="size-4" />
+          </button>
+          <button type="button" aria-label="Connection menu">⌄</button>
+          <button type="button" aria-label="Delete node">
+            <Trash2 className="size-4" />
+          </button>
+          <button type="button" aria-label="More actions">•••</button>
+        </div>
+
+        <div
+          className={cn(
+            "space-image-node-card",
+            "space-generation-node-card",
+            data.kind,
+          )}
+        >
+          <GenerationNodePortStack ports={inputPorts} tone={data.tone} />
+
+          <div className="space-generation-node-primary" aria-hidden="true">
+            <PrimaryIcon className="size-8" />
+          </div>
+
+          <textarea
+            className="space-node-prompt nodrag nowheel"
+            aria-label={`${data.title} brief`}
+            placeholder={promptPlaceholder}
+            value={promptValue}
+            onChange={(event) => onPromptChange(event.target.value)}
+            rows={2}
           />
-        ))}
-      </div>
 
-      <footer className="generation-node-footer">
-        <span>Ready to create</span>
-        <button className="run-button" type="button">
-          Run block
-        </button>
-      </footer>
+          <div
+            className="space-node-controls nodrag"
+            aria-label={`${data.title} settings`}
+          >
+            <button
+              className="space-control-chip model"
+              type="button"
+              aria-label={`${data.title} mode`}
+            >
+              <span>Draft</span>
+              <em>⌄</em>
+            </button>
+            <button
+              className="space-control-chip icon"
+              type="button"
+              aria-label={`${data.title} setup`}
+            >
+              <Settings2 className="size-3" />
+            </button>
+          </div>
+
+          <button
+            className="space-run-button nodrag"
+            type="button"
+            aria-label={`Run ${data.title}`}
+          >
+            <Play className="size-4" fill="currentColor" />
+          </button>
+
+          <GenerationNodePortStack ports={outputPorts} tone={data.tone} output />
+        </div>
+      </div>
     </article>
+  );
+}
+
+function GenerationNodePortStack({
+  ports,
+  tone,
+  output = false,
+}: {
+  ports: NonImageGenerationNodePort[];
+  tone: GenerationBlockTone;
+  output?: boolean;
+}) {
+  const stackClassName = output
+    ? "space-side-port-stack output"
+    : "space-side-port-stack";
+
+  return (
+    <div
+      className={stackClassName}
+      aria-label={output ? "Node output connections" : "Node input connections"}
+    >
+      {ports.map((port) => {
+        const PortIcon = resolveNonImageGenerationPortIcon(port.mediaType);
+
+        return (
+          <div
+            key={port.id}
+            className={cn("space-side-port", `${port.mediaType}-port`)}
+            aria-label={port.label}
+            title={port.label}
+          >
+            <PortIcon className="size-3" />
+            <Handle
+              id={`${output ? "outputs" : "inputs"}.${port.id}`}
+              type={output ? "source" : "target"}
+              position={output ? Position.Right : Position.Left}
+              className={cn("space-embedded-port-handle", `${tone}-handle`)}
+              title={port.label}
+              isConnectable={port.connectable}
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -4297,30 +4689,4 @@ function ReferenceTrayAttachmentItem({
       </button>
     </div>
   );
-}
-
-function ContractRow({
-  label,
-  value,
-  state,
-  tone,
-}: {
-  label: string;
-  value: string;
-  state: string;
-  tone: GenerationBlockTone;
-}) {
-  return (
-    <div className="generation-contract-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <em className={tone}>{state}</em>
-    </div>
-  );
-}
-
-function statusTone(status: string) {
-  if (status === "READY") return "ready";
-  if (status === "NEEDS INPUT") return "needs-input";
-  return "draft";
 }

@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-16] non-image-generation-node-shell | UI unification
+
+- Seed `seed_bbc7409474c7`를 GitHub 이슈 `#14`-`#18`로 발행한 뒤, Image Block은 기준 UI로 유지하고 비이미지 생성 노드만 같은 shell 문법으로 정리했다.
+- Copy, Prompt, Video, Voice, Operator, DM, Landing, Plugin은 top label, floating toolbar, left/right port stack, central preview surface, bottom prompt field, compact controls, run button 구조를 공유한다.
+- Image Block의 기존 이미지 프리뷰/프롬프트/컨트롤 구성은 변경하지 않았고, 비이미지 노드의 legacy `GENERATION BLOCK`, `Ready to create`, `Run block` UI를 제거했다.
+- Subagent review 후 legacy generic node dead code/CSS를 제거했고, 비이미지 노드의 bottom prompt는 `properties.prompt`에 저장해 reload 후에도 유지되도록 했다.
+- 검증: `node --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `npm run build`, Playwright QA screenshot `output/playwright/non-image-generation-node-shell-evidence.png`, Ouroboros QA score `0.93`.
+
 ## [2026-05-16] github-issue-empty-backlog-triage | Issue triage
 
 - `gh issue list --state open --limit 100 --json ...` 기준 현재 `junho-baek/owncanvas`의 open GitHub issue는 0개다.
