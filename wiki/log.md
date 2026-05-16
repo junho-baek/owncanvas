@@ -2,6 +2,12 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-16] github-issue-empty-backlog-triage | Issue triage
+
+- `gh issue list --state open --limit 100 --json ...` 기준 현재 `junho-baek/owncanvas`의 open GitHub issue는 0개다.
+- `gh issue list --state all --limit 100` 기준 `#1`부터 `#13`까지는 모두 closed 상태다. 완료된 이슈를 추가로 닫을 대상은 없었다.
+- 다음 작업은 기존 GitHub backlog 처리보다 새 이슈를 만드는 방식이 적합하다. 후보는 Image Block prompt persistence/UX follow-up, Palette drag affordance QA, canvas pan/zoom interaction QA, provider API key가 들어온 뒤 실제 generation run smoke test 순서다.
+
 ## [2026-05-16] image-node-bottom-prompt-palette-drag-pan | UI interaction pass
 
 - Image Block prompt 입력을 노드 하단 컨트롤 바로 위로 이동하고, 생성 이미지가 카드 전체를 채우는 상태에서도 반투명 `over-image` 입력층으로 남도록 했다. 입력값은 `ImageGenerationNodeProperties.prompt`에 저장되어 local-first campaign state와 함께 유지된다.
