@@ -1,6 +1,7 @@
 import {
   isGenerationBatchRequest,
   isGenerationBatchResponse,
+  isGenerationBatchResponseForRequest,
   normalizeGenerationBatchResponse,
 } from "../features/creative-canvas/model/generation-batch.ts";
 
@@ -91,7 +92,11 @@ export async function action({
 
   const batchResponse = await readJson(serviceResponse);
 
-  if (batchResponse === null || !isGenerationBatchResponse(batchResponse)) {
+  if (
+    batchResponse === null ||
+    !isGenerationBatchResponse(batchResponse) ||
+    !isGenerationBatchResponseForRequest(batchResponse, body)
+  ) {
     return generationErrorResponse(
       {
         code: "generation.invalid_service_response",

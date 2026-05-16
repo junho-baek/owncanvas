@@ -5,6 +5,7 @@ import {
   createGenerationBatchRequest,
   isGenerationBatchRequest,
   isGenerationBatchResponse,
+  isGenerationBatchResponseForRequest,
   normalizeGenerationBatchResponse,
 } from "./generation-batch.ts";
 
@@ -168,6 +169,89 @@ test("isGenerationBatchResponse rejects malformed result contract", () => {
         },
       ],
     }),
+    false,
+  );
+});
+
+test("isGenerationBatchResponseForRequest rejects incomplete or mismatched service results", () => {
+  const request = createGenerationBatchRequest({
+    batchId: "batch_contract",
+    campaignId: "campaign_contract",
+    sourceNodeId: "source_image",
+    prompt: "same prompt",
+    provider: "mock",
+    model: "mock-image",
+    aspectRatio: "9:16",
+    nodeIds: ["node_1", "node_2"],
+    parameters: {},
+  });
+  const result = {
+    jobId: "batch_contract_job_1",
+    nodeId: "node_1",
+    status: "succeeded" as const,
+    providerRequestId: "request_1",
+    providerUrl: "https://provider.example.test/1.png",
+    mimeType: "image/png",
+    width: 1024,
+    height: 1024,
+    generatedAt: "2026-05-17T00:00:00Z",
+  };
+  const validResponse = {
+    batchId: "batch_contract",
+    results: [
+      result,
+      {
+        ...result,
+        jobId: "batch_contract_job_2",
+        nodeId: "node_2",
+        providerRequestId: "request_2",
+        providerUrl: "https://provider.example.test/2.png",
+      },
+    ],
+  };
+
+  assert.equal(isGenerationBatchResponseForRequest(validResponse, request), true);
+  assert.equal(
+    isGenerationBatchResponseForRequest(
+      {
+        ...validResponse,
+        results: [],
+      },
+      request,
+    ),
+    false,
+  );
+  assert.equal(
+    isGenerationBatchResponseForRequest(
+      {
+        ...validResponse,
+        results: [{ ...result, nodeId: "other_node" }, validResponse.results[1]],
+      },
+      request,
+    ),
+    false,
+  );
+  assert.equal(
+    isGenerationBatchResponseForRequest(
+      {
+        ...validResponse,
+        batchId: "other_batch",
+      },
+      request,
+    ),
+    false,
+  );
+  assert.equal(
+    isGenerationBatchResponseForRequest(
+      {
+        ...validResponse,
+        results: [
+          { ...result, status: "running" },
+          validResponse.results[1],
+        ],
+      },
+      request,
+    ),
     false,
   );
 });

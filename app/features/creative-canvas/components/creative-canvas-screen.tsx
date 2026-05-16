@@ -553,21 +553,39 @@ export function CreativeCanvasScreen({
 
   const applyImageGenerationBatchResults = useCallback((
     batchResponse: GenerationBatchResponse,
+    expectedNodeIds: string[],
   ) => {
     const resultsByNodeId = new Map(
       batchResponse.results.map((result) => [result.nodeId, result]),
     );
+    const expectedNodeIdSet = new Set(expectedNodeIds);
     const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
       const properties = node.data.properties;
 
-      if (!isImageGenerationNodeProperties(properties)) {
+      if (
+        !expectedNodeIdSet.has(node.id) ||
+        !isImageGenerationNodeProperties(properties)
+      ) {
         return node;
       }
 
       const result = resultsByNodeId.get(node.id);
 
       if (result === undefined) {
-        return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: failImageGenerationNodeV2Transition(properties, {
+              name: "GenerationServiceResultMissing",
+              message: "Generation batch did not return a result for this node.",
+              providerId: properties.providerId,
+              modelSlug: properties.modelSlug,
+              providerRequestId: null,
+              retryable: true,
+            }),
+          },
+        };
       }
 
       return {
@@ -793,9 +811,10 @@ export function CreativeCanvasScreen({
         return;
       }
 
-      if (response.results.length > 0) {
-        applyImageGenerationBatchResults(response);
-      }
+      applyImageGenerationBatchResults(
+        response,
+        plan.createdNodes.map((node) => node.id),
+      );
     } catch {
       return;
     }

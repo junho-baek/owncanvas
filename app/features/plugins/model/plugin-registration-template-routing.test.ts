@@ -176,6 +176,7 @@ test("URL routing fixture has matching app routes for plugin APIs and canvas ent
       undefined,
       "api/agent/plugins",
       "api/campaigns/:campaignId",
+      "api/campaigns/:campaignId/generation/batches",
       "api/campaigns/:campaignId/measurement-goals",
       "api/campaigns/:campaignId/tracking/exposures",
       "api/campaigns/:campaignId/tracking/clicks",

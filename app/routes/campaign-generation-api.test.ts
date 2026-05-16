@@ -313,3 +313,93 @@ test("generation route reports structurally invalid service JSON", async () => {
     },
   });
 });
+
+test("generation route rejects incomplete service result sets", async () => {
+  const response = await action({
+    request: createRouteRequest(createBatchRequestBody()),
+    params: { campaignId: "campaign_route" },
+    fetchGenerationService: async () =>
+      Response.json({
+        batchId: "batch_route",
+        results: [],
+      }),
+    generationServiceUrl: "http://127.0.0.1:8787",
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(body, {
+    error: {
+      code: "generation.invalid_service_response",
+      message: "Generation service response must be valid JSON.",
+    },
+  });
+});
+
+test("generation route rejects mismatched service result node IDs", async () => {
+  const response = await action({
+    request: createRouteRequest(createBatchRequestBody()),
+    params: { campaignId: "campaign_route" },
+    fetchGenerationService: async () =>
+      Response.json({
+        batchId: "batch_route",
+        results: [
+          {
+            jobId: "batch_route_job_1",
+            nodeId: "other_node",
+            status: "succeeded",
+            providerRequestId: "mock_request",
+            providerUrl: "https://mock.owncanvas.local/node_1.png",
+            mimeType: "image/png",
+            width: 1024,
+            height: 1024,
+            generatedAt: "2026-05-17T00:00:00Z",
+          },
+        ],
+      }),
+    generationServiceUrl: "http://127.0.0.1:8787",
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(body, {
+    error: {
+      code: "generation.invalid_service_response",
+      message: "Generation service response must be valid JSON.",
+    },
+  });
+});
+
+test("generation route rejects non-terminal service results", async () => {
+  const response = await action({
+    request: createRouteRequest(createBatchRequestBody()),
+    params: { campaignId: "campaign_route" },
+    fetchGenerationService: async () =>
+      Response.json({
+        batchId: "batch_route",
+        results: [
+          {
+            jobId: "batch_route_job_1",
+            nodeId: "node_1",
+            status: "running",
+            providerRequestId: "mock_request",
+            providerUrl: "https://mock.owncanvas.local/node_1.png",
+            mimeType: "image/png",
+            width: 1024,
+            height: 1024,
+            generatedAt: "2026-05-17T00:00:00Z",
+          },
+        ],
+      }),
+    generationServiceUrl: "http://127.0.0.1:8787",
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(body, {
+    error: {
+      code: "generation.invalid_service_response",
+      message: "Generation service response must be valid JSON.",
+    },
+  });
+});

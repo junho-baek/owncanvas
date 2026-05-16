@@ -158,6 +158,51 @@ export function isGenerationBatchResponse(
   );
 }
 
+export function isGenerationBatchResponseForRequest(
+  response: GenerationBatchResponse,
+  request: GenerationBatchRequest,
+): boolean {
+  if (
+    response.batchId !== request.batchId ||
+    response.results.length !== request.jobs.length
+  ) {
+    return false;
+  }
+
+  const expectedJobsByJobId = new Map(
+    request.jobs.map((job) => [job.jobId, job]),
+  );
+  const seenJobIds = new Set<string>();
+  const seenNodeIds = new Set<string>();
+
+  if (expectedJobsByJobId.size !== request.jobs.length) {
+    return false;
+  }
+
+  for (const result of response.results) {
+    const expectedJob = expectedJobsByJobId.get(result.jobId);
+
+    if (
+      expectedJob === undefined ||
+      expectedJob.nodeId !== result.nodeId ||
+      !isTerminalGenerationJobResult(result) ||
+      seenJobIds.has(result.jobId) ||
+      seenNodeIds.has(result.nodeId)
+    ) {
+      return false;
+    }
+
+    seenJobIds.add(result.jobId);
+    seenNodeIds.add(result.nodeId);
+  }
+
+  return seenJobIds.size === request.jobs.length;
+}
+
+function isTerminalGenerationJobResult(result: GenerationJobResult) {
+  return result.status === "succeeded" || result.status === "failed";
+}
+
 function isGenerationSpec(value: unknown): value is GenerationSpec {
   return (
     isRecord(value) &&

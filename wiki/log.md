@@ -2525,3 +2525,5 @@
 - QA evidence: `output/playwright/go-generation-fanout-slice.png`.
 - 최종 subagent review에서 batch 제출 실패 시 fan-out으로 생성된 queued Image Block이 영구 queued로 남을 수 있다는 blocker를 확인했다. `submitImageGenerationBatch()`가 `null`을 반환하는 route 400/502/fetch 실패 경로에서 방금 생성한 fan-out node들을 `failed` 상태로 전환하도록 보정했다.
 - 장애 경로 browser QA는 Go service를 중지한 뒤 seeded x3 Image Block 실행으로 확인했다. route 502 응답 후 캔버스 Image Block 4개(원본 1 + failed 3), queued 0, 각 failed node의 message `Generation batch did not complete.`를 확인했다.
+- 추가 최종 review blocker로 stale route fixture와 service response mismatch 문제가 발견됐다. route fixture에 generation batches API를 반영했고, service response는 요청 batch의 `batchId`, result count, `jobId`, `nodeId`, terminal status와 정확히 일치할 때만 통과하도록 강화했다.
+- UI 쪽도 expected fan-out node id를 기준으로 결과를 적용하고, 누락 결과가 있으면 해당 Image Block을 `GenerationServiceResultMissing` failed 상태로 전환하도록 이중 방어를 추가했다. 검증: full TS suite 517/517 pass, `go test ./...`, `npm run typecheck`, `npm run build`, `git diff --check`, browser success smoke 200 + 원본 1/succeeded 3.
