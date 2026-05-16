@@ -843,7 +843,7 @@ export type ImageGenerationNodeProperties = {
   providerId: ImageGenerationProviderPreset["providerId"];
   modelSlug: string;
   prompt: string;
-  batchCount: 1 | 2 | 3 | 4 | 5;
+  batchCount: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   aspectRatio: ImageGenerationAspectRatio;
   frame: ImageGenerationFrame;
   referenceImages: ImageGenerationNodeReferenceInput[];
