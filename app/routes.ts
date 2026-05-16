@@ -5,6 +5,10 @@ export default [
   route("api/agent/plugins", "./routes/api.agent-plugins.ts"),
   route("api/campaigns/:campaignId", "./routes/api.campaign.ts"),
   route(
+    "api/campaigns/:campaignId/generation/batches",
+    "./routes/api.campaign-generation.ts",
+  ),
+  route(
     "api/campaigns/:campaignId/measurement-goals",
     "./routes/api.campaign-measurement-goals.ts",
   ),
