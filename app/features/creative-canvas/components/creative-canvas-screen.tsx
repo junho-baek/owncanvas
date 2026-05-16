@@ -583,6 +583,41 @@ export function CreativeCanvasScreen({
     updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
   }, [setNodes, updateCampaignCanvas]);
 
+  const applyImageGenerationBatchFailure = useCallback((
+    nodeIds: string[],
+    message: string,
+  ) => {
+    const failedNodeIds = new Set(nodeIds);
+    const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
+      const properties = node.data.properties;
+
+      if (
+        !failedNodeIds.has(node.id) ||
+        !isImageGenerationNodeProperties(properties)
+      ) {
+        return node;
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: failImageGenerationNodeV2Transition(properties, {
+            name: "GenerationServiceError",
+            message,
+            providerId: properties.providerId,
+            modelSlug: properties.modelSlug,
+            providerRequestId: null,
+            retryable: true,
+          }),
+        },
+      };
+    });
+
+    setNodes(nextNodes);
+    updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+  }, [setNodes, updateCampaignCanvas]);
+
   const handleNodesChange = (changes: NodeChange<CreativeFlowNode>[]) => {
     const selectedChange = changes.find(
       (change): change is Extract<NodeChange<CreativeFlowNode>, { type: "select" }> =>
@@ -750,13 +785,27 @@ export function CreativeCanvasScreen({
 
       const response = await submitImageGenerationBatch(plan.batch);
 
-      if (response !== null && response.results.length > 0) {
+      if (response === null) {
+        applyImageGenerationBatchFailure(
+          plan.createdNodes.map((node) => node.id),
+          "Generation batch did not complete.",
+        );
+        return;
+      }
+
+      if (response.results.length > 0) {
         applyImageGenerationBatchResults(response);
       }
     } catch {
       return;
     }
-  }, [applyImageGenerationBatchResults, onCampaignChange, setEdges, setNodes]);
+  }, [
+    applyImageGenerationBatchFailure,
+    applyImageGenerationBatchResults,
+    onCampaignChange,
+    setEdges,
+    setNodes,
+  ]);
 
   const getConnectionEventPoint = (event: MouseEvent | TouchEvent) => {
     const clampDropMenuPoint = (point: { x: number; y: number }) => {

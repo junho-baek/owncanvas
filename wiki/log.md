@@ -2523,3 +2523,5 @@
 - Image Block `batchCount`를 x10까지 확장하고, run action은 같은 타입의 queued Image Blocks를 즉시 생성한 뒤 generation batch를 제출한다. `existingNodes` 기반 collision guard로 같은 millisecond 중복 실행 시 node/job id가 충돌하지 않게 했다.
 - 검증: `go test ./...`, focused TS suite 55개, `npm run typecheck`, `npm run build`, `git diff --check`를 통과했다. Headless browser QA에서는 seeded x3 Image Block 실행이 `fanOutCount: 3` 요청, 200 route 응답, mock result 3개, 캔버스 Image Block 4개(원본 1 + succeeded 3), progress 100, provider request id metadata refs 반영을 확인했다.
 - QA evidence: `output/playwright/go-generation-fanout-slice.png`.
+- 최종 subagent review에서 batch 제출 실패 시 fan-out으로 생성된 queued Image Block이 영구 queued로 남을 수 있다는 blocker를 확인했다. `submitImageGenerationBatch()`가 `null`을 반환하는 route 400/502/fetch 실패 경로에서 방금 생성한 fan-out node들을 `failed` 상태로 전환하도록 보정했다.
+- 장애 경로 browser QA는 Go service를 중지한 뒤 seeded x3 Image Block 실행으로 확인했다. route 502 응답 후 캔버스 Image Block 4개(원본 1 + failed 3), queued 0, 각 failed node의 message `Generation batch did not complete.`를 확인했다.

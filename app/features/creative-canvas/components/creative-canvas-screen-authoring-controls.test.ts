@@ -1543,6 +1543,7 @@ test("Image Block run buttons call the fan-out run handler", () => {
   assert.match(creativeCanvasScreen, /GenerationJobResult/);
   assert.match(creativeCanvasScreen, /isGenerationBatchResponse/);
   assert.match(creativeCanvasScreen, /applyImageGenerationBatchResults/);
+  assert.match(creativeCanvasScreen, /applyImageGenerationBatchFailure/);
   assert.match(creativeCanvasScreen, /applyImageGenerationJobResult/);
   assert.match(creativeCanvasScreen, /succeedImageGenerationNodeV2Transition/);
   assert.match(creativeCanvasScreen, /failImageGenerationNodeV2Transition/);
@@ -1559,7 +1560,11 @@ test("Image Block run buttons call the fan-out run handler", () => {
   );
   assert.match(
     creativeCanvasScreen,
-    /if \(response !== null && response\.results\.length > 0\) \{[\s\S]*applyImageGenerationBatchResults\(response\);/,
+    /if \(response\.results\.length > 0\) \{[\s\S]*applyImageGenerationBatchResults\(response\);/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /if \(response === null\) \{[\s\S]*applyImageGenerationBatchFailure\([\s\S]*plan\.createdNodes\.map\(\(node\) => node\.id\)[\s\S]*Generation batch did not complete\./,
   );
   assert.match(
     imageNodeSource,
