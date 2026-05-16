@@ -123,11 +123,13 @@ import {
   isGenerationBatchResponse,
   type GenerationBatchRequest,
   type GenerationBatchResponse,
+  type GenerationJobResult,
 } from "~/features/creative-canvas/model/generation-batch";
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
   attachImageGenerationNodeReferenceTransition,
   closeImageGenerationNodeInspectorTransition,
+  failImageGenerationNodeV2Transition,
   isImageGenerationNodeProperties,
   listImageGenerationReferenceTrayAttachments,
   openImageGenerationNodeInspectorTransition,
@@ -142,6 +144,7 @@ import {
   resolveImageGenerationNodeStatus,
   resolveImageGenerationNodeStatusView,
   selectImageGenerationNodeAspectRatioTransition,
+  succeedImageGenerationNodeV2Transition,
   validateImageGenerationReferenceAttachmentDraft,
   type ImageGenerationAspectRatio,
   type ImageGenerationInputControlDefaultValue,
@@ -359,6 +362,32 @@ function createDefaultLandingPageConversionElement(
   };
 }
 
+function applyImageGenerationJobResult(
+  properties: ImageGenerationNodeProperties,
+  result: GenerationJobResult,
+): ImageGenerationNodeProperties {
+  if (result.status === "succeeded") {
+    return succeedImageGenerationNodeV2Transition(properties, {
+      generatedAssetIds: [],
+      metadataRunId: result.providerRequestId || null,
+      costUsageRunId: null,
+    });
+  }
+
+  if (result.status === "failed") {
+    return failImageGenerationNodeV2Transition(properties, {
+      name: result.error?.name ?? "provider_error",
+      message: result.error?.message ?? "Generation failed.",
+      providerId: properties.providerId,
+      modelSlug: properties.modelSlug,
+      providerRequestId: result.providerRequestId || null,
+      retryable: result.error?.retryable ?? null,
+    });
+  }
+
+  return properties;
+}
+
 export function CreativeCanvasScreen({
   campaign,
   onCampaignChange,
@@ -521,6 +550,38 @@ export function CreativeCanvasScreen({
       return null;
     }
   };
+
+  const applyImageGenerationBatchResults = useCallback((
+    batchResponse: GenerationBatchResponse,
+  ) => {
+    const resultsByNodeId = new Map(
+      batchResponse.results.map((result) => [result.nodeId, result]),
+    );
+    const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
+      const properties = node.data.properties;
+
+      if (!isImageGenerationNodeProperties(properties)) {
+        return node;
+      }
+
+      const result = resultsByNodeId.get(node.id);
+
+      if (result === undefined) {
+        return node;
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: applyImageGenerationJobResult(properties, result),
+        },
+      };
+    });
+
+    setNodes(nextNodes);
+    updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+  }, [setNodes, updateCampaignCanvas]);
 
   const handleNodesChange = (changes: NodeChange<CreativeFlowNode>[]) => {
     const selectedChange = changes.find(
@@ -689,13 +750,13 @@ export function CreativeCanvasScreen({
 
       const response = await submitImageGenerationBatch(plan.batch);
 
-      if (response !== null && response.results.length === 0) {
-        return;
+      if (response !== null && response.results.length > 0) {
+        applyImageGenerationBatchResults(response);
       }
     } catch {
       return;
     }
-  }, [onCampaignChange, setEdges, setNodes]);
+  }, [applyImageGenerationBatchResults, onCampaignChange, setEdges, setNodes]);
 
   const getConnectionEventPoint = (event: MouseEvent | TouchEvent) => {
     const clampDropMenuPoint = (point: { x: number; y: number }) => {

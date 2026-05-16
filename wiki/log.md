@@ -2521,5 +2521,5 @@
 - Go `generation/` 모듈을 추가해 `GenerationBatch`/`GenerationJob`/`GenerationResult` 계약, bounded concurrency runner, deterministic mock provider HTTP server, `owncanvas-generation` entrypoint를 만들었다. mock provider의 `generatedAt`은 deterministic contract를 위해 고정 RFC3339 문자열을 사용한다.
 - React Router API bridge `/api/campaigns/:campaignId/generation/batches`를 추가했다. route는 client batch shape, service response shape, campaignId mismatch, Go 4xx/5xx mapping, blank service URL fallback, 405 `Allow: POST`를 검증한다.
 - Image Block `batchCount`를 x10까지 확장하고, run action은 같은 타입의 queued Image Blocks를 즉시 생성한 뒤 generation batch를 제출한다. `existingNodes` 기반 collision guard로 같은 millisecond 중복 실행 시 node/job id가 충돌하지 않게 했다.
-- 검증: `go test ./...`, focused TS suite 55개, `npm run typecheck`, `npm run build`, `git diff --check`를 통과했다. Headless browser QA에서는 seeded x3 Image Block 실행이 `fanOutCount: 3` 요청, 200 route 응답, mock result 3개, 캔버스 Image Block 4개(원본 1 + queued 3)를 확인했다.
+- 검증: `go test ./...`, focused TS suite 55개, `npm run typecheck`, `npm run build`, `git diff --check`를 통과했다. Headless browser QA에서는 seeded x3 Image Block 실행이 `fanOutCount: 3` 요청, 200 route 응답, mock result 3개, 캔버스 Image Block 4개(원본 1 + succeeded 3), progress 100, provider request id metadata refs 반영을 확인했다.
 - QA evidence: `output/playwright/go-generation-fanout-slice.png`.
