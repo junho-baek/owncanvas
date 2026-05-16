@@ -1,0 +1,47 @@
+{
+  "primaryEvidence": {
+    "path": "/campaigns/campaign_1778875843939/canvas",
+    "palette": true,
+    "brief": true,
+    "imageNode": true,
+    "inspector": true,
+    "inspectorDeveloperOpen": false,
+    "genericCanvasHandles": 0,
+    "imageEmbeddedHandles": 3,
+    "primaryHasOldConsoleCopy": false,
+    "technicalFieldsInCollapsedDeveloperDetails": false,
+    "primaryPanelText": "BRIEF\nCampaign basics\n1/5 ready\nDraft brief\nCampaign title\nObjective\nAudience\nAge\nGender\nInterests\nBehavior\nRegion\nPlatform\nOffer product\nProduct ID\nProduct title\nBrand\nCategory\nCanonical URL\nProduct description\nProduct tags\nOffer\nOffer headline\nOffer summary\nDiscount\nTerms\nDestination URL\nCall to action\nPrice display\nPrice amount\nCurrency\nCommerce attribution\nOffer source\nExternal ID\nAffiliate network\nTracking URL\nCommission rate\nChannels\nChannel type\nsocial\ndirect-message\nlanding\nemail\npaid-ad\ncustom\nStatus\ndraft\nconfigured\nscheduled\npublished\npaused\nPlatform\nChannel label\nAccount handle\nPlacement\nDestination URL\nSchedule\nmanual\nscheduled\nrecurring\nStarts at\nTimezone\nConversion event\nAdd channel\nNo publishing channels\nAssets\nAsset title\nAsset link\nMedia type\nimage\nvideo\naudio\ndocument\ntext\nother\nUsage\nproduct\nreference\ngenerated\nad\nlanding\nStatus\ndraft\nready\napproved\narchived\nRights owner\nLicense\nRights source\nAlt text\nAdd link\nUpload file\nLoad selected\nSave edits\nReplace link\nReplac"
+  },
+  "developerEvidence": {
+    "inspectorDeveloperOpen": true,
+    "envVarNames": [
+      "OWNCANVAS_FREEPIK_API_KEY"
+    ],
+    "exposesLikelySecretValue": false
+  },
+  "outputDropMenuEvidence": {
+    "path": "/campaigns/campaign_1778875843939/canvas",
+    "screenshot": "output/image-output-drop-menu-evidence.png",
+    "openedAtLineEnd": true,
+    "dropPoint": {
+      "x": 480,
+      "y": 530
+    },
+    "menuRect": {
+      "x": 488,
+      "y": 538,
+      "width": 320,
+      "height": 354
+    },
+    "searchField": true,
+    "itemKinds": [
+      "image-edit",
+      "style-variant",
+      "upscale",
+      "video",
+      "output-card",
+      "landing-asset"
+    ]
+  },
+  "consoleErrors": []
+}

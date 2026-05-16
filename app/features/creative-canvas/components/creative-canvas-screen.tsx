@@ -39,6 +39,7 @@ import {
   Play,
   Plug,
   Redo2,
+  Search,
   Settings2,
   ShoppingBag,
   Sparkles,
@@ -160,6 +161,16 @@ const imageOutputNextNodeActionIcons = {
   "output-card": Captions,
   "landing-asset": ShoppingBag,
 } satisfies Record<ImageGenerationOutputNextNodeActionKind, typeof ImageIcon>;
+
+type PendingImageOutputConnection = {
+  sourceNodeId: string;
+  selectedResultAssetId: string;
+};
+
+type ImageOutputDropMenuState = PendingImageOutputConnection & {
+  x: number;
+  y: number;
+};
 
 function formatCampaignSpecJson(
   campaign: Pick<CampaignDraft, "campaignSpec">,
@@ -342,6 +353,15 @@ export function CreativeCanvasScreen({
     nodes: initialNodes,
     edges: initialEdges,
   });
+  const pendingImageOutputConnectionRef = useRef<PendingImageOutputConnection | null>(null);
+  const suppressImageOutputPaneClickRef = useRef(false);
+  const [imageOutputDropMenu, setImageOutputDropMenu] =
+    useState<ImageOutputDropMenuState | null>(null);
+  const [imageOutputDropMenuQuery, setImageOutputDropMenuQuery] = useState("");
+  const closeImageOutputDropMenu = useCallback(() => {
+    setImageOutputDropMenu(null);
+    setImageOutputDropMenuQuery("");
+  }, []);
   const visibleBlocks = useMemo(() => nodes.length, [nodes.length]);
   const campaignAssetReferences = useMemo(
     () =>
@@ -379,6 +399,8 @@ export function CreativeCanvasScreen({
         nodes: [],
         edges: [],
       };
+      pendingImageOutputConnectionRef.current = null;
+      closeImageOutputDropMenu();
       setNodes([]);
       setEdges([]);
       return;
@@ -394,7 +416,7 @@ export function CreativeCanvasScreen({
     };
     setNodes(canvasSnapshotRef.current.nodes);
     setEdges(canvasSnapshotRef.current.edges);
-  }, [campaign, setEdges, setNodes]);
+  }, [campaign, closeImageOutputDropMenu, setEdges, setNodes]);
 
   const updateCampaignCanvas = useCallback((
     nextNodes: CreativeFlowNode[],
@@ -494,6 +516,28 @@ export function CreativeCanvasScreen({
       return nextCanvas.nodes;
     });
   }, [setEdges, setNodes, updateCampaignCanvas]);
+
+  const getConnectionEventPoint = (event: MouseEvent | TouchEvent) => {
+    const clampDropMenuPoint = (point: { x: number; y: number }) => {
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const menuOffset = 8;
+      const menuWidth = 320;
+      const menuMaxHeight = 360;
+
+      return {
+        x: Math.min(Math.max(point.x, 0), Math.max(viewportWidth - menuWidth - menuOffset, 0)),
+        y: Math.min(Math.max(point.y, 0), Math.max(viewportHeight - menuMaxHeight - menuOffset, 0)),
+      };
+    };
+
+    if ("changedTouches" in event) {
+      const touch = event.changedTouches[0];
+      return touch ? clampDropMenuPoint({ x: touch.clientX, y: touch.clientY }) : null;
+    }
+
+    return clampDropMenuPoint({ x: event.clientX, y: event.clientY });
+  };
 
   const handleImageAspectRatioChange = useCallback((
     nodeId: string,
@@ -752,6 +796,26 @@ export function CreativeCanvasScreen({
 
     return result;
   };
+  const imageOutputDropMenuSourceNode =
+    imageOutputDropMenu === null
+      ? null
+      : nodes.find((node) => node.id === imageOutputDropMenu.sourceNodeId) ?? null;
+  const imageOutputDropMenuSourceProperties =
+    imageOutputDropMenuSourceNode?.data.properties;
+  const imageOutputDropMenuActions =
+    imageOutputDropMenu !== null &&
+    isImageGenerationNodeProperties(imageOutputDropMenuSourceProperties)
+      ? resolveImageGenerationOutputNextNodeActions(imageOutputDropMenuSourceProperties)
+      : [];
+  const normalizedImageOutputDropMenuQuery =
+    imageOutputDropMenuQuery.trim().toLowerCase();
+  const visibleImageOutputDropMenuActions =
+    normalizedImageOutputDropMenuQuery === ""
+      ? imageOutputDropMenuActions
+      : imageOutputDropMenuActions.filter((action) => {
+          const searchable = `${action.label} ${action.description} ${action.kind}`.toLowerCase();
+          return searchable.includes(normalizedImageOutputDropMenuQuery);
+        });
 
   return (
     <main className="canvas-shell min-h-dvh bg-[#fbfaf7] text-[#171717]">
@@ -781,6 +845,77 @@ export function CreativeCanvasScreen({
           />
         )}
         {campaign ? <PersistentShortFormPlayer campaign={campaign} /> : null}
+        {imageOutputDropMenu === null || imageOutputDropMenuActions.length === 0 ? null : (
+          <div
+            className="canvas-output-drop-menu nodrag"
+            role="menu"
+            aria-label="Create next generation block from output"
+            data-placement="line-end"
+            style={{ left: imageOutputDropMenu.x, top: imageOutputDropMenu.y }}
+          >
+            <label className="canvas-output-drop-search">
+              <Search className="size-4" aria-hidden="true" />
+              <input
+                type="search"
+                aria-label="Filter next generation blocks"
+                placeholder="Search"
+                value={imageOutputDropMenuQuery}
+                onChange={(event) => {
+                  setImageOutputDropMenuQuery(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.stopPropagation();
+                    closeImageOutputDropMenu();
+                  }
+                }}
+              />
+            </label>
+            <div className="canvas-output-drop-menu-list" role="none">
+              {visibleImageOutputDropMenuActions.map((action) => {
+                const ActionIcon = imageOutputNextNodeActionIcons[action.kind];
+                const disabled = action.availability === "disabled";
+
+                return (
+                  <button
+                    key={action.kind}
+                    type="button"
+                    role="menuitem"
+                    className="canvas-output-drop-menu-item"
+                    data-next-node-kind={action.kind}
+                    data-provider-availability={action.availability}
+                    aria-disabled={disabled}
+                    disabled={disabled}
+                    title={action.disabledReason ?? action.description}
+                    onClick={() => {
+                      handleImageOutputNextNodeAction(
+                        imageOutputDropMenu.sourceNodeId,
+                        action.kind,
+                        imageOutputDropMenu.selectedResultAssetId,
+                      );
+                      closeImageOutputDropMenu();
+                    }}
+                  >
+                    <span className="canvas-output-drop-menu-icon" aria-hidden="true">
+                      <ActionIcon className="size-4" />
+                    </span>
+                    <span className="canvas-output-drop-menu-copy">
+                      <span>{action.label}</span>
+                      {action.disabledReason === null ? null : (
+                        <small>{action.disabledReason}</small>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+              {visibleImageOutputDropMenuActions.length === 0 ? (
+                <p className="canvas-output-drop-menu-empty" role="status">
+                  No matching blocks
+                </p>
+              ) : null}
+            </div>
+          </div>
+        )}
       </div>
 
       <section className="canvas-stage">
@@ -795,13 +930,73 @@ export function CreativeCanvasScreen({
               selectedNodeIdRef.current = node.id;
             }}
             onPaneClick={() => {
+              if (suppressImageOutputPaneClickRef.current) {
+                suppressImageOutputPaneClickRef.current = false;
+                return;
+              }
+
               selectedNodeIdRef.current = null;
+              closeImageOutputDropMenu();
+            }}
+            onConnectStart={(_, connection) => {
+              pendingImageOutputConnectionRef.current = null;
+              closeImageOutputDropMenu();
+
+              if (
+                connection.handleType !== "source" ||
+                connection.handleId !== "outputs.generated_image_asset" ||
+                connection.nodeId === null
+              ) {
+                return;
+              }
+
+              const sourceNode = canvasSnapshotRef.current.nodes.find(
+                (node) => node.id === connection.nodeId,
+              );
+              const properties = sourceNode?.data.properties;
+
+              if (
+                !isImageGenerationNodeProperties(properties) ||
+                !properties.uiState.outputConnectionReady ||
+                properties.uiState.selectedResultAssetId === null
+              ) {
+                return;
+              }
+
+              pendingImageOutputConnectionRef.current = {
+                sourceNodeId: connection.nodeId,
+                selectedResultAssetId: properties.uiState.selectedResultAssetId,
+              };
+            }}
+            onConnectEnd={(event, connectionState) => {
+              const pendingConnection = pendingImageOutputConnectionRef.current;
+              pendingImageOutputConnectionRef.current = null;
+
+              if (pendingConnection === null || connectionState.isValid) {
+                return;
+              }
+
+              const eventPoint = getConnectionEventPoint(event);
+
+              if (eventPoint === null) {
+                return;
+              }
+
+              setImageOutputDropMenu({
+                ...pendingConnection,
+                x: eventPoint.x,
+                y: eventPoint.y,
+              });
+              suppressImageOutputPaneClickRef.current = true;
+              window.setTimeout(() => {
+                suppressImageOutputPaneClickRef.current = false;
+              }, 0);
             }}
             fitView
             fitViewOptions={{ padding: 0.24 }}
             minZoom={0.45}
             maxZoom={1.35}
-            nodesConnectable={false}
+            nodesConnectable
             nodesDraggable
             elementsSelectable
             proOptions={{ hideAttribution: true }}
@@ -848,21 +1043,26 @@ function ImageGenerationInspectorPanel({
         ["Format", capability.schemaAdapter.outputFormatField ?? "Not supported"],
       ]
     : [];
-  const compatibilityWarnings = docsMetadata.compatibilityWarnings;
+  const statusView = resolveImageGenerationNodeStatusView(
+    resolveImageGenerationNodeStatus({
+      selected: true,
+      uiState: details.uiState,
+    }),
+  );
 
   return (
     <aside
       className="image-generation-inspector-panel nodrag"
-      aria-label="Image generation inspector and docs"
+      aria-label="Image Block setup"
       data-node-id={nodeId}
       data-panel-state="open"
     >
       <header className="image-generation-inspector-header">
-        <span>Image Block</span>
+        <span>Image setup</span>
         <strong>{title}</strong>
         <button
           type="button"
-          aria-label="Close image inspector and docs"
+          aria-label="Close Image Block setup"
           onClick={() => onClose(nodeId)}
         >
           <X className="size-4" />
@@ -872,9 +1072,9 @@ function ImageGenerationInspectorPanel({
       <div className="image-generation-inspector-grid">
         <section
           className="image-generation-inspector-section"
-          aria-label="Provider model settings"
+          aria-label="Image Block model summary"
         >
-          <h2>Provider settings</h2>
+          <h2>Model summary</h2>
           <dl>
             <div>
               <dt>Provider</dt>
@@ -885,50 +1085,74 @@ function ImageGenerationInspectorPanel({
               <dd>{docsMetadata.selectedModel.name}</dd>
             </div>
             <div>
-              <dt>Credential status</dt>
-              <dd
-                className="image-generation-credential-status"
-                data-credential-status={docsMetadata.provider.credentialStatus.state}
-                aria-label={`Credential status: ${docsMetadata.provider.credentialStatus.label}`}
-              >
-                <span>{docsMetadata.provider.credentialStatus.label}</span>
+              <dt>Status</dt>
+              <dd>{statusView.label}</dd>
+            </div>
+          </dl>
+
+        </section>
+
+        <section
+          className="image-generation-docs-panel"
+          aria-label="Image Block inputs"
+        >
+          <h2>Inputs</h2>
+          <ul className="image-generation-docs-required-inputs">
+            {docsMetadata.requiredInputs.length === 0 ? (
+              <li>
+                <span>Prompt</span>
+                <strong>Describe what to create</strong>
+                <em>Text</em>
+              </li>
+            ) : (
+              docsMetadata.requiredInputs.map((control) => (
+                <li key={control.id}>
+                  <span>{control.label}</span>
+                  <strong>{control.required ? "Needed to generate" : "Optional"}</strong>
+                  <em>{control.kind.replaceAll("_", " ")}</em>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
+
+        <section
+          className="image-generation-inspector-section"
+          aria-label="Image Block creative controls"
+        >
+          <h2>Creative controls</h2>
+          <ul className="image-generation-inspector-list">
+            {inspectorControls.map((control) => (
+              <li key={control.id}>
+                <span>{control.label}</span>
+                <strong>
+                  {control.options.length > 0
+                    ? control.options.join(", ")
+                    : formatImageGenerationControlDefaultValue(control.defaultValue)}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      <details className="image-generation-developer-details">
+        <summary>Developer details</summary>
+        <section aria-label="Provider diagnostics">
+          <h2>Provider diagnostics</h2>
+          <dl>
+            <div>
+              <dt>Credential env</dt>
+              <dd>
                 <code>
                   {docsMetadata.provider.credentialStatus.envName ??
                     "No provider env var"}
                 </code>
-                <small>{docsMetadata.provider.credentialStatus.message}</small>
               </dd>
             </div>
             <div>
               <dt>Frame source</dt>
               <dd>{details.frame.source === "user-resize" ? "Manual resize" : "Aspect ratio"}</dd>
-            </div>
-          </dl>
-
-          <h2>Inspector controls</h2>
-          <ul className="image-generation-inspector-list">
-            {inspectorControls.map((control) => (
-              <li key={control.id}>
-                <span>{control.kind.replaceAll("_", " ")}</span>
-                <strong>{control.options?.join(", ") ?? String(control.defaultValue)}</strong>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section
-          className="image-generation-docs-panel"
-          aria-label="Provider schema and docs"
-        >
-          <h2>Provider model docs</h2>
-          <dl>
-            <div>
-              <dt>Provider</dt>
-              <dd>{docsMetadata.provider.name}</dd>
-            </div>
-            <div>
-              <dt>Selected model</dt>
-              <dd>{docsMetadata.selectedModel.name}</dd>
             </div>
             <div>
               <dt>Supported ratios</dt>
@@ -939,52 +1163,10 @@ function ImageGenerationInspectorPanel({
               </dd>
             </div>
           </dl>
+        </section>
 
-          <h2>Required inputs</h2>
-          <ul className="image-generation-docs-required-inputs">
-            {docsMetadata.requiredInputs.length === 0 ? (
-              <li>
-                <span>No required inputs documented</span>
-                <strong>Check provider schema</strong>
-              </li>
-            ) : (
-              docsMetadata.requiredInputs.map((control) => (
-                <li key={control.id}>
-                  <span>{control.label}</span>
-                  <strong>{control.schemaKey}</strong>
-                  <em>{control.kind.replaceAll("_", " ")}</em>
-                </li>
-              ))
-            )}
-          </ul>
-
-          <h2>Optional controls</h2>
-          <ul className="image-generation-docs-optional-controls">
-            {docsMetadata.optionalControls.length === 0 ? (
-              <li>
-                <span>No optional controls documented</span>
-                <strong>Check provider schema</strong>
-              </li>
-            ) : (
-              docsMetadata.optionalControls.map((control) => {
-                const controlValue =
-                  control.options.length > 0
-                    ? control.options.join(", ")
-                    : formatImageGenerationControlDefaultValue(control.defaultValue);
-
-                return (
-                  <li key={control.id}>
-                    <span>{control.label}</span>
-                    <strong>{control.schemaKey}</strong>
-                    <em>{controlValue}</em>
-                    <small>{control.visibility}</small>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-
-          <h2>Schema adapter</h2>
+        <section aria-label="Adapter mapping">
+          <h2>Adapter mapping</h2>
           <dl>
             {schemaRows.map(([label, value]) => (
               <div key={label}>
@@ -993,17 +1175,19 @@ function ImageGenerationInspectorPanel({
               </div>
             ))}
           </dl>
+        </section>
 
-          <h2>Compatibility</h2>
+        <section aria-label="Model limits">
+          <h2>Model limits</h2>
           <ul className="image-generation-inspector-list">
-            {compatibilityWarnings.length === 0 ? (
+            {docsMetadata.compatibilityWarnings.length === 0 ? (
               <li>
-                <span>Model limits</span>
+                <span>Current setup</span>
                 <strong>Ready for current settings</strong>
               </li>
             ) : (
-              compatibilityWarnings.map((warning) => (
-                <li key={warning} data-warning="compatibility">
+              docsMetadata.compatibilityWarnings.map((warning) => (
+                <li key={warning} data-warning="model-limit">
                   <span>Warning</span>
                   <strong>{warning}</strong>
                 </li>
@@ -1011,7 +1195,7 @@ function ImageGenerationInspectorPanel({
             )}
           </ul>
         </section>
-      </div>
+      </details>
     </aside>
   );
 }
@@ -1152,6 +1336,28 @@ function formatDuration(controlModel: CampaignShortFormContentControlModel) {
   }
 
   return `${Math.round(durationSeconds)}s`;
+}
+
+function getCampaignBriefReadiness(campaign: CampaignDraft): {
+  completed: number;
+  total: number;
+  label: string;
+} {
+  const requiredValues = [
+    campaign.title,
+    campaign.objective,
+    campaign.targetAudience.interests,
+    campaign.productOffer.offer.summary,
+    campaign.tracking.measurementGoals[0]?.name ?? "",
+  ];
+  const completed = requiredValues.filter((value) => value.trim().length > 0).length;
+  const total = requiredValues.length;
+
+  return {
+    completed,
+    total,
+    label: completed === total ? "Ready to create" : "Draft brief",
+  };
 }
 
 function CampaignMetadataPanel({
@@ -1803,12 +2009,20 @@ function CampaignMetadataPanel({
     setCampaignSpecValidationErrors([]);
     onCampaignChange?.(result.campaign);
   };
+  const briefReadiness = getCampaignBriefReadiness(campaign);
 
   return (
-    <aside className="campaign-metadata-panel" aria-label="Campaign metadata">
+    <aside className="campaign-metadata-panel" aria-label="Campaign brief">
       <div className="metadata-panel-header">
-        <span>CAMPAIGN SETUP</span>
-        <strong>Required metadata</strong>
+        <span>BRIEF</span>
+        <strong>Campaign basics</strong>
+      </div>
+
+      <div className="campaign-brief-readiness" aria-label="Campaign brief readiness">
+        <span>
+          {briefReadiness.completed}/{briefReadiness.total} ready
+        </span>
+        <strong>{briefReadiness.label}</strong>
       </div>
 
       <div className="metadata-field-stack">
@@ -1829,7 +2043,7 @@ function CampaignMetadataPanel({
         />
       </div>
 
-      <MetadataSection title="Target audience">
+      <MetadataSection title="Audience">
         {CAMPAIGN_TARGET_AUDIENCE_FIELDS.map((field) => (
           <MetadataTextField
             key={field}
@@ -1842,7 +2056,7 @@ function CampaignMetadataPanel({
         ))}
       </MetadataSection>
 
-      <MetadataSection title="Product details">
+      <MetadataSection title="Offer product">
         {(Object.keys(productFieldLabels) as Array<keyof typeof productFieldLabels>).map(
           (field) => (
             <MetadataTextField
@@ -1953,7 +2167,7 @@ function CampaignMetadataPanel({
         />
       </MetadataSection>
 
-      <MetadataSection title="Publishing configuration">
+      <MetadataSection title="Channels">
         <MetadataSelect
           id="publishing-type"
           label="Channel type"
@@ -2005,18 +2219,6 @@ function CampaignMetadataPanel({
           required
         />
         <MetadataTextField
-          id="publishing-provider-plugin-id"
-          label="Provider plugin"
-          value={publishingDraft.providerPluginId}
-          onChange={(value) =>
-            setPublishingDraft((currentDraft) => ({
-              ...currentDraft,
-              providerPluginId: value,
-            }))
-          }
-          placeholder="plugin.dm.instagram"
-        />
-        <MetadataTextField
           id="publishing-account-handle"
           label="Account handle"
           value={publishingDraft.accountHandle}
@@ -2027,17 +2229,6 @@ function CampaignMetadataPanel({
             }))
           }
           placeholder="@owncanvas"
-        />
-        <MetadataTextField
-          id="publishing-account-id"
-          label="Account ID"
-          value={publishingDraft.accountId}
-          onChange={(value) =>
-            setPublishingDraft((currentDraft) => ({
-              ...currentDraft,
-              accountId: value,
-            }))
-          }
         />
         <MetadataTextField
           id="publishing-placement"
@@ -2064,18 +2255,6 @@ function CampaignMetadataPanel({
           }
           placeholder="https://go.example.com/creator-kit"
           required
-        />
-        <MetadataTextField
-          id="publishing-landing-page-id"
-          label="Landing page ID"
-          value={publishingDraft.landingPageId}
-          onChange={(value) =>
-            setPublishingDraft((currentDraft) => ({
-              ...currentDraft,
-              landingPageId: value,
-            }))
-          }
-          placeholder="landing_creator_kit"
         />
         <MetadataSelect
           id="publishing-schedule-mode"
@@ -2114,53 +2293,6 @@ function CampaignMetadataPanel({
           placeholder="America/Los_Angeles"
         />
         <MetadataTextField
-          id="publishing-utm-source"
-          label="UTM source"
-          value={publishingDraft.utmSource}
-          onChange={(value) =>
-            setPublishingDraft((currentDraft) => ({
-              ...currentDraft,
-              utmSource: value,
-            }))
-          }
-          required
-        />
-        <MetadataTextField
-          id="publishing-utm-medium"
-          label="UTM medium"
-          value={publishingDraft.utmMedium}
-          onChange={(value) =>
-            setPublishingDraft((currentDraft) => ({
-              ...currentDraft,
-              utmMedium: value,
-            }))
-          }
-          required
-        />
-        <MetadataTextField
-          id="publishing-utm-campaign"
-          label="UTM campaign"
-          value={publishingDraft.utmCampaign}
-          onChange={(value) =>
-            setPublishingDraft((currentDraft) => ({
-              ...currentDraft,
-              utmCampaign: value,
-            }))
-          }
-          required
-        />
-        <MetadataTextField
-          id="publishing-utm-content"
-          label="UTM content"
-          value={publishingDraft.utmContent}
-          onChange={(value) =>
-            setPublishingDraft((currentDraft) => ({
-              ...currentDraft,
-              utmContent: value,
-            }))
-          }
-        />
-        <MetadataTextField
           id="publishing-conversion-event"
           label="Conversion event"
           value={publishingDraft.conversionEvent}
@@ -2189,8 +2321,7 @@ function CampaignMetadataPanel({
                   {channel.platform} / {channel.type} / {channel.placement}
                 </small>
                 <small>
-                  {channel.tracking.utmSource} / {channel.tracking.utmMedium} /{" "}
-                  {channel.tracking.conversionEvent}
+                  {channel.status} / {channel.tracking.conversionEvent}
                 </small>
                 <button
                   type="button"
@@ -2205,293 +2336,7 @@ function CampaignMetadataPanel({
         </div>
       </MetadataSection>
 
-      <MetadataSection title="Landing behavior">
-        <MetadataSelect
-          id="landing-behavior-mode"
-          label="Mode"
-          value={landingPageBehavior.mode}
-          options={CAMPAIGN_LANDING_PAGE_BEHAVIOR_MODES}
-          onChange={(value) =>
-            updateLandingPageBehaviorMode(
-              value as CampaignLandingPageBehaviorMode,
-            )
-          }
-        />
-        <div className="metadata-mode-summary metadata-field-wide">
-          <span
-            data-active={landingPageBehavior.preserveInlineContext}
-          >
-            Inline context
-          </span>
-          <span
-            data-active={landingPageBehavior.allowTraditionalRedirect}
-          >
-            Redirect allowed
-          </span>
-        </div>
-        <MetadataSelect
-          id="landing-navigation-visibility"
-          label="Navigation visibility"
-          value={landingPageNavigation.visibility}
-          options={CAMPAIGN_LANDING_PAGE_ELEMENT_VISIBILITY_OPTIONS}
-          onChange={(value) =>
-            updateLandingPageNavigation({
-              visibility: value as CampaignLandingPageElementVisibility,
-            })
-          }
-        />
-        <MetadataSelect
-          id="landing-navigation-placement"
-          label="Navigation placement"
-          value={landingPageNavigation.placement}
-          options={CAMPAIGN_LANDING_PAGE_NAVIGATION_PLACEMENT_OPTIONS}
-          onChange={(value) =>
-            updateLandingPageNavigation({
-              placement: value as CampaignLandingPageNavigationPlacement,
-            })
-          }
-        />
-        <MetadataSelect
-          id="landing-navigation-timing"
-          label="Navigation timing"
-          value={landingPageNavigation.timing}
-          options={CAMPAIGN_LANDING_PAGE_ELEMENT_TIMING_OPTIONS}
-          onChange={(value) =>
-            updateLandingPageNavigation({
-              timing: value as CampaignLandingPageElementTiming,
-            })
-          }
-        />
-        <MetadataSelect
-          id="landing-navigation-interruption"
-          label="Navigation interruption"
-          value={landingPageNavigation.interruptionBehavior}
-          options={CAMPAIGN_LANDING_PAGE_PLAYBACK_INTERRUPTION_OPTIONS}
-          onChange={(value) =>
-            updateLandingPageNavigation({
-              interruptionBehavior:
-                value as CampaignLandingPagePlaybackInterruptionBehavior,
-            })
-          }
-        />
-        <MetadataTextField
-          id="landing-conversion-label"
-          label="Conversion label"
-          value={landingPageConversionElement.label}
-          onChange={(value) =>
-            updateLandingPageConversionElement({ label: value })
-          }
-          placeholder="Open offer"
-        />
-        <MetadataTextField
-          id="landing-conversion-url"
-          label="Conversion URL"
-          value={landingPageConversionElement.destinationUrl}
-          onChange={(value) =>
-            updateLandingPageConversionElement({ destinationUrl: value })
-          }
-          placeholder="https://shop.example.com/checkout"
-        />
-        <MetadataSelect
-          id="landing-conversion-placement"
-          label="Conversion placement"
-          value={landingPageConversionElement.placement}
-          options={CAMPAIGN_LANDING_PAGE_CONVERSION_PLACEMENT_OPTIONS}
-          onChange={(value) =>
-            updateLandingPageConversionElement({
-              placement: value as CampaignLandingPageConversionElementPlacement,
-            })
-          }
-        />
-        <MetadataSelect
-          id="landing-conversion-timing"
-          label="Conversion timing"
-          value={landingPageConversionElement.timing}
-          options={CAMPAIGN_LANDING_PAGE_ELEMENT_TIMING_OPTIONS}
-          onChange={(value) =>
-            updateLandingPageConversionElement({
-              timing: value as CampaignLandingPageElementTiming,
-            })
-          }
-        />
-        <MetadataSelect
-          id="landing-conversion-interruption"
-          label="Conversion interruption"
-          value={landingPageConversionElement.interruptionBehavior}
-          options={CAMPAIGN_LANDING_PAGE_PLAYBACK_INTERRUPTION_OPTIONS}
-          onChange={(value) =>
-            updateLandingPageConversionElement({
-              interruptionBehavior:
-                value as CampaignLandingPagePlaybackInterruptionBehavior,
-            })
-          }
-        />
-      </MetadataSection>
-
-      <MetadataSection title="Measurement goals">
-        <MetadataTextField
-          id="measurement-target-metric"
-          label="Metric name"
-          value={measurementGoalDraft.name}
-          onChange={(value) =>
-            setMeasurementGoalDraft((currentDraft) => ({
-              ...currentDraft,
-              name: value,
-            }))
-          }
-          placeholder="Purchase conversion rate"
-          required
-        />
-        <MetadataTextField
-          id="measurement-target-value"
-          label="Target"
-          type="number"
-          value={measurementGoalDraft.target}
-          onChange={(value) =>
-            setMeasurementGoalDraft((currentDraft) => ({
-              ...currentDraft,
-              target: value,
-            }))
-          }
-          placeholder="3.5"
-        />
-        <MetadataTextField
-          id="measurement-unit"
-          label="Unit"
-          value={measurementGoalDraft.unit}
-          onChange={(value) =>
-            setMeasurementGoalDraft((currentDraft) => ({
-              ...currentDraft,
-              unit: value,
-            }))
-          }
-          placeholder="percent"
-          required
-        />
-        <MetadataTextField
-          id="measurement-starts-at"
-          label="Reporting starts"
-          value={measurementGoalDraft.startsAt}
-          onChange={(value) =>
-            setMeasurementGoalDraft((currentDraft) => ({
-              ...currentDraft,
-              startsAt: value,
-            }))
-          }
-          placeholder="2026-05-12T00:00:00.000Z"
-          required
-        />
-        <MetadataTextField
-          id="measurement-ends-at"
-          label="Reporting ends"
-          value={measurementGoalDraft.endsAt}
-          onChange={(value) =>
-            setMeasurementGoalDraft((currentDraft) => ({
-              ...currentDraft,
-              endsAt: value,
-            }))
-          }
-          placeholder="2026-05-19T00:00:00.000Z"
-          required
-        />
-        <MetadataTextField
-          id="measurement-timezone"
-          label="Timezone"
-          value={measurementGoalDraft.timezone}
-          onChange={(value) =>
-            setMeasurementGoalDraft((currentDraft) => ({
-              ...currentDraft,
-              timezone: value,
-            }))
-          }
-          placeholder="America/Los_Angeles"
-          required
-        />
-        <MetadataTextArea
-          id="measurement-success-criteria"
-          label="Success criteria"
-          value={measurementGoalDraft.successCriteria}
-          onChange={(value) =>
-            setMeasurementGoalDraft((currentDraft) => ({
-              ...currentDraft,
-              successCriteria: value,
-            }))
-          }
-          placeholder="Purchase conversion rate reaches the target with tracked checkout attribution"
-          required
-        />
-        <div className="metadata-asset-actions metadata-field-wide">
-          <button type="button" onClick={addMeasurementGoal}>
-            <Target className="size-4" />
-            Add goal
-          </button>
-          <button
-            type="button"
-            onClick={saveSelectedMeasurementGoalEdits}
-            disabled={!selectedMeasurementGoal}
-          >
-            <Target className="size-4" />
-            Save goal
-          </button>
-        </div>
-        <div className="metadata-asset-list metadata-field-wide">
-          {measurementGoals.length === 0 ? (
-            <span>No measurement goals</span>
-          ) : (
-            measurementGoals.map((goal) => (
-              <div key={goal.id} className="metadata-asset-row">
-                <strong>{goal.name}</strong>
-                <small>
-                  {goal.target ?? "No target"} {goal.unit} /{" "}
-                  {goal.reportingTimeframe.startsAt} to{" "}
-                  {goal.reportingTimeframe.endsAt}
-                </small>
-                <small>{goal.successCriteria}</small>
-                <button
-                  type="button"
-                  onClick={() => loadMeasurementGoalForEditing(goal)}
-                >
-                  <Target className="size-4" />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeMeasurementGoal(goal.id)}
-                >
-                  <Trash2 className="size-4" />
-                  Remove
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </MetadataSection>
-
-      <MetadataSection title="Campaign JSON spec">
-        <MetadataJsonArea
-          id="campaign-spec-json"
-          label="Canonical spec"
-          value={campaignSpecJson}
-          onChange={updateCampaignSpecJson}
-          invalid={campaignSpecValidationErrors.length > 0}
-        />
-        {campaignSpecValidationErrors.length > 0 ? (
-          <div
-            className="metadata-validation-errors metadata-field-wide"
-            role="status"
-            aria-live="polite"
-          >
-            {campaignSpecValidationErrors.map((error) => (
-              <p key={`${error.path}-${error.code}`}>
-                <strong>{error.path}</strong>
-                <span>{error.message}</span>
-              </p>
-            ))}
-          </div>
-        ) : null}
-      </MetadataSection>
-
-      <MetadataSection title="Campaign assets">
+      <MetadataSection title="Assets">
         <MetadataTextField
           id="asset-title"
           label="Asset title"
@@ -2751,6 +2596,380 @@ function CampaignMetadataPanel({
           </div>
         ) : null}
       </MetadataSection>
+
+      <MetadataSection title="Goals">
+        <MetadataTextField
+          id="measurement-target-metric"
+          label="Metric name"
+          value={measurementGoalDraft.name}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              name: value,
+            }))
+          }
+          placeholder="Purchase conversion rate"
+          required
+        />
+        <MetadataTextField
+          id="measurement-target-value"
+          label="Target"
+          type="number"
+          value={measurementGoalDraft.target}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              target: value,
+            }))
+          }
+          placeholder="3.5"
+        />
+        <MetadataTextField
+          id="measurement-unit"
+          label="Unit"
+          value={measurementGoalDraft.unit}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              unit: value,
+            }))
+          }
+          placeholder="percent"
+          required
+        />
+        <MetadataTextField
+          id="measurement-starts-at"
+          label="Reporting starts"
+          value={measurementGoalDraft.startsAt}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              startsAt: value,
+            }))
+          }
+          placeholder="2026-05-12T00:00:00.000Z"
+          required
+        />
+        <MetadataTextField
+          id="measurement-ends-at"
+          label="Reporting ends"
+          value={measurementGoalDraft.endsAt}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              endsAt: value,
+            }))
+          }
+          placeholder="2026-05-19T00:00:00.000Z"
+          required
+        />
+        <MetadataTextField
+          id="measurement-timezone"
+          label="Timezone"
+          value={measurementGoalDraft.timezone}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              timezone: value,
+            }))
+          }
+          placeholder="America/Los_Angeles"
+          required
+        />
+        <MetadataTextArea
+          id="measurement-success-criteria"
+          label="Success criteria"
+          value={measurementGoalDraft.successCriteria}
+          onChange={(value) =>
+            setMeasurementGoalDraft((currentDraft) => ({
+              ...currentDraft,
+              successCriteria: value,
+            }))
+          }
+          placeholder="Purchase conversion rate reaches the target with tracked checkout attribution"
+          required
+        />
+        <div className="metadata-asset-actions metadata-field-wide">
+          <button type="button" onClick={addMeasurementGoal}>
+            <Target className="size-4" />
+            Add goal
+          </button>
+          <button
+            type="button"
+            onClick={saveSelectedMeasurementGoalEdits}
+            disabled={!selectedMeasurementGoal}
+          >
+            <Target className="size-4" />
+            Save goal
+          </button>
+        </div>
+        <div className="metadata-asset-list metadata-field-wide">
+          {measurementGoals.length === 0 ? (
+            <span>No measurement goals</span>
+          ) : (
+            measurementGoals.map((goal) => (
+              <div key={goal.id} className="metadata-asset-row">
+                <strong>{goal.name}</strong>
+                <small>
+                  {goal.target ?? "No target"} {goal.unit} /{" "}
+                  {goal.reportingTimeframe.startsAt} to{" "}
+                  {goal.reportingTimeframe.endsAt}
+                </small>
+                <small>{goal.successCriteria}</small>
+                <button
+                  type="button"
+                  onClick={() => loadMeasurementGoalForEditing(goal)}
+                >
+                  <Target className="size-4" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeMeasurementGoal(goal.id)}
+                >
+                  <Trash2 className="size-4" />
+                  Remove
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </MetadataSection>
+
+      <details className="metadata-developer-details">
+        <summary>Developer details</summary>
+        <MetadataSection title="Channel routing">
+          <MetadataTextField
+            id="publishing-provider-plugin-id"
+            label="Provider plugin"
+            value={publishingDraft.providerPluginId}
+            onChange={(value) =>
+              setPublishingDraft((currentDraft) => ({
+                ...currentDraft,
+                providerPluginId: value,
+              }))
+            }
+            placeholder="plugin.dm.instagram"
+          />
+          <MetadataTextField
+            id="publishing-account-id"
+            label="Account ID"
+            value={publishingDraft.accountId}
+            onChange={(value) =>
+              setPublishingDraft((currentDraft) => ({
+                ...currentDraft,
+                accountId: value,
+              }))
+            }
+          />
+          <MetadataTextField
+            id="publishing-landing-page-id"
+            label="Landing page ID"
+            value={publishingDraft.landingPageId}
+            onChange={(value) =>
+              setPublishingDraft((currentDraft) => ({
+                ...currentDraft,
+                landingPageId: value,
+              }))
+            }
+            placeholder="landing_creator_kit"
+          />
+        </MetadataSection>
+        <MetadataSection title="Channel attribution">
+          <MetadataTextField
+            id="publishing-utm-source"
+            label="UTM source"
+            value={publishingDraft.utmSource}
+            onChange={(value) =>
+              setPublishingDraft((currentDraft) => ({
+                ...currentDraft,
+                utmSource: value,
+              }))
+            }
+            required
+          />
+          <MetadataTextField
+            id="publishing-utm-medium"
+            label="UTM medium"
+            value={publishingDraft.utmMedium}
+            onChange={(value) =>
+              setPublishingDraft((currentDraft) => ({
+                ...currentDraft,
+                utmMedium: value,
+              }))
+            }
+            required
+          />
+          <MetadataTextField
+            id="publishing-utm-campaign"
+            label="UTM campaign"
+            value={publishingDraft.utmCampaign}
+            onChange={(value) =>
+              setPublishingDraft((currentDraft) => ({
+                ...currentDraft,
+                utmCampaign: value,
+              }))
+            }
+            required
+          />
+          <MetadataTextField
+            id="publishing-utm-content"
+            label="UTM content"
+            value={publishingDraft.utmContent}
+            onChange={(value) =>
+              setPublishingDraft((currentDraft) => ({
+                ...currentDraft,
+                utmContent: value,
+              }))
+            }
+          />
+        </MetadataSection>
+        <MetadataSection title="Landing behavior">
+          <MetadataSelect
+            id="landing-behavior-mode"
+            label="Mode"
+            value={landingPageBehavior.mode}
+            options={CAMPAIGN_LANDING_PAGE_BEHAVIOR_MODES}
+            onChange={(value) =>
+              updateLandingPageBehaviorMode(
+                value as CampaignLandingPageBehaviorMode,
+              )
+            }
+          />
+          <div className="metadata-mode-summary metadata-field-wide">
+            <span
+              data-active={landingPageBehavior.preserveInlineContext}
+            >
+              Inline context
+            </span>
+            <span
+              data-active={landingPageBehavior.allowTraditionalRedirect}
+            >
+              Redirect allowed
+            </span>
+          </div>
+          <MetadataSelect
+            id="landing-navigation-visibility"
+            label="Navigation visibility"
+            value={landingPageNavigation.visibility}
+            options={CAMPAIGN_LANDING_PAGE_ELEMENT_VISIBILITY_OPTIONS}
+            onChange={(value) =>
+              updateLandingPageNavigation({
+                visibility: value as CampaignLandingPageElementVisibility,
+              })
+            }
+          />
+          <MetadataSelect
+            id="landing-navigation-placement"
+            label="Navigation placement"
+            value={landingPageNavigation.placement}
+            options={CAMPAIGN_LANDING_PAGE_NAVIGATION_PLACEMENT_OPTIONS}
+            onChange={(value) =>
+              updateLandingPageNavigation({
+                placement: value as CampaignLandingPageNavigationPlacement,
+              })
+            }
+          />
+          <MetadataSelect
+            id="landing-navigation-timing"
+            label="Navigation timing"
+            value={landingPageNavigation.timing}
+            options={CAMPAIGN_LANDING_PAGE_ELEMENT_TIMING_OPTIONS}
+            onChange={(value) =>
+              updateLandingPageNavigation({
+                timing: value as CampaignLandingPageElementTiming,
+              })
+            }
+          />
+          <MetadataSelect
+            id="landing-navigation-interruption"
+            label="Navigation interruption"
+            value={landingPageNavigation.interruptionBehavior}
+            options={CAMPAIGN_LANDING_PAGE_PLAYBACK_INTERRUPTION_OPTIONS}
+            onChange={(value) =>
+              updateLandingPageNavigation({
+                interruptionBehavior:
+                  value as CampaignLandingPagePlaybackInterruptionBehavior,
+              })
+            }
+          />
+          <MetadataTextField
+            id="landing-conversion-label"
+            label="Conversion label"
+            value={landingPageConversionElement.label}
+            onChange={(value) =>
+              updateLandingPageConversionElement({ label: value })
+            }
+            placeholder="Open offer"
+          />
+          <MetadataTextField
+            id="landing-conversion-url"
+            label="Conversion URL"
+            value={landingPageConversionElement.destinationUrl}
+            onChange={(value) =>
+              updateLandingPageConversionElement({ destinationUrl: value })
+            }
+            placeholder="https://shop.example.com/checkout"
+          />
+          <MetadataSelect
+            id="landing-conversion-placement"
+            label="Conversion placement"
+            value={landingPageConversionElement.placement}
+            options={CAMPAIGN_LANDING_PAGE_CONVERSION_PLACEMENT_OPTIONS}
+            onChange={(value) =>
+              updateLandingPageConversionElement({
+                placement: value as CampaignLandingPageConversionElementPlacement,
+              })
+            }
+          />
+          <MetadataSelect
+            id="landing-conversion-timing"
+            label="Conversion timing"
+            value={landingPageConversionElement.timing}
+            options={CAMPAIGN_LANDING_PAGE_ELEMENT_TIMING_OPTIONS}
+            onChange={(value) =>
+              updateLandingPageConversionElement({
+                timing: value as CampaignLandingPageElementTiming,
+              })
+            }
+          />
+          <MetadataSelect
+            id="landing-conversion-interruption"
+            label="Conversion interruption"
+            value={landingPageConversionElement.interruptionBehavior}
+            options={CAMPAIGN_LANDING_PAGE_PLAYBACK_INTERRUPTION_OPTIONS}
+            onChange={(value) =>
+              updateLandingPageConversionElement({
+                interruptionBehavior:
+                  value as CampaignLandingPagePlaybackInterruptionBehavior,
+              })
+            }
+          />
+        </MetadataSection>
+        <MetadataSection title="Source JSON">
+          <MetadataJsonArea
+            id="campaign-spec-json"
+            label="Canvas source"
+            value={campaignSpecJson}
+            onChange={updateCampaignSpecJson}
+            invalid={campaignSpecValidationErrors.length > 0}
+          />
+          {campaignSpecValidationErrors.length > 0 ? (
+            <div
+              className="metadata-validation-errors metadata-field-wide"
+              role="status"
+              aria-live="polite"
+            >
+              {campaignSpecValidationErrors.map((error) => (
+                <p key={`${error.path}-${error.code}`}>
+                  <strong>{error.path}</strong>
+                  <span>{error.message}</span>
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </MetadataSection>
+      </details>
     </aside>
   );
 }
@@ -2776,7 +2995,7 @@ function MetadataTextField({
   value,
   onChange,
   placeholder,
-  required,
+  required = false,
   type = "text",
 }: {
   id: string;
@@ -2789,16 +3008,15 @@ function MetadataTextField({
 }) {
   return (
     <label className="metadata-field" htmlFor={id}>
-      <span>
-        {label}
-        {required ? <em>Required</em> : null}
-      </span>
+      <span>{label}</span>
       <input
         id={id}
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        required={required}
+        aria-required={required ? "true" : undefined}
       />
     </label>
   );
@@ -2841,7 +3059,7 @@ function MetadataTextArea({
   value,
   onChange,
   placeholder,
-  required,
+  required = false,
 }: {
   id: string;
   label: string;
@@ -2852,15 +3070,14 @@ function MetadataTextArea({
 }) {
   return (
     <label className="metadata-field metadata-field-wide" htmlFor={id}>
-      <span>
-        {label}
-        {required ? <em>Required</em> : null}
-      </span>
+      <span>{label}</span>
       <textarea
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        required={required}
+        aria-required={required ? "true" : undefined}
         rows={3}
       />
     </label>
@@ -3017,10 +3234,10 @@ function GenerationPalette({
   onAddBlock: (kind: GenerationBlockKind) => void;
 }) {
   return (
-    <section className="generation-palette canvas-generation-palette" aria-label="Generation Palette">
+    <section className="generation-palette canvas-generation-palette" aria-label="Campaign blocks">
       <div className="palette-header">
-        <span className="palette-kicker">GENERATION PALETTE</span>
-        <strong>Campaign blocks</strong>
+        <span className="palette-kicker">CREATE</span>
+        <strong>Blocks</strong>
       </div>
       <div className="mt-3 grid gap-2">
         {generationPalette.map((item) => {
@@ -3040,7 +3257,6 @@ function GenerationPalette({
                 <strong>{item.title}</strong>
                 <small>{item.description}</small>
               </span>
-              <span className="palette-badge">{item.badge}</span>
             </button>
           );
         })}
@@ -3189,11 +3405,13 @@ function GenerationBlockNode({
         type="target"
         position={Position.Left}
         className={cn("canvas-handle", `${data.tone}-handle`)}
+        isConnectable={false}
       />
       <Handle
         type="source"
         position={Position.Right}
         className={cn("canvas-handle", `${data.tone}-handle`)}
+        isConnectable={false}
       />
 
       <header className="generation-node-header">
@@ -3225,7 +3443,7 @@ function GenerationBlockNode({
       </div>
 
       <footer className="generation-node-footer">
-        <span>BYO provider</span>
+        <span>Ready to create</span>
         <button className="run-button" type="button">
           Run block
         </button>
@@ -3744,6 +3962,7 @@ function FreepikReferenceImageNode({
                   `${tone}-handle`,
                 )}
                 title={promptPort.label}
+                isConnectable={false}
               />
             )}
           </div>
@@ -3764,6 +3983,7 @@ function FreepikReferenceImageNode({
                   `${tone}-handle`,
                 )}
                 title={referencePort.label}
+                isConnectable={false}
               />
             </div>
           )}
@@ -3899,6 +4119,7 @@ function FreepikReferenceImageNode({
                 `${tone}-handle`,
               )}
               title={generatedPort.label}
+              isConnectable={canOpenNextNodeMenu}
             />
           </div>
         )}

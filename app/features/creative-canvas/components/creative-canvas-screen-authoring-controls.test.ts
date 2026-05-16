@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { createCampaignBlock, generationPalette } from "../model/creative-canvas.ts";
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
   IMAGE_GENERATION_DEFAULT_FRAME,
@@ -26,6 +27,40 @@ const creativeCanvasScreen = readFileSync(
 );
 const appCss = readFileSync(new URL("../../../app.css", import.meta.url), "utf8");
 
+function splitCampaignPanelDeveloperDetails(panelSource: string) {
+  const developerDetailsStart = panelSource.indexOf(
+    '<details className="metadata-developer-details">',
+  );
+  assert.notEqual(developerDetailsStart, -1);
+
+  const developerDetailsClose = "\n      </details>";
+  const developerDetailsEnd = panelSource.indexOf(
+    developerDetailsClose,
+    developerDetailsStart,
+  );
+  assert.notEqual(developerDetailsEnd, -1);
+
+  const developerDetailsSource = panelSource.slice(
+    developerDetailsStart,
+    developerDetailsEnd + developerDetailsClose.length,
+  );
+  const primaryPanelSource =
+    panelSource.slice(0, developerDetailsStart) +
+    panelSource.slice(developerDetailsEnd + developerDetailsClose.length);
+
+  return { developerDetailsSource, primaryPanelSource };
+}
+
+function getCssRuleBlock(selector: string) {
+  const start = appCss.indexOf(`${selector} {`);
+  assert.notEqual(start, -1, `${selector} rule should exist`);
+
+  const end = appCss.indexOf("\n}", start);
+  assert.notEqual(end, -1, `${selector} rule should close`);
+
+  return appCss.slice(start, end + 2);
+}
+
 test("campaign editor exposes landing navigation and conversion authoring controls", () => {
   assert.match(
     creativeCanvasScreen,
@@ -41,6 +76,271 @@ test("campaign editor exposes landing navigation and conversion authoring contro
   assert.match(creativeCanvasScreen, /id="landing-conversion-placement"/);
   assert.match(creativeCanvasScreen, /id="landing-conversion-timing"/);
   assert.match(creativeCanvasScreen, /id="landing-conversion-interruption"/);
+});
+
+test("campaign blocks palette uses concise creative labels without visible technical badges", () => {
+  const paletteStart = creativeCanvasScreen.indexOf("function GenerationPalette");
+  const paletteEnd = creativeCanvasScreen.indexOf("function CanvasStatus");
+  assert.notEqual(paletteStart, -1);
+  assert.notEqual(paletteEnd, -1);
+
+  const paletteSource = creativeCanvasScreen.slice(paletteStart, paletteEnd);
+
+  assert.deepEqual(
+    generationPalette.map((item) => ({
+      kind: item.kind,
+      title: item.title,
+      description: item.description,
+    })),
+    [
+      { kind: "text", title: "Copy", description: "Hooks, captions, prompts" },
+      { kind: "llm", title: "Prompt", description: "Structured drafts from a brief" },
+      { kind: "image", title: "Image", description: "Generate, edit, remix" },
+      { kind: "video", title: "Video", description: "Turn frames into motion" },
+      { kind: "voice", title: "Voice", description: "Narration variants" },
+      { kind: "agent", title: "Operator", description: "Repeat campaign steps" },
+      { kind: "dm", title: "DM", description: "Replies and comment triggers" },
+      { kind: "landing", title: "Landing", description: "Publishable offer page" },
+      { kind: "custom", title: "Plugin", description: "Add-on creative action" },
+    ],
+  );
+
+  assert.match(paletteSource, /aria-label="Campaign blocks"/);
+  assert.match(paletteSource, /<span className="palette-kicker">CREATE<\/span>/);
+  assert.match(paletteSource, /<strong>Blocks<\/strong>/);
+  assert.doesNotMatch(paletteSource, /GENERATION PALETTE|palette-badge|LLM Block|Agent Block|Custom Block/);
+  assert.doesNotMatch(appCss, /\.palette-item:hover/);
+});
+
+test("created generation blocks avoid console labels and provider setup copy", () => {
+  const createdBlocks = generationPalette.map((item, index) =>
+    createCampaignBlock(item.kind, index),
+  );
+  const createdBlockCopy = JSON.stringify(
+    createdBlocks.map((block) => ({
+      title: block.title,
+      subtitle: block.subtitle,
+      description: block.description,
+      contracts: block.contracts,
+    })),
+  );
+  const expectedTitles = [
+    "Copy",
+    "Prompt",
+    "Image Block",
+    "Video",
+    "Voice",
+    "Operator",
+    "DM",
+    "Landing",
+    "Plugin",
+  ];
+
+  assert.deepEqual(
+    createdBlocks.map((block) => block.title),
+    expectedTitles,
+  );
+
+  for (const block of createdBlocks) {
+    assert.doesNotMatch(
+      block.contracts.map((contract) => contract.label).join(" "),
+      /\b(?:MODEL|PLUGIN)\b/,
+    );
+    assert.doesNotMatch(
+      block.contracts.map((contract) => contract.state).join(" "),
+      /\bBYO\b/,
+    );
+  }
+
+  assert.doesNotMatch(
+    createdBlockCopy,
+    /LLM Block|Agent Block|Custom Block|MODEL|PLUGIN|BYO LLM account|BYO provider|Configured LLM provider|Agent plugin|Custom plugin/,
+  );
+
+  const generationNodeStart = creativeCanvasScreen.indexOf(
+    "function GenerationBlockNode",
+  );
+  const generationNodeEnd = creativeCanvasScreen.indexOf(
+    "function FreepikReferenceImageNode",
+  );
+  assert.notEqual(generationNodeStart, -1);
+  assert.notEqual(generationNodeEnd, -1);
+
+  const generationNodeSource = creativeCanvasScreen.slice(
+    generationNodeStart,
+    generationNodeEnd,
+  );
+  assert.match(generationNodeSource, /Ready to create/);
+  assert.doesNotMatch(
+    generationNodeSource,
+    /LLM Block|Agent Block|Custom Block|MODEL|PLUGIN|BYO LLM account|BYO provider|Configured LLM provider|Agent plugin|Custom plugin/,
+  );
+});
+
+test("right panel reads as a campaign brief instead of required metadata", () => {
+  const panelStart = creativeCanvasScreen.indexOf("function CampaignMetadataPanel");
+  const panelEnd = creativeCanvasScreen.indexOf("function MetadataSection");
+  assert.notEqual(panelStart, -1);
+  assert.notEqual(panelEnd, -1);
+
+  const panelSource = creativeCanvasScreen.slice(panelStart, panelEnd);
+  const { developerDetailsSource, primaryPanelSource } =
+    splitCampaignPanelDeveloperDetails(panelSource);
+
+  assert.match(panelSource, /aria-label="Campaign brief"/);
+  assert.match(panelSource, /<span>BRIEF<\/span>/);
+  assert.match(panelSource, /<strong>Campaign basics<\/strong>/);
+  assert.match(panelSource, /className="campaign-brief-readiness"/);
+  assert.match(panelSource, /<MetadataSection title="Audience">/);
+  assert.match(panelSource, /<MetadataSection title="Offer product">/);
+  assert.match(panelSource, /<MetadataSection title="Offer">/);
+  assert.match(panelSource, /<MetadataSection title="Channels">/);
+  assert.match(panelSource, /<MetadataSection title="Assets">/);
+  assert.match(panelSource, /<MetadataSection title="Goals">/);
+  assert.match(panelSource, /<details className="metadata-developer-details">/);
+  assert.match(panelSource, /<summary>Developer details<\/summary>/);
+  assert.doesNotMatch(panelSource, /Required metadata|Campaign JSON spec|Canonical spec/);
+  assert.doesNotMatch(
+    primaryPanelSource,
+    /label="Provider plugin"|label="Account ID"|label="UTM source"|label="UTM medium"|label="UTM campaign"|label="UTM content"|label="Landing page ID"|title="Landing behavior"|Redirect allowed|label="Navigation timing"|label="Navigation interruption"|label="Conversion timing"|label="Conversion interruption"/,
+  );
+  assert.match(developerDetailsSource, /label="Provider plugin"/);
+  assert.match(developerDetailsSource, /label="Account ID"/);
+  assert.match(developerDetailsSource, /label="Landing page ID"/);
+  assert.match(developerDetailsSource, /label="UTM source"/);
+  assert.match(developerDetailsSource, /label="UTM medium"/);
+  assert.match(developerDetailsSource, /label="UTM campaign"/);
+  assert.match(developerDetailsSource, /label="UTM content"/);
+  assert.match(developerDetailsSource, /<MetadataSection title="Landing behavior">/);
+  assert.match(developerDetailsSource, /Redirect allowed/);
+  assert.match(developerDetailsSource, /label="Navigation timing"/);
+  assert.match(developerDetailsSource, /label="Navigation interruption"/);
+  assert.match(developerDetailsSource, /label="Conversion timing"/);
+  assert.match(developerDetailsSource, /label="Conversion interruption"/);
+
+  const primarySectionOrder = [
+    '<MetadataSection title="Audience">',
+    '<MetadataSection title="Offer product">',
+    '<MetadataSection title="Offer">',
+    '<MetadataSection title="Channels">',
+    '<MetadataSection title="Assets">',
+    '<MetadataSection title="Goals">',
+  ];
+  let previousSectionIndex = -1;
+
+  for (const section of primarySectionOrder) {
+    const sectionIndex = panelSource.indexOf(section);
+    assert.ok(
+      sectionIndex > previousSectionIndex,
+      `${section} should appear after the previous primary brief section`,
+    );
+    previousSectionIndex = sectionIndex;
+  }
+
+  const assetsIndex = panelSource.indexOf('<MetadataSection title="Assets">');
+  const goalsIndex = panelSource.indexOf('<MetadataSection title="Goals">');
+  const developerDetailsIndex = panelSource.indexOf(
+    '<details className="metadata-developer-details">',
+  );
+  const sourceJsonIndex = panelSource.indexOf('<MetadataSection title="Source JSON">');
+  const landingBehaviorIndex = panelSource.indexOf(
+    '<MetadataSection title="Landing behavior">',
+  );
+
+  assert.ok(
+    developerDetailsIndex > assetsIndex,
+    "Developer details should appear after Assets",
+  );
+  assert.ok(
+    developerDetailsIndex > goalsIndex,
+    "Developer details should appear after Goals",
+  );
+  assert.ok(
+    sourceJsonIndex > developerDetailsIndex,
+    "Source JSON should be inside the final Developer details disclosure",
+  );
+  assert.ok(
+    landingBehaviorIndex > developerDetailsIndex,
+    "Landing behavior should be inside the final Developer details disclosure",
+  );
+});
+
+test("campaign metadata required props remain accessible without visible required chips", () => {
+  const fieldStart = creativeCanvasScreen.indexOf("function MetadataTextField");
+  const fieldEnd = creativeCanvasScreen.indexOf("function MetadataSelect");
+  const textAreaStart = creativeCanvasScreen.indexOf("function MetadataTextArea");
+  const textAreaEnd = creativeCanvasScreen.indexOf("function MetadataJsonArea");
+  assert.notEqual(fieldStart, -1);
+  assert.notEqual(fieldEnd, -1);
+  assert.notEqual(textAreaStart, -1);
+  assert.notEqual(textAreaEnd, -1);
+
+  const textFieldSource = creativeCanvasScreen.slice(fieldStart, fieldEnd);
+  const textAreaSource = creativeCanvasScreen.slice(textAreaStart, textAreaEnd);
+  const requiredControlSource = `${textFieldSource}\n${textAreaSource}`;
+
+  assert.match(textFieldSource, /required = false/);
+  assert.match(textFieldSource, /required=\{required\}/);
+  assert.match(textFieldSource, /aria-required=\{required \? "true" : undefined\}/);
+  assert.match(textAreaSource, /required = false/);
+  assert.match(textAreaSource, /required=\{required\}/);
+  assert.match(textAreaSource, /aria-required=\{required \? "true" : undefined\}/);
+  assert.doesNotMatch(requiredControlSource, />Required</);
+  assert.doesNotMatch(requiredControlSource, /className="[^"]*required[^"]*"/i);
+});
+
+test("creative canvas primary surfaces avoid console language and nested card treatment", () => {
+  const paletteStart = creativeCanvasScreen.indexOf("function GenerationPalette");
+  const paletteEnd = creativeCanvasScreen.indexOf("function CanvasStatus");
+  const campaignStart = creativeCanvasScreen.indexOf("function CampaignMetadataPanel");
+  const campaignEnd = creativeCanvasScreen.indexOf("function MetadataSection");
+  const inspectorStart = creativeCanvasScreen.indexOf("function ImageGenerationInspectorPanel");
+  const inspectorEnd = creativeCanvasScreen.indexOf("function PersistentShortFormPlayer");
+
+  assert.notEqual(paletteStart, -1);
+  assert.notEqual(paletteEnd, -1);
+  assert.notEqual(campaignStart, -1);
+  assert.notEqual(campaignEnd, -1);
+  assert.notEqual(inspectorStart, -1);
+  assert.notEqual(inspectorEnd, -1);
+
+  const primarySurfaceSource = [
+    creativeCanvasScreen.slice(paletteStart, paletteEnd),
+    creativeCanvasScreen.slice(campaignStart, campaignEnd),
+    creativeCanvasScreen
+      .slice(inspectorStart, inspectorEnd)
+      .replace(/<details className="image-generation-developer-details">[\s\S]*?<\/details>/, ""),
+  ].join("\n");
+
+  assert.doesNotMatch(
+    primarySurfaceSource,
+    /Provider settings|Schema adapter|Compatibility|Campaign JSON spec|Required metadata|Canonical spec|pipeline|log language/i,
+  );
+  assert.doesNotMatch(appCss, /\.metadata-section\s*\{[\s\S]*border-top:\s*1px/);
+  assert.doesNotMatch(appCss, /\.image-generation-inspector-section dl div,\s*\.image-generation-docs-panel dl div\s*\{[\s\S]*border:\s*1px/);
+  assert.match(appCss, /\.campaign-metadata-panel\s*\{[\s\S]*border-radius:\s*10px/);
+  assert.match(appCss, /\.generation-palette\s*\{[\s\S]*border-radius:\s*10px/);
+  assert.match(appCss, /\.image-generation-inspector-panel\s*\{[\s\S]*border-radius:\s*10px/);
+  assert.match(appCss, /\.metadata-field input,\s*\.metadata-field textarea,\s*\.metadata-field select\s*\{[\s\S]*border-radius:\s*6px/);
+
+  const assetRowRule = getCssRuleBlock(".metadata-asset-row");
+  const assetRowActiveRule = getCssRuleBlock(
+    ".metadata-asset-row:hover,\n.metadata-asset-row.active",
+  );
+  const assetDetailsRule = getCssRuleBlock(".metadata-asset-details");
+
+  for (const ruleBlock of [assetRowRule, assetRowActiveRule, assetDetailsRule]) {
+    assert.doesNotMatch(ruleBlock, /border:\s*1px/i);
+    assert.doesNotMatch(ruleBlock, /border-radius:\s*10px/i);
+    assert.doesNotMatch(ruleBlock, /background:\s*#(?:fffefa|ffffff)\b/i);
+  }
+
+  assert.match(assetRowRule, /border-bottom:\s*1px solid #dddddd/);
+  assert.match(assetRowRule, /background:\s*transparent/);
+  assert.match(assetRowActiveRule, /border-bottom-color:\s*#181d26/);
+  assert.match(assetRowActiveRule, /background:\s*transparent/);
+  assert.match(assetDetailsRule, /border-bottom:\s*1px solid #dddddd/);
+  assert.match(assetDetailsRule, /background:\s*transparent/);
 });
 
 test("Spaces-style image generation node keeps the visible Korean generator label", () => {
@@ -191,56 +491,21 @@ test("Image generation docs panel renders provider model documentation", () => {
 
   const panelSource = creativeCanvasScreen.slice(panelStart, panelEnd);
 
-  assert.match(panelSource, /className="image-generation-docs-panel"/);
-  assert.match(panelSource, /aria-label="Provider schema and docs"/);
-  assert.match(panelSource, /<h2>Provider model docs<\/h2>/);
-  assert.match(panelSource, /<dt>Provider<\/dt>\s*<dd>\{docsMetadata\.provider\.name\}<\/dd>/);
-  assert.match(
-    panelSource,
-    /<dt>Selected model<\/dt>\s*<dd>\{docsMetadata\.selectedModel\.name\}<\/dd>/,
-  );
-  assert.match(panelSource, /<dt>Credential status<\/dt>/);
-  assert.match(panelSource, /className="image-generation-credential-status"/);
-  assert.match(
-    panelSource,
-    /data-credential-status=\{docsMetadata\.provider\.credentialStatus\.state\}/,
-  );
-  assert.match(
-    panelSource,
-    /<span>\{docsMetadata\.provider\.credentialStatus\.label\}<\/span>/,
-  );
-  assert.match(
-    panelSource,
-    /\{docsMetadata\.provider\.credentialStatus\.envName \?\?\s*"No provider env var"\}/,
-  );
-  assert.doesNotMatch(
-    panelSource,
-    /credentialStatus\.(?:value|secret|apiKey|tokenValue|credentialValue)/i,
-  );
-  assert.match(panelSource, /<dt>Supported ratios<\/dt>/);
-  assert.match(panelSource, /docsMetadata\.supportedRatios\.join\(", "\)/);
-  assert.match(panelSource, /"No documented ratios"/);
-  assert.match(panelSource, /<h2>Required inputs<\/h2>/);
-  assert.match(panelSource, /className="image-generation-docs-required-inputs"/);
-  assert.match(panelSource, /docsMetadata\.requiredInputs\.map/);
-  assert.match(panelSource, /<span>\{control\.label\}<\/span>/);
-  assert.match(panelSource, /<strong>\{control\.schemaKey\}<\/strong>/);
-  assert.match(panelSource, /<em>\{control\.kind\.replaceAll\("_", " "\)\}<\/em>/);
-  assert.match(panelSource, /<span>No required inputs documented<\/span>/);
-  assert.match(panelSource, /<h2>Optional controls<\/h2>/);
-  assert.match(panelSource, /className="image-generation-docs-optional-controls"/);
-  assert.match(panelSource, /docsMetadata\.optionalControls\.map/);
-  assert.match(panelSource, /<span>\{control\.label\}<\/span>/);
-  assert.match(panelSource, /<strong>\{control\.schemaKey\}<\/strong>/);
-  assert.match(panelSource, /control\.options\.length > 0/);
-  assert.match(panelSource, /control\.options\.join\(", "\)/);
-  assert.match(
-    panelSource,
-    /formatImageGenerationControlDefaultValue\(control\.defaultValue\)/,
-  );
-  assert.match(panelSource, /<em>\{controlValue\}<\/em>/);
-  assert.match(panelSource, /<small>\{control\.visibility\}<\/small>/);
-  assert.match(panelSource, /<span>No optional controls documented<\/span>/);
+  assert.match(panelSource, /className="image-generation-inspector-panel nodrag"/);
+  assert.match(panelSource, /aria-label="Image Block setup"/);
+  assert.match(panelSource, /<span>Image setup<\/span>/);
+  assert.match(panelSource, /<h2>Model summary<\/h2>/);
+  assert.match(panelSource, /<dt>Provider<\/dt>/);
+  assert.match(panelSource, /<dt>Model<\/dt>/);
+  assert.match(panelSource, /<dt>Status<\/dt>/);
+  assert.match(panelSource, /<h2>Inputs<\/h2>/);
+  assert.match(panelSource, /<h2>Creative controls<\/h2>/);
+  assert.match(panelSource, /<details className="image-generation-developer-details">/);
+  assert.match(panelSource, /<summary>Developer details<\/summary>/);
+  assert.match(panelSource, /<h2>Provider diagnostics<\/h2>/);
+  assert.match(panelSource, /<h2>Adapter mapping<\/h2>/);
+  assert.match(panelSource, /<h2>Model limits<\/h2>/);
+  assert.doesNotMatch(panelSource, /Provider settings|Provider model docs|Required inputs|Schema adapter|Compatibility/);
   assert.match(
     appCss,
     /\.image-generation-inspector-panel\s*\{[\s\S]*position:\s*fixed/,
@@ -285,14 +550,7 @@ test("Image generation docs panel renders provider model documentation", () => {
     appCss,
     /\.image-generation-docs-optional-controls li\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 0\.78fr\) minmax\(0, 0\.86fr\) minmax\(0, 1fr\) auto/,
   );
-  assert.match(
-    appCss,
-    /\.image-generation-credential-status\s*\{[\s\S]*display:\s*grid/,
-  );
-  assert.match(
-    appCss,
-    /\.image-generation-credential-status code\s*\{[\s\S]*font-family:\s*ui-monospace/,
-  );
+  assert.doesNotMatch(appCss, /\.image-generation-credential-status\b/);
 });
 
 test("Image Block compact dimensions stay stable when the external panel opens, closes, and updates", () => {
@@ -1159,6 +1417,82 @@ test("Image output action is the reliable next-node menu entry point", () => {
   assert.match(outputActionSource, /onClick=\{toggleNextNodeMenu\}/);
   assert.match(outputActionSource, /onKeyDown=\{handleNextNodeTriggerKeyDown\}/);
   assert.doesNotMatch(outputActionSource, /Handle\b/);
+});
+
+test("Image output drag to empty canvas opens the next-node menu", () => {
+  const screenStart = creativeCanvasScreen.indexOf("export function CreativeCanvasScreen");
+  const screenEnd = creativeCanvasScreen.indexOf("function ImageGenerationInspectorPanel");
+  const genericNodeStart = creativeCanvasScreen.indexOf("function GenerationBlockNode");
+  const genericNodeEnd = creativeCanvasScreen.indexOf("function FreepikReferenceImageNode");
+  const imageNodeStart = creativeCanvasScreen.indexOf("function FreepikReferenceImageNode");
+  const imageNodeEnd = creativeCanvasScreen.indexOf("function ContractRow");
+  assert.notEqual(screenStart, -1);
+  assert.notEqual(screenEnd, -1);
+  assert.notEqual(genericNodeStart, -1);
+  assert.notEqual(genericNodeEnd, -1);
+  assert.notEqual(imageNodeStart, -1);
+  assert.notEqual(imageNodeEnd, -1);
+
+  const screenSource = creativeCanvasScreen.slice(screenStart, screenEnd);
+  const genericNodeSource = creativeCanvasScreen.slice(genericNodeStart, genericNodeEnd);
+  const imageNodeSource = creativeCanvasScreen.slice(imageNodeStart, imageNodeEnd);
+
+  assert.match(screenSource, /const pendingImageOutputConnectionRef = useRef/);
+  assert.match(screenSource, /const suppressImageOutputPaneClickRef = useRef\(false\)/);
+  assert.match(screenSource, /const \[imageOutputDropMenu, setImageOutputDropMenu\] =\s*useState/);
+  assert.match(screenSource, /const \[imageOutputDropMenuQuery, setImageOutputDropMenuQuery\] = useState\(""\)/);
+  assert.match(screenSource, /const closeImageOutputDropMenu = useCallback/);
+  assert.match(screenSource, /const getConnectionEventPoint = \(event: MouseEvent \| TouchEvent\) => \{/);
+  assert.match(screenSource, /const clampDropMenuPoint = \(point: \{ x: number; y: number \}\) => \{/);
+  assert.match(screenSource, /const menuWidth = 320;/);
+  assert.match(screenSource, /const menuMaxHeight = 360;/);
+  assert.match(screenSource, /viewportWidth - menuWidth - menuOffset/);
+  assert.match(screenSource, /viewportHeight - menuMaxHeight - menuOffset/);
+  assert.match(screenSource, /onConnectStart=\{\(_, connection\) => \{/);
+  assert.match(screenSource, /connection\.handleId !== "outputs\.generated_image_asset"/);
+  assert.match(screenSource, /!properties\.uiState\.outputConnectionReady/);
+  assert.match(screenSource, /properties\.uiState\.selectedResultAssetId === null/);
+  assert.match(screenSource, /selectedResultAssetId: properties\.uiState\.selectedResultAssetId/);
+  assert.match(screenSource, /onConnectEnd=\{\(event, connectionState\) => \{/);
+  assert.match(screenSource, /if \(pendingConnection === null \|\| connectionState\.isValid\) \{/);
+  assert.match(screenSource, /setImageOutputDropMenu\(\{/);
+  assert.match(screenSource, /suppressImageOutputPaneClickRef\.current = true/);
+  assert.match(screenSource, /suppressImageOutputPaneClickRef\.current = false/);
+  assert.match(screenSource, /nodesConnectable/);
+  assert.doesNotMatch(screenSource, /nodesConnectable=\{false\}/);
+  assert.match(screenSource, /className="canvas-output-drop-menu nodrag"/);
+  assert.match(screenSource, /role="menu"/);
+  assert.match(screenSource, /data-placement="line-end"/);
+  assert.match(screenSource, /className="canvas-output-drop-search"/);
+  assert.match(screenSource, /placeholder="Search"/);
+  assert.match(screenSource, /className="canvas-output-drop-menu-list"/);
+  assert.match(screenSource, /className="canvas-output-drop-menu-item"/);
+  assert.match(screenSource, /handleImageOutputNextNodeAction\(/);
+  assert.match(appCss, /\.canvas-output-drop-menu\s*\{[\s\S]*position:\s*fixed/);
+  assert.match(appCss, /\.canvas-output-drop-menu\s*\{[\s\S]*width:\s*min\(320px, calc\(100vw - 24px\)\)/);
+  assert.match(appCss, /\.canvas-output-drop-menu\s*\{[\s\S]*border:\s*1px solid #dddddd/);
+  assert.match(appCss, /\.canvas-output-drop-menu\s*\{[\s\S]*background:\s*#ffffff/);
+  assert.match(appCss, /\.canvas-output-drop-search\s*\{[\s\S]*background:\s*#f8fafc/);
+  assert.match(
+    genericNodeSource,
+    /<Handle[\s\S]*type="target"[\s\S]*className=\{cn\("canvas-handle", `\$\{data\.tone\}-handle`\)\}[\s\S]*isConnectable=\{false\}/,
+  );
+  assert.match(
+    genericNodeSource,
+    /<Handle[\s\S]*type="source"[\s\S]*className=\{cn\("canvas-handle", `\$\{data\.tone\}-handle`\)\}[\s\S]*isConnectable=\{false\}/,
+  );
+  assert.match(
+    imageNodeSource,
+    /id=\{`inputs\.\$\{promptPort\.id\}`\}[\s\S]*type="target"[\s\S]*isConnectable=\{false\}/,
+  );
+  assert.match(
+    imageNodeSource,
+    /id=\{`inputs\.\$\{referencePort\.id\}`\}[\s\S]*type="target"[\s\S]*isConnectable=\{false\}/,
+  );
+  assert.match(
+    imageNodeSource,
+    /id=\{`outputs\.\$\{generatedPort\.id\}`\}[\s\S]*type="source"[\s\S]*isConnectable=\{canOpenNextNodeMenu\}/,
+  );
 });
 
 test("Spaces-style image generation node opens a next-node contextual menu from the output card", () => {

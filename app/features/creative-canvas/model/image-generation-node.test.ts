@@ -1161,7 +1161,7 @@ test("campaign image block is the MVP image generation node by default", () => {
   const imageBlock = createCampaignBlock("image", 0, { x: 240, y: 160 });
 
   assert.equal(imageBlock.status, "READY");
-  assert.equal(imageBlock.subtitle, "prompt + reference + x1-x5 outputs");
+  assert.equal(imageBlock.subtitle, "prompt + reference + image assets");
   assert.equal(isImageGenerationNodeProperties(imageBlock.properties), true);
 
   if (!isImageGenerationNodeProperties(imageBlock.properties)) {
@@ -1970,6 +1970,49 @@ test("image generation provider request keeps native aspect ratios unchanged", (
     aspect_ratio: "1:1",
     output_format: "jpg",
   });
+});
+
+test("Seedream provider request derives provider size from a manual canvas frame", () => {
+  const seedreamProperties = resizeImageGenerationNodeFrameTransition(
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "bytedance/seedream-3",
+      aspectRatio: "9:16",
+    }),
+    { width: 384, height: 640 },
+  );
+
+  const request = createImageGenerationNodeProviderRequest({
+    properties: seedreamProperties,
+    prompt: "Tall product shot on a coral studio sweep",
+  });
+
+  assert.equal(request.replicate.model, "bytedance/seedream-3");
+  assert.equal(
+    request.replicate.input.prompt,
+    "Tall product shot on a coral studio sweep",
+  );
+  assert.equal(request.replicate.input.aspect_ratio, "9:16");
+  assert.equal(request.replicate.input.size, "384x640");
+  assert.equal("width" in request.replicate.input, false);
+  assert.equal("height" in request.replicate.input, false);
+  assert.equal(request.replicate.aspectRatio.requested, "9:16");
+  assert.equal(request.replicate.aspectRatio.providerValue, "9:16");
+  assert.equal(request.replicate.aspectRatio.mapped, false);
+
+  const explicitSizeRequest = createImageGenerationNodeProviderRequest({
+    properties: seedreamProperties,
+    prompt: "Tall product shot on a coral studio sweep",
+    controlValues: {
+      size: "1024x1792",
+      guidance_scale: 3.5,
+      seed: 12345,
+    },
+  });
+
+  assert.equal(explicitSizeRequest.replicate.input.size, "1024x1792");
+  assert.equal(explicitSizeRequest.replicate.input.guidance_scale, 3.5);
+  assert.equal(explicitSizeRequest.replicate.input.seed, 12345);
 });
 
 test("model capability fixtures cover vertical defaults and restricted unsupported options", () => {

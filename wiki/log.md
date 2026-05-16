@@ -2,6 +2,56 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-16] de-console-creative-campaign-canvas-pass | Issues #9-#12
+
+- `#9` 팔레트 카피를 Creative Operator가 바로 이해할 수 있는 Campaign block 언어로 줄이고, primary palette의 기술 배지를 숨겼다.
+- `#10` 오른쪽 패널을 `Campaign brief` / `Campaign basics` 표면으로 재구성하고, readiness 요약과 Audience, Offer product, Offer, Channels, Assets, Goals 섹션을 우선 배치했다.
+- `#11` Image Block 설정 패널은 Model summary, Inputs, Creative controls를 먼저 보여주고 provider diagnostics, adapter mapping, model limits는 `Developer details` disclosure 아래로 이동했다.
+- `#12` overlay panel radius를 10px, field radius를 6px로 맞추고 내부 row/card 중첩감을 border/background card 대신 divider/typography 중심으로 낮췄다.
+- Spec review follow-up: `#10` Source JSON Developer details를 오른쪽 패널 끝으로 이동해 Assets와 Goals 뒤에만 나타나게 했고, `#12` `.metadata-asset-row`/`.metadata-asset-details`를 border/background/radius card 처리 없이 divider/transparent row로 평평하게 조정했다.
+- Quality follow-up: 실제 생성되는 Generation Block 정의의 `LLM Block`/`Agent Block`/`Custom Block`, `MODEL`/`PLUGIN`, `BYO provider` 계열 노출을 Creative Operator용 Copy, Prompt, Image Block, Video, Voice, Operator, DM, Landing, Plugin 카피로 교체했고, Channel routing/attribution 및 Landing behavior 내부 필드는 primary Campaign brief가 아니라 마지막 `Developer details`로 이동했다.
+- 검증: focused source regressions 4개(`campaign blocks palette`, `right panel reads as a campaign brief`, `Image generation docs panel`, `creative canvas primary surfaces avoid console language`) 통과.
+- 추가 검증: focused right-panel test, focused de-console containment test, full `creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, allowed-file `git diff --check`.
+
+## [2026-05-16] project-structure-github-issue-skill-triage | Structure review
+
+- OwnCanvas 루트(`/Users/junho/project/owncanvas`)에서 현재 구조를 확인했다. 앱은 React Router v7 기반이며 `app/features/creative-canvas/{model,adapters,components}`, `app/features/plugins/model`, `app/routes`, `wiki`, `.agents/skills`, `docs/seeds`가 주요 경계다.
+- 현재 GitHub 원격은 `junho-baek/owncanvas`이고 `gh issue list --state all` 기준 open issue는 `#1`, `#6`, `#7`, `#8`, `#9`, `#10`, `#11`, `#12`, `#13`이다. `#2`-`#5`는 closed 상태다.
+- 작업트리에는 이미 Image Block output drop menu와 Seedream provider-size/frame sync 관련 미커밋 변경이 있어 `#6`, `#7` 선행 버그의 완료 여부를 검증한 뒤 이슈 업데이트/closure를 판단하는 것이 좋다.
+- 구조 파악용 Ouroboros 후보는 `ooo-brownfield`(repo/worktree/default context scan), `ooo-interview`(불명확한 요구사항 정리), `ooo-qa`(문서/구조 산출물 빠른 품질 판정), `ooo-publish`(Seed를 GitHub Issues로 변환) 순서가 적합하다. `ooo-evaluate`는 구조 탐색보다는 실행 결과나 artifact의 3-stage 검증용이다.
+- `npm run skills:check`는 DDD/marketing 외부 skill 8개 누락을 보고했으므로 이번 구조 판단은 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/`, 실제 코드/이슈 상태를 fallback source로 사용했다.
+
+## [2026-05-16] image-output-drop-to-empty-next-node-menu | Task 0
+
+- 원인: React Flow가 `nodesConnectable={false}`로 연결 제스처를 전역 비활성화하고 있었고, parent `ReactFlow`에 `onConnectStart`/`onConnectEnd` 경로가 없어 Image Block의 `outputs.generated_image_asset` 핸들을 빈 Creative Canvas에 드롭해도 output choices 메뉴를 열 수 없었다.
+- 수정: Image Block 출력 핸들에서 시작한 연결이 `outputConnectionReady` 및 `selectedResultAssetId` 조건을 만족할 때만 pending source를 저장하고, invalid connect end 좌표에 parent-level `canvas-output-drop-menu`를 열도록 했다. 메뉴는 기존 `resolveImageGenerationOutputNextNodeActions()`와 `handleImageOutputNextNodeAction()`을 재사용해 클릭/키보드 메뉴와 같은 downstream generation block/edge 생성 경로를 유지한다.
+- 품질 보강: Image Block의 generated image output handle만 `canOpenNextNodeMenu` 상태에서 connectable이 되도록 좁혔다. Generic Generation Block source/target handle과 Image Block prompt/reference target handle은 `isConnectable={false}`로 고정해, 유효해 보이지만 edge/menu가 생기지 않는 드롭 경로를 막았다. Empty canvas 드롭 메뉴 좌표도 viewport 안으로 clamp한다.
+- 후속 UI 보강: 사용자가 제시한 manual QA 목표에 맞춰 메뉴를 선 끝점 기준 command-list surface로 키우고, `DESIGN.md`의 `canvas`, `ink`, `hairline`, `surface-soft`, `rounded.md/sm` 계열 토큰에 맞췄다. 드롭 직후 이어지는 pane click이 메뉴를 즉시 닫지 않도록 한 번만 suppress하는 guard도 추가했다.
+- 검증: 새 회귀 테스트 `Image output drag to empty canvas opens the next-node menu`가 실패 후 통과했고, `node --experimental-strip-types --test --test-name-pattern "Image output drag to empty canvas opens the next-node menu" app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `git diff --check -- app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts app/features/creative-canvas/components/creative-canvas-screen.tsx app/app.css wiki/log.md`가 통과했다. Browser QA는 seeded output-ready campaign에서 output handle을 빈 캔버스 좌표 `(480, 530)`에 드롭했고, 메뉴가 `(488, 538)`에 열리는 evidence를 `output/image-output-drop-menu-evidence.png`와 `output/browser-qa-summary.json`에 남겼다.
+
+## [2026-05-16] image-generation-seedream-provider-size-frame-sync | Issue #6
+
+- Seedream-like `replicate:bytedance/seedream-3` provider requests now derive `input.size` from manual Image Block frame dimensions when the user has resized the compact canvas node and has not supplied an explicit provider size.
+- Explicit provider `size`, `guidance_scale`, and `seed` controls still win over frame-derived defaults.
+- GPT Image ratio mapping/rejection behavior remains unchanged.
+- 검증: focused Seedream provider-size test, full `image-generation-node.test.ts`.
+
+## [2026-05-16] github-issue-closure-and-remaining-plan | Issues #2-#13
+
+- GitHub issue `#2`, `#3`, `#4`, `#5`를 기존 위키/테스트 완료 근거에 따라 `completed` reason으로 닫았다. 각 이슈에는 관련 `wiki/log.md` evidence entry를 요약한 closure comment를 남겼다.
+- `#6`은 GPT Image compatibility 쪽 완료 근거는 충분하지만 Seedream-like custom size/frame reconciliation 근거가 부족해 열린 상태로 유지했다.
+- 현재 open issue는 `#1`, `#6`, `#7`, `#8`, `#9`, `#10`, `#11`, `#12`, `#13`이다.
+- 남은 작업 실행 계획을 [OwnCanvas Remaining Issues Implementation Plan](../docs/superpowers/plans/2026-05-16-owncanvas-remaining-issues.md)에 작성했다. 계획은 `#6` Seedream provider size contract, `#7`/`#13` browser evidence, `#9`-`#12` de-console UI pass, 그리고 epic closure 순서를 포함한다.
+- 참고: 이번 계획 문서는 사용자가 `superpowers:writing-plans`를 직접 지정해 스킬 기본 경로인 `docs/superpowers/plans/`에 생성했다. 평소 기본 작업 기억은 계속 `wiki/`에 남긴다.
+
+## [2026-05-16] github-open-issue-triage | GitHub Issues
+
+- `junho-baek/owncanvas` GitHub 이슈를 `gh issue list`로 확인했다. 현재 open issue는 13개(`#1`-`#13`)이고 closed issue와 open PR은 없다.
+- `#1` Image Generation Node v2 epic 아래 task `#2`-`#7`, `#8` De-console creative campaign canvas epic 아래 task `#9`-`#13`가 모두 GitHub에서는 open/unchecked 상태다.
+- 위키 로그 기준으로 `#2`-`#6`에 해당하는 Image Generation Node v2 작업은 상당 부분 구현/검증 기록이 있으나, GitHub 체크박스와 이슈 상태는 아직 동기화되지 않았다. `#7`은 실제 browser screenshot/console evidence가 sandbox 제약으로 남은 검증 리스크다.
+- `#8`-`#13`은 2026-05-15에 생성된 de-console UI/design backlog로, 아직 구현 기록이나 체크박스 완료 표시가 없다.
+- 참고: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고했고, 이번 확인은 `github` skill + `llm-wiki` workflow와 `gh` CLI로 수행했다.
+
 ## [2026-05-15] image-generation-provider-payload-mapping-rejection-tests | Sub-AC 5.4 retry 2
 
 - Provider payload creation regression을 보강해 같은 aspect-ratio compatibility path가 mapping과 rejection 모두에 적용되는지 명시했다.

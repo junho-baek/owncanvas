@@ -2012,6 +2012,20 @@ function createImageGenerationDocsPanelControlSummary(
   };
 }
 
+function isImageGenerationCustomSizeControlValue(
+  capability: ImageGenerationModelCapability,
+  control: ImageGenerationInputControl,
+  value: ImageGenerationInputControlDefaultValue,
+): boolean {
+  return (
+    capability.capabilities.customSize &&
+    control.kind === "size" &&
+    control.schemaKey === capability.schemaAdapter.sizeField &&
+    typeof value === "string" &&
+    /^\d+x\d+$/.test(value)
+  );
+}
+
 export function validateImageGenerationNodeModelOptions(
   capability: ImageGenerationModelCapability | undefined,
   options: ImageGenerationNodeModelOptionValues,
@@ -2079,7 +2093,8 @@ export function validateImageGenerationNodeModelOptions(
     if (
       allowedValues &&
       typeof value === "string" &&
-      !allowedValues.includes(value)
+      !allowedValues.includes(value) &&
+      !isImageGenerationCustomSizeControlValue(capability, control, value)
     ) {
       issues.push({
         code: "image_generation.control_value_invalid",
@@ -2128,6 +2143,42 @@ export function validateImageGenerationNodeModelOptions(
   }
 
   return createImageGenerationNodeValidationResult(issues);
+}
+
+function resolveImageGenerationProviderFrameSizeControl({
+  capability,
+  properties,
+  controlValues,
+}: {
+  capability: ImageGenerationModelCapability;
+  properties: ImageGenerationNodeProperties;
+  controlValues: Record<string, ImageGenerationInputControlDefaultValue>;
+}): { schemaKey: string; value: string } | null {
+  const sizeField = capability.schemaAdapter.sizeField;
+
+  if (!capability.capabilities.customSize || sizeField === null) {
+    return null;
+  }
+
+  if (properties.frame.source !== "user-resize") {
+    return null;
+  }
+
+  if (sizeField in controlValues || "size" in controlValues) {
+    return null;
+  }
+
+  const width = Math.round(properties.frame.width);
+  const height = Math.round(properties.frame.height);
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    schemaKey: sizeField,
+    value: `${width}x${height}`,
+  };
 }
 
 export function createImageGenerationNodeProviderRequest(
@@ -2184,6 +2235,17 @@ export function createImageGenerationNodeProviderRequest(
   }
 
   const controlValues = input.controlValues ?? {};
+  const providerFrameSizeControl = resolveImageGenerationProviderFrameSizeControl({
+    capability,
+    properties: input.properties,
+    controlValues,
+  });
+
+  if (providerFrameSizeControl) {
+    replicateInput[providerFrameSizeControl.schemaKey] =
+      providerFrameSizeControl.value;
+  }
+
   const skippedSchemaKeys = new Set(
     [
       capability.schemaAdapter.promptField,
