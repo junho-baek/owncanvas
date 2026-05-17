@@ -183,7 +183,7 @@ npm run typecheck
 
 Expected: all tests pass and typecheck exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/features/creative-canvas/adapters/image-generation-fanout.ts app/features/creative-canvas/adapters/image-generation-fanout.test.ts app/features/creative-canvas/components/creative-canvas-screen.tsx app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts
@@ -195,7 +195,7 @@ git commit -m "ui: retry failed image block in place"
 **Files:**
 - Modify: `wiki/log.md`
 
-- [ ] **Step 1: Run full verification**
+- [x] **Step 1: Run full verification**
 
 Run:
 
@@ -210,7 +210,7 @@ git diff --check
 
 Expected: skill check may report the known 8 missing external DDD/marketing skills with fallback; all code/build checks pass.
 
-- [ ] **Step 2: Update wiki/log.md**
+- [x] **Step 2: Update wiki/log.md**
 
 Append a Korean outcome section covering:
 - shared persistence helper
