@@ -62,7 +62,7 @@ test("createVideoGenerationRunPlan creates one video generation batch", () => {
         prompt: "AI-native CEO co-coding with Ouroboros and Codex",
         duration: 2,
         resolution: "480p",
-        aspect_ratio: "16:9",
+        aspect_ratio: "9:16",
         fps: 24,
         camera_fixed: false,
       },

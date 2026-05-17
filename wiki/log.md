@@ -2780,3 +2780,10 @@
 - `mediaType: "video"` generation batch contract, Go provider polling, video MIME detection, video Creative Output persistence, Video Block run planner/UI controls를 추가했다. 기본 smoke 설정은 `bytedance/seedance-1-lite`, 2초, 480p, 16:9이며 `bytedance/seedance-1-pro-fast`와 `kwaivgi/kling-v2.1`도 catalog에 포함했다.
 - 실제 provider smoke에서 `bytedance/seedance-1-lite`는 장시간 처리되어 cancel했고, `bytedance/seedance-1-pro-fast`로 2초 480p MP4 생성에 성공했다. 산출물은 `output/replicate/owncanvas-ai-native-ceo-seedance-pro-fast.mp4`에 보관했다.
 - 검증: focused TS tests 77/77 pass, `go test ./...` in `generation`, `npm run typecheck`, `npm run build`, `git diff --check`.
+
+## [2026-05-18] video-node-preview-and-x1-in-place | UI correction
+
+- Image Block `batchCount: 1` 실행은 더 이상 fan-out output node를 만들지 않고 원본 Image Block을 queued/succeeded 대상으로 사용하도록 변경했다. `batchCount >= 2`일 때만 기존처럼 독립 output Image Block들을 생성하고 참조 edge를 복제한다.
+- Video Block 기본 Seedance 계열 aspect ratio를 `9:16`으로 바꾸고, Video Block frame을 360x640 세로형 표면으로 고정했다. 생성된 video Creative Output이 있으면 별도 좌하단 플레이어가 아니라 Video Block 내부 `<video>` preview가 노드 전체를 채운다.
+- 캔버스 좌하단 `PersistentShortFormPlayer` 렌더링을 제거했다. 영상 확인은 생성 블록 표면에서 이루어지는 것이 기준이다.
+- 검증: focused TS tests 54/54 pass, React Flow canvas tests 17/17 pass, `npm run typecheck`, `npm run build`, `git diff --check`, headless Chrome QA에서 Video Block 9:16/360x640, 내부 video preview, prompt overlay, 좌하단 플레이어 0개를 확인했다.

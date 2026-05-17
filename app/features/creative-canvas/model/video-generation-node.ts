@@ -111,7 +111,7 @@ export const VIDEO_GENERATION_MODEL_CAPABILITIES = [
     aspectRatioOptions: ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "9:21"],
     defaultDurationSeconds: 2,
     defaultResolution: "480p",
-    defaultAspectRatio: "16:9",
+    defaultAspectRatio: "9:16",
   },
   {
     providerId: "replicate",
@@ -127,7 +127,7 @@ export const VIDEO_GENERATION_MODEL_CAPABILITIES = [
     aspectRatioOptions: ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "9:21"],
     defaultDurationSeconds: 2,
     defaultResolution: "480p",
-    defaultAspectRatio: "16:9",
+    defaultAspectRatio: "9:16",
   },
   {
     providerId: "replicate",
@@ -143,7 +143,7 @@ export const VIDEO_GENERATION_MODEL_CAPABILITIES = [
     aspectRatioOptions: ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9"],
     defaultDurationSeconds: 5,
     defaultResolution: "480p",
-    defaultAspectRatio: "16:9",
+    defaultAspectRatio: "9:16",
   },
   {
     providerId: "replicate",

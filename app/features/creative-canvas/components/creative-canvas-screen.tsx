@@ -196,6 +196,11 @@ const NON_IMAGE_GENERATION_NODE_FRAME = {
   height: 420,
 } as const;
 
+const VIDEO_GENERATION_NODE_FRAME = {
+  width: 360,
+  height: 640,
+} as const;
+
 type NonImageGenerationNodePortMediaType =
   | "text"
   | "image"
@@ -1031,24 +1036,47 @@ export function CreativeCanvasScreen({
         existingEdges: canvasSnapshotRef.current.edges,
         now: () => new Date().toISOString(),
       });
-      const nextNodes = [
-        ...canvasSnapshotRef.current.nodes.map((node) => ({
-          ...node,
-          selected: false,
-        })),
-        ...plan.createdNodes,
-      ];
-      const nextEdges = [
-        ...canvasSnapshotRef.current.edges,
-        ...plan.createdEdges,
-      ];
+      const fanOutCreatesNodes = plan.createdNodes.length > 0;
+      const nextNodes = fanOutCreatesNodes
+        ? [
+            ...canvasSnapshotRef.current.nodes.map((node) => ({
+              ...node,
+              selected: false,
+            })),
+            ...plan.createdNodes,
+          ]
+        : canvasSnapshotRef.current.nodes.map((node) => {
+            if (node.id !== sourceNode.id) {
+              return {
+                ...node,
+                selected: false,
+              };
+            }
+
+            return {
+              ...node,
+              selected: true,
+              data: {
+                ...node.data,
+                properties: queueImageGenerationNodeV2Transition(sourceProperties),
+              },
+            };
+          });
+      const nextEdges = fanOutCreatesNodes
+        ? [
+            ...canvasSnapshotRef.current.edges,
+            ...plan.createdEdges,
+          ]
+        : canvasSnapshotRef.current.edges;
       const nextCampaign = syncCampaignFromCreativeCanvasInteraction(
         currentCampaign,
         nextNodes,
         nextEdges,
       );
 
-      selectedNodeIdRef.current = plan.createdNodes[0]?.id ?? null;
+      selectedNodeIdRef.current = fanOutCreatesNodes
+        ? plan.createdNodes[0]?.id ?? null
+        : sourceNode.id;
       canvasSnapshotRef.current = {
         nodes: nextNodes,
         edges: nextEdges,
@@ -1058,19 +1086,21 @@ export function CreativeCanvasScreen({
       setEdges(nextEdges);
       onCampaignChange?.(nextCampaign);
 
-      window.setTimeout(() => {
-        reactFlowInstanceRef.current?.fitView({
-          nodes: plan.createdNodes.map((node) => ({ id: node.id })),
-          padding: 0.24,
-          duration: 420,
-        });
-      }, 0);
+      if (fanOutCreatesNodes) {
+        window.setTimeout(() => {
+          reactFlowInstanceRef.current?.fitView({
+            nodes: plan.createdNodes.map((node) => ({ id: node.id })),
+            padding: 0.24,
+            duration: 420,
+          });
+        }, 0);
+      }
 
       const response = await submitImageGenerationBatch(plan.batch);
 
       if (response === null) {
         applyImageGenerationBatchFailure(
-          plan.createdNodes.map((node) => node.id),
+          plan.targetNodeIds,
           "Generation batch did not complete.",
         );
         return;
@@ -1087,7 +1117,7 @@ export function CreativeCanvasScreen({
 
       applyImageGenerationBatchResults(
         persisted.response,
-        plan.createdNodes.map((node) => node.id),
+        plan.targetNodeIds,
       );
     } catch {
       return;
@@ -1853,7 +1883,6 @@ export function CreativeCanvasScreen({
             onClose={handleImageInspectorClose}
           />
         )}
-        {campaign ? <PersistentShortFormPlayer campaign={campaign} /> : null}
         {imageOutputDropMenu === null || imageOutputDropMenuActions.length === 0 ? null : (
           <div
             className="canvas-output-drop-menu nodrag"
@@ -4703,6 +4732,7 @@ function GenerationBlockNode({
         onVideoResolutionChange(data.id, resolution);
       }}
       onRunVideoGeneration={() => onRunVideoGeneration(data.id)}
+      campaignImageAssets={campaignImageAssets}
       campaignVideoAssets={campaignVideoAssets}
       selected={selected}
     />
@@ -4717,6 +4747,7 @@ function NonImageGenerationNodeShell({
   onVideoDurationChange,
   onVideoResolutionChange,
   onRunVideoGeneration,
+  campaignImageAssets,
   campaignVideoAssets,
   selected,
 }: {
@@ -4727,6 +4758,7 @@ function NonImageGenerationNodeShell({
   onVideoDurationChange: (durationSeconds: number) => void;
   onVideoResolutionChange: (resolution: VideoGenerationResolution) => void;
   onRunVideoGeneration: () => void;
+  campaignImageAssets: CampaignAsset[];
   campaignVideoAssets: CampaignAsset[];
   selected: boolean;
 }) {
@@ -4762,6 +4794,24 @@ function NonImageGenerationNodeShell({
             (videoGeneration.uiState.selectedResultAssetId ??
               videoGeneration.latestResultRefs.generatedAssetIds[0]),
         ) ?? null;
+  const videoReferenceAsset =
+    videoGeneration === null
+      ? null
+      : campaignImageAssets.find(
+          (asset) =>
+            asset.id ===
+            (videoGeneration.referenceImageAssetId ??
+              videoGeneration.sourceOutputAssetId),
+        ) ?? null;
+  const videoPosterUri =
+    videoGeneration?.referenceImageUri?.trim() ||
+    videoReferenceAsset?.outputLocations?.primaryUri?.trim() ||
+    videoReferenceAsset?.uri.trim() ||
+    undefined;
+  const nodeFrame =
+    data.kind === "video"
+      ? VIDEO_GENERATION_NODE_FRAME
+      : NON_IMAGE_GENERATION_NODE_FRAME;
   const shellClassName = cn(
     "space-image-node-shell",
     "space-generation-node-shell",
@@ -4777,9 +4827,12 @@ function NonImageGenerationNodeShell({
         "non-image-generation-node",
         selected && "selected",
       )}
+      data-video-aspect-ratio={
+        videoGeneration === null ? undefined : videoGeneration.aspectRatio
+      }
       style={{
-        width: NON_IMAGE_GENERATION_NODE_FRAME.width,
-        height: NON_IMAGE_GENERATION_NODE_FRAME.height,
+        width: nodeFrame.width,
+        height: nodeFrame.height,
       }}
     >
       <div className={shellClassName} aria-label={`${data.title} node`}>
@@ -4823,10 +4876,12 @@ function NonImageGenerationNodeShell({
             >
               <video
                 src={selectedGeneratedVideo.uri}
-                controls
+                poster={videoPosterUri}
+                autoPlay
                 muted
                 loop
                 playsInline
+                preload="auto"
               />
             </figure>
           )}
@@ -4843,7 +4898,10 @@ function NonImageGenerationNodeShell({
 
           {needsPrompt ? (
             <textarea
-              className="space-node-prompt space-generation-node-prompt nodrag nowheel"
+              className={cn(
+                "space-node-prompt space-generation-node-prompt nodrag nowheel",
+                selectedGeneratedVideo !== null && "over-image",
+              )}
               aria-label={`${data.title} brief`}
               placeholder={promptPlaceholder}
               value={promptValue}

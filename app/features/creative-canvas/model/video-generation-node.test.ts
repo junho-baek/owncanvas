@@ -21,7 +21,7 @@ test("video generation node defaults to cheap Seedance smoke settings", () => {
   assert.equal(properties.modelSlug, "bytedance/seedance-1-lite");
   assert.equal(properties.durationSeconds, 2);
   assert.equal(properties.resolution, "480p");
-  assert.equal(properties.aspectRatio, "16:9");
+  assert.equal(properties.aspectRatio, "9:16");
   assert.equal(isVideoGenerationNodeProperties(properties), true);
 });
 
@@ -86,7 +86,7 @@ test("Seedance video provider request uses prompt duration resolution and aspect
       prompt: "educational 3D animation about AI-native CEO co-coding",
       duration: 2,
       resolution: "480p",
-      aspect_ratio: "16:9",
+      aspect_ratio: "9:16",
       fps: 24,
       camera_fixed: false,
     },

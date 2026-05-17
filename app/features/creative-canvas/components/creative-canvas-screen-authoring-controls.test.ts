@@ -259,8 +259,16 @@ test("Video Block has provider-backed run controls and generated video preview",
   assert.match(nonImageNodeSource, /aria-label="Video duration selector"/);
   assert.match(nonImageNodeSource, /aria-label="Video resolution selector"/);
   assert.match(nonImageNodeSource, /space-generated-video-preview/);
-  assert.match(nonImageNodeSource, /<video\s+src=\{selectedGeneratedVideo\.uri\}/);
+  assert.match(nonImageNodeSource, /campaignImageAssets\.find/);
+  assert.match(nonImageNodeSource, /poster=\{videoPosterUri\}/);
+  assert.match(nonImageNodeSource, /autoPlay/);
+  assert.match(nonImageNodeSource, /preload="auto"/);
+  assert.match(
+    nonImageNodeSource,
+    /<video[\s\S]*src=\{selectedGeneratedVideo\.uri\}/,
+  );
   assert.match(appCss, /\.space-generated-video-preview/);
+  assert.doesNotMatch(screenSource, /<PersistentShortFormPlayer/);
 });
 
 test("right panel reads as a campaign brief instead of required metadata", () => {
@@ -463,7 +471,7 @@ test("non-image generation nodes use the Image Block-aligned shell", () => {
   assert.match(nonImageNodeSource, /"space-side-port-stack output"/);
   assert.match(
     nonImageNodeSource,
-    /needsPrompt \? \([\s\S]*className="space-node-prompt space-generation-node-prompt nodrag nowheel"/,
+    /needsPrompt \? \([\s\S]*className=\{cn\([\s\S]*"space-node-prompt space-generation-node-prompt nodrag nowheel"/,
   );
   assert.match(nonImageNodeSource, /value=\{promptValue\}/);
   assert.match(
@@ -1645,7 +1653,7 @@ test("Image Block run buttons call the fan-out run handler", () => {
   );
   assert.match(
     creativeCanvasScreen,
-    /campaignRef\.current = persisted\.campaign;[\s\S]*onCampaignChange\?\.\(persisted\.campaign\);[\s\S]*applyImageGenerationBatchResults\([\s\S]*persisted\.response,[\s\S]*plan\.createdNodes\.map\(\(node\) => node\.id\),[\s\S]*\);/,
+    /campaignRef\.current = persisted\.campaign;[\s\S]*onCampaignChange\?\.\(persisted\.campaign\);[\s\S]*applyImageGenerationBatchResults\([\s\S]*persisted\.response,[\s\S]*plan\.targetNodeIds,[\s\S]*\);/,
   );
   assert.match(
     creativeCanvasScreen,
@@ -1661,7 +1669,7 @@ test("Image Block run buttons call the fan-out run handler", () => {
   );
   assert.match(
     runImageGenerationNodeSource,
-    /validateImageGenerationFanOutReadiness\(sourceProperties\)[\s\S]*return;[\s\S]*const plan = createImageGenerationFanOutPlan[\s\S]*\.\.\.plan\.createdNodes/,
+    /validateImageGenerationFanOutReadiness\(sourceProperties\)[\s\S]*return;[\s\S]*const plan = createImageGenerationFanOutPlan[\s\S]*const fanOutCreatesNodes = plan\.createdNodes\.length > 0[\s\S]*\.\.\.plan\.createdNodes/,
   );
   assert.match(
     runImageGenerationNodeSource,
@@ -1669,11 +1677,11 @@ test("Image Block run buttons call the fan-out run handler", () => {
   );
   assert.match(
     runImageGenerationNodeSource,
-    /const nextEdges = \[[\s\S]*\.\.\.canvasSnapshotRef\.current\.edges,[\s\S]*\.\.\.plan\.createdEdges,[\s\S]*\];/,
+    /const nextEdges = fanOutCreatesNodes[\s\S]*\.\.\.canvasSnapshotRef\.current\.edges,[\s\S]*\.\.\.plan\.createdEdges,[\s\S]*: canvasSnapshotRef\.current\.edges;/,
   );
   assert.match(
     creativeCanvasScreen,
-    /if \(response === null\) \{[\s\S]*applyImageGenerationBatchFailure\([\s\S]*plan\.createdNodes\.map\(\(node\) => node\.id\)[\s\S]*Generation batch did not complete\./,
+    /if \(response === null\) \{[\s\S]*applyImageGenerationBatchFailure\([\s\S]*plan\.targetNodeIds[\s\S]*Generation batch did not complete\./,
   );
   assert.match(
     imageNodeSource,

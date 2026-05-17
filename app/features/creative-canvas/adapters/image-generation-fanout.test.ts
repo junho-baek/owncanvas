@@ -91,6 +91,10 @@ test("createImageGenerationFanOutPlan creates same-type queued image nodes and a
     ],
   );
   assert.deepEqual(
+    plan.targetNodeIds,
+    plan.createdNodes.map((node) => node.id),
+  );
+  assert.deepEqual(
     plan.batch.jobs.map((job) => job.nodeId),
     plan.createdNodes.map((node) => node.id),
   );
@@ -148,6 +152,27 @@ test("createImageGenerationFanOutPlan creates same-type queued image nodes and a
     assert.equal(node.data.properties.uiState.selectedResultAssetId, null);
     assert.equal(node.data.properties.uiState.outputConnectionReady, false);
   }
+});
+
+test("createImageGenerationFanOutPlan targets the source Image Block in place for x1", () => {
+  const source = imageNode({ id: "image_source", x: 100, y: 200, batchCount: 1 });
+  const plan = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: source,
+    existingNodes: [source],
+    now: () => "2026-05-17T00:00:00.000Z",
+  });
+
+  assert.equal(plan.batchId, "image_source_batch_20260517000000000");
+  assert.equal(plan.createdNodes.length, 0);
+  assert.equal(plan.createdEdges.length, 0);
+  assert.deepEqual(plan.targetNodeIds, ["image_source"]);
+  assert.equal(plan.batch.fanOutCount, 1);
+  assert.deepEqual(
+    plan.batch.jobs.map((job) => job.nodeId),
+    ["image_source"],
+  );
+  assert.equal(plan.batch.spec.sourceNodeId, "image_source");
 });
 
 test("createImageGenerationFanOutPlan duplicates prompt and reference edges to every output node", () => {
@@ -564,9 +589,11 @@ test("createImageGenerationFanOutPlan avoids a direct batch-id collision", () =>
   });
 
   assert.equal(plan.batchId, "image_source_batch_20260517000000000_run_2");
+  assert.equal(plan.createdNodes.length, 0);
+  assert.deepEqual(plan.targetNodeIds, ["image_source"]);
   assert.deepEqual(
-    plan.createdNodes.map((node) => node.id),
-    ["image_source_batch_20260517000000000_run_2_1"],
+    plan.batch.jobs.map((job) => job.nodeId),
+    ["image_source"],
   );
 });
 

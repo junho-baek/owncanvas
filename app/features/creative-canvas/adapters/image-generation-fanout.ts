@@ -15,6 +15,7 @@ export type ImageGenerationFanOutPlan = {
   batchId: string;
   createdNodes: CreativeFlowNode[];
   createdEdges: CreativeFlowEdge[];
+  targetNodeIds: string[];
   batch: GenerationBatchRequest;
 };
 
@@ -65,11 +66,16 @@ export function createImageGenerationFanOutPlan(input: {
     existingEdges: input.existingEdges ?? [],
     batchId,
   });
+  const targetNodeIds =
+    count === 1
+      ? [input.sourceNode.id]
+      : createdNodes.map((node) => node.id);
 
   return {
     batchId,
-    createdNodes,
-    createdEdges,
+    createdNodes: count === 1 ? [] : createdNodes,
+    createdEdges: count === 1 ? [] : createdEdges,
+    targetNodeIds,
     batch: createGenerationBatchRequest({
       batchId,
       campaignId: input.campaignId,
@@ -78,7 +84,7 @@ export function createImageGenerationFanOutPlan(input: {
       provider: properties.providerId,
       model: properties.modelSlug,
       aspectRatio: properties.aspectRatio,
-      nodeIds: createdNodes.map((node) => node.id),
+      nodeIds: targetNodeIds,
       parameters: {
         replicate: providerRequest.replicate,
       },
@@ -115,6 +121,7 @@ export function createImageGenerationSingleNodeRetryPlan(input: {
     batchId,
     createdNodes: [],
     createdEdges: [],
+    targetNodeIds: [input.sourceNode.id],
     batch: createGenerationBatchRequest({
       batchId,
       campaignId: input.campaignId,
