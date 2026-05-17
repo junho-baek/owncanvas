@@ -2811,3 +2811,11 @@
 - `updateCampaignInWorkspace()`와 `reviseFileBackedCampaignDocument()`를 추가해 변경이 있을 때만 `campaign.json`을 쓰고 revision hash/previousHash/lastCommand를 갱신한다. 반복 edge connect, duplicate add with `--if-not-exists`, missing disconnect with `--if-exists`는 idempotent no-op으로 처리된다.
 - CLI 표면은 `block add/set/remove/restore`, `edge connect/disconnect`, `asset import/list`, `apply --plan`을 지원하며 `--json` envelope에 created/updated/deleted id를 포함한다.
 - 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/features/owncanvas-cli/model/workspace-repository.test.ts app/features/owncanvas-cli/model/authoring-commands.test.ts app/features/owncanvas-cli/cli.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-18] owncanvas-cli-mock-generation | Issue #34
+
+- Superpowers plan `docs/superpowers/plans/2026-05-18-owncanvas-cli-mock-generation.md` 기준으로 deterministic mock generation slice를 구현했다. 범위는 block/canvas/range/selection target planning, dependency-aware graph order, mock output persistence, Campaign output refs, run lifecycle commands다.
+- `mock-generation.ts`를 추가해 Text/Image/Video Block을 provider credential 없이 실행한다. 실행 결과는 `.owncanvas/campaigns/<campaign_id>/runs/<run_id>/` 아래 `request.json`, `response.json`, `status.json`, `events.jsonl`, `pricing.json`에 남기고, output file은 `outputs/<run_id>/`에 저장한다.
+- Mock run은 Campaign Asset을 생성하고 Image/Video Block `latestResultRefs`와 `uiState.outputConnectionReady`를 갱신한다. `mockFailure: true`가 있는 block은 partial failure injection으로 처리해 성공 output은 보존하고 run status를 `partial_failed`로 남긴다.
+- CLI 표면은 `generate run`, `generate status`, `generate logs`, `generate outputs`, `generate cancel`, `generate retry`를 지원한다. `generate run`은 block target, `--canvas`, `--from/--to`, `--selection`, `--run-id`를 받는다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/features/owncanvas-cli/model/workspace-repository.test.ts app/features/owncanvas-cli/model/authoring-commands.test.ts app/features/owncanvas-cli/model/mock-generation.test.ts app/features/owncanvas-cli/cli.test.ts`, `npm run typecheck`, `git diff --check`.

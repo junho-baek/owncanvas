@@ -9,6 +9,15 @@ import {
   type OwnCanvasAuthoringCommand,
 } from "./model/authoring-commands.ts";
 import {
+  cancelMockGenerationRun,
+  executeMockGenerationRun,
+  getMockGenerationRunLogs,
+  getMockGenerationRunOutputs,
+  getMockGenerationRunStatus,
+  retryMockGenerationRun,
+  type MockGenerationTarget,
+} from "./model/mock-generation.ts";
+import {
   createCampaignInWorkspace,
   exportCampaignFromWorkspace,
   getWorkspaceStatus,
@@ -72,6 +81,11 @@ type ParsedCliArgs = {
     mediaType?: string;
     usage?: string;
     plan?: string;
+    canvas: boolean;
+    from?: string;
+    to?: string;
+    selection?: string;
+    runId?: string;
     ifNotExists: boolean;
     ifExists: boolean;
     json: boolean;
@@ -369,6 +383,124 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
     return executeAuthoringCommands(parsed, campaignId, commands, "apply");
   }
 
+  if (commandGroup === "generate" && commandName === "run") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const target = createGenerationTarget(parsed);
+    const result = await executeMockGenerationRun({
+      root: options.root,
+      campaignId,
+      target,
+      runId: options.runId,
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "generate run",
+      workspacePath: result.paths.campaignDirectoryPath,
+      campaignId,
+      revisionAfter: result.campaign.revision.hash,
+      changed: true,
+      createdIds: result.response.outputs.map((output) => output.assetId),
+      data: {
+        runId: result.runId,
+        status: result.status,
+        response: result.response,
+        paths: result.paths,
+      },
+    });
+  }
+
+  if (commandGroup === "generate" && commandName === "status") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const status = await getMockGenerationRunStatus({
+      root: options.root,
+      campaignId,
+      runId: requirePosition(parsed, 0, "run id"),
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "generate status",
+      campaignId,
+      changed: false,
+      data: { status },
+    });
+  }
+
+  if (commandGroup === "generate" && commandName === "logs") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const events = await getMockGenerationRunLogs({
+      root: options.root,
+      campaignId,
+      runId: requirePosition(parsed, 0, "run id"),
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "generate logs",
+      campaignId,
+      changed: false,
+      data: { events },
+    });
+  }
+
+  if (commandGroup === "generate" && commandName === "outputs") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const outputs = await getMockGenerationRunOutputs({
+      root: options.root,
+      campaignId,
+      runId: requirePosition(parsed, 0, "run id"),
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "generate outputs",
+      campaignId,
+      changed: false,
+      data: { outputs },
+    });
+  }
+
+  if (commandGroup === "generate" && commandName === "cancel") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const status = await cancelMockGenerationRun({
+      root: options.root,
+      campaignId,
+      runId: requirePosition(parsed, 0, "run id"),
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "generate cancel",
+      campaignId,
+      changed: status.status === "cancelled",
+      data: { status },
+    });
+  }
+
+  if (commandGroup === "generate" && commandName === "retry") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const result = await retryMockGenerationRun({
+      root: options.root,
+      campaignId,
+      runId: requirePosition(parsed, 0, "run id"),
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "generate retry",
+      campaignId,
+      revisionAfter: result.campaign.revision.hash,
+      changed: true,
+      createdIds: result.response.outputs.map((output) => output.assetId),
+      data: {
+        runId: result.runId,
+        status: result.status,
+        response: result.response,
+      },
+    });
+  }
+
   throw new UsageError(`Unknown command "${getCommandLabel(parsed)}".`);
 }
 
@@ -377,6 +509,7 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
   const options: ParsedCliArgs["options"] = {
     ifNotExists: false,
     ifExists: false,
+    canvas: false,
     json: false,
   };
 
@@ -395,6 +528,11 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
 
     if (token === "--if-exists") {
       options.ifExists = true;
+      continue;
+    }
+
+    if (token === "--canvas") {
+      options.canvas = true;
       continue;
     }
 
@@ -443,6 +581,14 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
         options.usage = value;
       } else if (token === "--plan") {
         options.plan = value;
+      } else if (token === "--from") {
+        options.from = value;
+      } else if (token === "--to") {
+        options.to = value;
+      } else if (token === "--selection") {
+        options.selection = value;
+      } else if (token === "--run-id") {
+        options.runId = value;
       }
 
       index += 1;
@@ -457,6 +603,37 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
     commandName: positionals.shift() ?? null,
     positionals,
     options,
+  };
+}
+
+function createGenerationTarget(parsed: ParsedCliArgs): MockGenerationTarget {
+  const { options } = parsed;
+
+  if (options.canvas) {
+    return { kind: "canvas" };
+  }
+
+  if (options.from !== undefined || options.to !== undefined) {
+    return {
+      kind: "range",
+      fromBlockId: requireOption(options.from, "--from", parsed),
+      toBlockId: requireOption(options.to, "--to", parsed),
+    };
+  }
+
+  if (options.selection !== undefined) {
+    return {
+      kind: "selection",
+      blockIds: options.selection
+        .split(",")
+        .map((blockId) => blockId.trim())
+        .filter(Boolean),
+    };
+  }
+
+  return {
+    kind: "block",
+    blockId: requirePosition(parsed, 0, "block id"),
   };
 }
 
@@ -696,6 +873,10 @@ function isValueFlag(token: string) {
     "--media-type",
     "--usage",
     "--plan",
+    "--from",
+    "--to",
+    "--selection",
+    "--run-id",
   ].includes(token);
 }
 

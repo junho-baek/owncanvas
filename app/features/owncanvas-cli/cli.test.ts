@@ -296,6 +296,117 @@ test("OwnCanvas CLI authors blocks, assets, edges, and apply plans", async () =>
   assert.equal(campaign.canvasState.edges.length, 2);
 });
 
+test("OwnCanvas CLI runs deterministic mock generation and exposes lifecycle commands", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "owncanvas-cli-generate-"));
+  runCli(["workspace", "init", "--root", root, "--json"]);
+  runCli([
+    "campaign",
+    "create",
+    "--root",
+    root,
+    "--id",
+    "launch-pack",
+    "--json",
+  ]);
+  const planPath = path.join(root, "canvas-plan.json");
+  await writeFile(
+    planPath,
+    JSON.stringify({
+      commands: [
+        { type: "block.add", id: "text_prompt", kind: "text" },
+        { type: "block.add", id: "image_hero", kind: "image" },
+        { type: "block.add", id: "video_hero", kind: "video" },
+        {
+          type: "edge.connect",
+          source: "text_prompt:prompt",
+          target: "image_hero:prompt",
+        },
+        {
+          type: "edge.connect",
+          source: "image_hero:generated_image_asset",
+          target: "video_hero:reference_image",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  runCli([
+    "apply",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--plan",
+    planPath,
+    "--json",
+  ]);
+
+  const run = runCli([
+    "generate",
+    "run",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--canvas",
+    "--run-id",
+    "run_cli_canvas",
+    "--json",
+  ]);
+  assert.equal(run.status, 0);
+  assert.equal(run.json.command, "generate run");
+  assert.equal((run.json.data as { status: { status: string } }).status.status, "succeeded");
+
+  const status = runCli([
+    "generate",
+    "status",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "run_cli_canvas",
+    "--json",
+  ]);
+  const logs = runCli([
+    "generate",
+    "logs",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "run_cli_canvas",
+    "--json",
+  ]);
+  const outputs = runCli([
+    "generate",
+    "outputs",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "run_cli_canvas",
+    "--json",
+  ]);
+  const retry = runCli([
+    "generate",
+    "retry",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "run_cli_canvas",
+    "--json",
+  ]);
+
+  assert.equal((status.json.data as { status: { status: string } }).status.status, "succeeded");
+  assert.equal((logs.json.data as { events: Array<{ type: string }> }).events.some((event) => event.type === "run.completed"), true);
+  assert.deepEqual(
+    (outputs.json.data as { outputs: { outputs: Array<{ blockId: string }> } }).outputs.outputs.map((output) => output.blockId),
+    ["text_prompt", "image_hero", "video_hero"],
+  );
+  assert.equal((retry.json.data as { status: { parentRunId: string } }).status.parentRunId, "run_cli_canvas");
+});
+
 function runCli(args: string[]): CliResult {
   const result = spawnSync(
     process.execPath,
