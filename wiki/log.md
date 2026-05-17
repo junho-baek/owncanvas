@@ -2721,3 +2721,16 @@
 - execution result 생성도 기존 job의 output target/result metadata가 현재 `nodeId`의 deterministic Creative Output asset id와 일치할 때만 이전 lifecycle/result metadata를 재사용하도록 보강했다. 이로써 실패한 fan-out/retry 시도가 sibling Image Block의 성공 Creative Output asset을 상속하거나 덮어쓰지 않는다.
 - focused regression으로 `node_1` 성공 저장 후 `node_2`가 `node_1`의 job id를 재사용하는 retry를 시도해도 provider가 호출되지 않고, `asset_node_1_creative_output`과 `node_1` canvas link가 유지되며 `node_2`에는 잘못된 job link가 생기지 않음을 검증했다.
 - 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
+## [2026-05-17] owncanvas-ouroboros-monitor | execution status
+
+- Ouroboros monitor checked Job `job_d578be26d4d3` for Session `orch_0f2df407c770` / Execution `exec_e9d09f70b7d9`.
+- The execution remains `running` in `Deliver`, with acceptance criteria progress `3/12` and sub-acceptance criteria `35/35`.
+- Latest completed status item: Sub-AC 4 verifying persisted provider URLs and duplicated Image Blocks resolve to persisted outputs.
+
+## [2026-05-17] owncanvas-ouroboros-recovery | stuck run recovery
+
+- Ouroboros Job `job_d578be26d4d3`가 `Deliver` 단계 `AC 3/12`, `Sub-AC 35/35` 상태에서 장시간 진행되지 않아 수동 recovery로 전환했다.
+- MCP job cancel을 요청했고, CLI session cancel 확인에서 Session `orch_0f2df407c770`는 `cancelled` 상태로 재구성됐다. hourly monitor automation은 `PAUSED`로 전환했다.
+- Ouroboros worktree `ooo/orch_0f2df407c770`의 변경분을 임시 커밋 `af2e55f`로 고정한 뒤 feature branch `feature/go-generation-fanout-slice`에 cherry-pick해 `5f0ebee`로 회수했다.
+- Recovery 후 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, focused generation TS suite 116/116 pass, full TS suite 530/530 pass, `npm run typecheck`, `npm run build`, `git diff --check`.
