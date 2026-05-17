@@ -3806,7 +3806,7 @@ export function resolveImageGenerationOutputNextNodeActions(
     upscaleReason: capability.capabilities.customSize
       ? null
       : `${capability.model.label} does not expose provider size controls for upscaling.`,
-    videoReason: "No video provider is connected for this Image Block yet.",
+    videoReason: null,
   });
 }
 

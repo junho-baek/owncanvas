@@ -949,8 +949,8 @@ test("image generation output next-node actions expose provider-aware availabili
       {
         kind: "video",
         label: "Video Block source",
-        availability: "disabled",
-        disabledReason: "No video provider is connected for this Image Block yet.",
+        availability: "available",
+        disabledReason: null,
       },
       {
         kind: "output-card",
@@ -1006,8 +1006,8 @@ test("image generation output next-node actions expose provider-aware availabili
       },
       {
         kind: "video",
-        availability: "disabled",
-        disabledReason: "No video provider is connected for this Image Block yet.",
+        availability: "available",
+        disabledReason: null,
       },
     ],
   );

@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-17] actual-ui-image-to-video-generation-qa | UI provider flow
+
+- Image Block generated-output next-node menu에서 `Video Block source` 액션을 실제 영상 provider 연결 상태에 맞게 available로 열었다.
+- 실제 UI 플로우로 새 Campaign 생성, Image Block 드롭, Nano Banana 이미지 생성, generated output handle 드래그, Video Block 생성, Seedance 1 Pro Fast 2초 영상 생성을 완료했다.
+- 생성 결과는 Campaign state에서 `Image Block -> Video Block` edge(`outputs.generated_image_asset` -> `inputs.frame`)와 Video Block `sourceOutputAssetId`로 연결되어 있으며, image/video Campaign Asset이 모두 `ready` 상태로 저장됐다.
+- 증거: `output/screenshots/canvas-ui-actual-image-to-video-flow.png`, `output/screenshots/canvas-ui-actual-image-to-video-flow-state.json`, `output/replicate/ui-flow-generated-image.jpeg`, `output/replicate/ui-flow-generated-video.mp4`.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts app/features/creative-canvas/adapters/react-flow-canvas.test.ts`, `git diff --check`.
+
 ## [2026-05-17] provider-image-output-asset-url-persistence-test | Sub-AC 3.4.1
 
 - Campaign Asset/Creative Output persistence model에 focused provider image generation regression을 추가했다.
