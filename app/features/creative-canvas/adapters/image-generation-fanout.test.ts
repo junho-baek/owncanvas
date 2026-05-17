@@ -8,7 +8,10 @@ import {
   resizeImageGenerationNodeFrameTransition,
   type ImageGenerationNodeProperties,
 } from "../model/image-generation-node.ts";
-import { createImageGenerationFanOutPlan } from "./image-generation-fanout.ts";
+import {
+  createImageGenerationFanOutPlan,
+  createImageGenerationSingleNodeRetryPlan,
+} from "./image-generation-fanout.ts";
 import {
   createGenerationFlowNode,
   type CreativeFlowNode,
@@ -128,6 +131,7 @@ test("createImageGenerationFanOutPlan creates same-type queued image nodes and a
     assert.equal(node.data.properties.providerId, "replicate");
     assert.equal(node.data.properties.modelSlug, "google/nano-banana");
     assert.equal(node.data.properties.prompt, "same prompt");
+    assert.equal(node.data.properties.batchCount, 1);
     assert.equal(node.data.properties.aspectRatio, "1:1");
     assert.deepEqual(node.data.properties.latestResultRefs, {
       generatedAssetIds: [],
@@ -140,6 +144,99 @@ test("createImageGenerationFanOutPlan creates same-type queued image nodes and a
     assert.equal(node.data.properties.uiState.selectedResultAssetId, null);
     assert.equal(node.data.properties.uiState.outputConnectionReady, false);
   }
+});
+
+test("createImageGenerationSingleNodeRetryPlan retries a failed duplicated Image Block in place", () => {
+  const source = imageNode({ id: "image_source", x: 100, y: 200, batchCount: 3 });
+  const firstFanOut = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: source,
+    existingNodes: [source],
+    now: () => "2026-05-17T00:00:00.000Z",
+  });
+  const duplicatedNode = firstFanOut.createdNodes[1];
+
+  assert.ok(duplicatedNode);
+  assert.ok(isImageGenerationNodeProperties(duplicatedNode.data.properties));
+
+  if (
+    duplicatedNode === undefined ||
+    !isImageGenerationNodeProperties(duplicatedNode.data.properties)
+  ) {
+    throw new Error("expected duplicated Image Block properties");
+  }
+
+  const failedNode: CreativeFlowNode = {
+    ...duplicatedNode,
+    data: {
+      ...duplicatedNode.data,
+      properties: createImageGenerationNodeProperties({
+        ...duplicatedNode.data.properties,
+        batchCount: 10,
+        uiState: {
+          ...duplicatedNode.data.properties.uiState,
+          status: "failed",
+          progressPercent: null,
+          statusMessage: "Generation failed",
+          errorReason: "provider timeout",
+          failureDetails: {
+            name: "GenerationProviderUnavailable",
+            message: "provider timeout",
+            providerId: "replicate",
+            modelSlug: "google/nano-banana",
+            providerRequestId: null,
+            retryable: true,
+          },
+          selectedResultAssetId: null,
+          outputConnectionReady: false,
+        },
+      }),
+    },
+  };
+  const retryPlan = createImageGenerationSingleNodeRetryPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: failedNode,
+    existingNodes: [source, ...firstFanOut.createdNodes],
+    now: () => "2026-05-17T00:00:01.000Z",
+  });
+  const secondFanOut = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: source,
+    existingNodes: [source, ...firstFanOut.createdNodes],
+    now: () => "2026-05-17T00:00:00.000Z",
+  });
+
+  assert.equal(
+    retryPlan.batchId,
+    "image_source_batch_20260517000000000_2_retry_20260517000001000",
+  );
+  assert.deepEqual(retryPlan.createdNodes, []);
+  assert.equal(retryPlan.batch.fanOutCount, 1);
+  assert.deepEqual(
+    retryPlan.batch.jobs.map((job) => job.nodeId),
+    ["image_source_batch_20260517000000000_2"],
+  );
+  assert.deepEqual(
+    retryPlan.batch.jobs.map((job) => job.jobId),
+    ["image_source_batch_20260517000000000_2_retry_20260517000001000_job_1"],
+  );
+  assert.equal(
+    retryPlan.batch.spec.sourceNodeId,
+    "image_source_batch_20260517000000000_2",
+  );
+  assert.equal(retryPlan.batch.spec.prompt, "same prompt");
+  assert.equal(retryPlan.batch.spec.provider, "replicate");
+  assert.equal(retryPlan.batch.spec.model, "google/nano-banana");
+  assert.equal(retryPlan.batch.spec.aspectRatio, "1:1");
+  assert.equal(secondFanOut.batchId, "image_source_batch_20260517000000000_run_2");
+  assert.deepEqual(
+    secondFanOut.createdNodes.map((node) => node.id),
+    [
+      "image_source_batch_20260517000000000_run_2_1",
+      "image_source_batch_20260517000000000_run_2_2",
+      "image_source_batch_20260517000000000_run_2_3",
+    ],
+  );
 });
 
 test("createImageGenerationFanOutPlan lays out ten nodes in rows", () => {

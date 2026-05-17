@@ -70,6 +70,50 @@ export function createImageGenerationFanOutPlan(input: {
   };
 }
 
+export function createImageGenerationSingleNodeRetryPlan(input: {
+  campaignId: string;
+  sourceNode: CreativeFlowNode;
+  existingNodes: CreativeFlowNode[];
+  now: () => string;
+}): ImageGenerationFanOutPlan {
+  const properties = input.sourceNode.data.properties;
+
+  if (
+    input.sourceNode.data.kind !== "image" ||
+    !isImageGenerationNodeProperties(properties)
+  ) {
+    throw new Error("source node must be an Image Block");
+  }
+
+  const providerRequest = createImageGenerationNodeProviderRequest({
+    properties,
+    prompt: properties.prompt,
+  });
+  const batchId = createStableRetryBatchId({
+    sourceNodeId: input.sourceNode.id,
+    isoTimestamp: input.now(),
+    existingNodes: input.existingNodes,
+  });
+
+  return {
+    batchId,
+    createdNodes: [],
+    batch: createGenerationBatchRequest({
+      batchId,
+      campaignId: input.campaignId,
+      sourceNodeId: input.sourceNode.id,
+      prompt: properties.prompt,
+      provider: properties.providerId,
+      model: properties.modelSlug,
+      aspectRatio: properties.aspectRatio,
+      nodeIds: [input.sourceNode.id],
+      parameters: {
+        replicate: providerRequest.replicate,
+      },
+    }),
+  };
+}
+
 function createQueuedImageGenerationNode(input: {
   sourceNode: CreativeFlowNode;
   sourceProperties: ImageGenerationNodeProperties;
@@ -81,6 +125,7 @@ function createQueuedImageGenerationNode(input: {
   const id = `${input.batchId}_${input.index + 1}`;
   const properties = createImageGenerationNodeProperties({
     ...input.sourceProperties,
+    batchCount: 1,
     latestResultRefs: {
       generatedAssetIds: [],
       metadataRunId: null,
@@ -134,6 +179,26 @@ function createStableBatchId(input: {
   }
 
   throw new Error("could not allocate unique Image Block fan-out batch id");
+}
+
+function createStableRetryBatchId(input: {
+  sourceNodeId: string;
+  isoTimestamp: string;
+  existingNodes: CreativeFlowNode[];
+}): string {
+  const timestampDigits = input.isoTimestamp.replace(/\D/g, "").slice(0, 17);
+  const baseBatchId = `${input.sourceNodeId}_retry_${timestampDigits}`;
+  const existingNodeIds = new Set(input.existingNodes.map((node) => node.id));
+
+  for (let suffix = 0; suffix < 1_000; suffix += 1) {
+    const batchId = suffix === 0 ? baseBatchId : `${baseBatchId}_run_${suffix + 1}`;
+
+    if (!existingNodeIds.has(batchId)) {
+      return batchId;
+    }
+  }
+
+  throw new Error("could not allocate unique Image Block retry batch id");
 }
 
 function fanOutBatchIdConflicts(

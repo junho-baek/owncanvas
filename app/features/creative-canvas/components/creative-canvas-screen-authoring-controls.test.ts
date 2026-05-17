@@ -1537,6 +1537,8 @@ test("Image Block run buttons call the fan-out run handler", () => {
   );
 
   assert.match(creativeCanvasScreen, /createImageGenerationFanOutPlan/);
+  assert.match(creativeCanvasScreen, /createImageGenerationSingleNodeRetryPlan/);
+  assert.match(creativeCanvasScreen, /queueImageGenerationNodeV2Transition/);
   assert.match(creativeCanvasScreen, /submitImageGenerationBatch/);
   assert.match(creativeCanvasScreen, /GenerationBatchRequest/);
   assert.match(creativeCanvasScreen, /GenerationBatchResponse/);
@@ -1572,6 +1574,10 @@ test("Image Block run buttons call the fan-out run handler", () => {
   assert.match(
     creativeCanvasScreen,
     /campaignRef\.current = persisted\.campaign;[\s\S]*onCampaignChange\?\.\(persisted\.campaign\);[\s\S]*applyImageGenerationBatchResults\([\s\S]*persisted\.response,[\s\S]*plan\.createdNodes\.map\(\(node\) => node\.id\),[\s\S]*\);/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /const sourceProperties = sourceNode\.data\.properties;[\s\S]*if \(sourceProperties\.uiState\.status === "failed"\) \{[\s\S]*createImageGenerationSingleNodeRetryPlan\(\{[\s\S]*sourceNode,[\s\S]*queueImageGenerationNodeV2Transition\(sourceProperties\)[\s\S]*applyImageGenerationBatchFailure\([\s\S]*\[sourceNode\.id\][\s\S]*applyImageGenerationBatchResults\(persisted\.response, \[sourceNode\.id\]\);[\s\S]*return;[\s\S]*\}/,
   );
   assert.match(
     creativeCanvasScreen,

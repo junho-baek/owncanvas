@@ -133,7 +133,7 @@ npm run typecheck
 
 Expected: all tests pass and typecheck exits 0.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/features/creative-canvas/components/creative-canvas-screen.tsx app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts
@@ -148,7 +148,7 @@ git commit -m "ui: persist generation outputs locally"
 - Modify: `app/features/creative-canvas/components/creative-canvas-screen.tsx`
 - Modify: `app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`
 
-- [ ] **Step 1: Write retry planner test**
+- [x] **Step 1: Write retry planner test**
 
 Add `createImageGenerationSingleNodeRetryPlan()` test that starts from a failed duplicated Image Block and asserts:
 - `createdNodes` is empty
@@ -164,15 +164,15 @@ node --experimental-strip-types --test app/features/creative-canvas/adapters/ima
 
 Expected before implementation: FAIL because the retry planner does not exist.
 
-- [ ] **Step 2: Implement retry planner**
+- [x] **Step 2: Implement retry planner**
 
 Add `createImageGenerationSingleNodeRetryPlan()` beside the existing fan-out planner. It should derive provider request parameters from the failed Image Block, generate a collision-safe retry batch id, and create no new visible nodes.
 
-- [ ] **Step 3: Wire screen retry branch**
+- [x] **Step 3: Wire screen retry branch**
 
 In `runImageGenerationNode()`, if the selected Image Block has `uiState.status === "failed"`, submit the single retry plan, immediately mark that existing node queued, and apply success/failure to that same node id. Otherwise keep the current source xN append behavior.
 
-- [ ] **Step 4: Verify task**
+- [x] **Step 4: Verify task**
 
 Run:
 

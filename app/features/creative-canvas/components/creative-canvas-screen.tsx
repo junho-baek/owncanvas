@@ -58,6 +58,7 @@ import {
 import { cn } from "~/core/lib/cn";
 import {
   createImageGenerationFanOutPlan,
+  createImageGenerationSingleNodeRetryPlan,
 } from "~/features/creative-canvas/adapters/image-generation-fanout";
 import {
   applyImageOutputNextNodeActionToCanvas,
@@ -134,6 +135,7 @@ import {
   isImageGenerationNodeProperties,
   listImageGenerationReferenceTrayAttachments,
   openImageGenerationNodeInspectorTransition,
+  queueImageGenerationNodeV2Transition,
   reorderImageGenerationNodeReferenceTransition,
   removeImageGenerationNodeReferenceTransition,
   resolveImageGenerationDocsPanelMetadata,
@@ -776,6 +778,65 @@ export function CreativeCanvasScreen({
         !sourceNode ||
         !isImageGenerationNodeProperties(sourceNode.data.properties)
       ) {
+        return;
+      }
+
+      const sourceProperties = sourceNode.data.properties;
+
+      if (sourceProperties.uiState.status === "failed") {
+        const plan = createImageGenerationSingleNodeRetryPlan({
+          campaignId: currentCampaign.id,
+          sourceNode,
+          existingNodes: canvasSnapshotRef.current.nodes,
+          now: () => new Date().toISOString(),
+        });
+        const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
+          if (node.id !== sourceNode.id) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              properties: queueImageGenerationNodeV2Transition(sourceProperties),
+            },
+          };
+        });
+        const nextCampaign = syncCampaignFromCreativeCanvasInteraction(
+          currentCampaign,
+          nextNodes,
+          canvasSnapshotRef.current.edges,
+        );
+
+        canvasSnapshotRef.current = {
+          nodes: nextNodes,
+          edges: canvasSnapshotRef.current.edges,
+        };
+        campaignRef.current = nextCampaign;
+        setNodes(nextNodes);
+        onCampaignChange?.(nextCampaign);
+
+        const response = await submitImageGenerationBatch(plan.batch);
+
+        if (response === null) {
+          applyImageGenerationBatchFailure(
+            [sourceNode.id],
+            "Generation batch did not complete.",
+          );
+          return;
+        }
+
+        const persisted = persistGenerationBatchResponseToCampaign({
+          campaign: campaignRef.current ?? nextCampaign,
+          request: plan.batch,
+          response,
+        });
+
+        campaignRef.current = persisted.campaign;
+        onCampaignChange?.(persisted.campaign);
+
+        applyImageGenerationBatchResults(persisted.response, [sourceNode.id]);
         return;
       }
 
