@@ -2787,3 +2787,12 @@
 - Video Block 기본 Seedance 계열 aspect ratio를 `9:16`으로 바꾸고, Video Block frame을 360x640 세로형 표면으로 고정했다. 생성된 video Creative Output이 있으면 별도 좌하단 플레이어가 아니라 Video Block 내부 `<video>` preview가 노드 전체를 채운다.
 - 캔버스 좌하단 `PersistentShortFormPlayer` 렌더링을 제거했다. 영상 확인은 생성 블록 표면에서 이루어지는 것이 기준이다.
 - 검증: focused TS tests 54/54 pass, React Flow canvas tests 17/17 pass, `npm run typecheck`, `npm run build`, `git diff --check`, headless Chrome QA에서 Video Block 9:16/360x640, 내부 video preview, prompt overlay, 좌하단 플레이어 0개를 확인했다.
+
+## [2026-05-18] owncanvas-agent-cli-seed | Ouroboros interview
+
+- OwnCanvas agent/CI용 CLI 방향을 Ouroboros interview로 고정하고 Seed `seed_44c68272afba`를 생성했다. Seed 원본은 `~/.ouroboros/seeds/seed_44c68272afba.yaml`에 있다.
+- CLI v1은 `.owncanvas/campaigns/<campaign_id>/` 아래 file-backed Campaign workspace를 canonical source of truth로 삼고, UI `localStorage`는 runtime/cache로만 취급한다. SQLite/NoSQL index, Git sync, multi-user collaboration, full visual layout editing은 v2로 미뤘다.
+- Agent가 겁먹지 않도록 non-destructive Campaign/Block/Edge authoring은 빠르게 적용하되, revision check, snapshot, validation, atomic write, structured JSON envelope, stable exit code로 안전장치를 둔다.
+- 핵심 범위는 Campaign workspace 생성/열기, Generation Block 추가/수정, prompt/model/reference/edge 연결, validate/inspect/diff/apply, deterministic mock generation, opt-in real provider generation, graph/canvas run, 비용 추적이다.
+- Workflow execution은 아직 시작하지 않았다. 생성된 seed가 고정 산출물이며, 다음 단계는 publish 또는 implementation run이다.
+- Publish 결과: GitHub Epic #29와 하위 Task #30, #31, #32, #33, #34, #35를 생성했다. Seed 사본은 `docs/seeds/owncanvas-agent-cli.seed.yaml`에 저장했다.

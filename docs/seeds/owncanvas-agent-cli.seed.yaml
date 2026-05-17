@@ -1,0 +1,310 @@
+goal: Build v1 OwnCanvas CLI that lets agents and CI safely create, edit, connect,
+  validate, inspect, diff, export, and run file-backed Creative Canvas Campaigns and
+  Generation Blocks through shared domain commands, with deterministic mock generation
+  and opt-in real provider execution.
+task_type: code
+brownfield_context:
+  project_type: greenfield
+  context_references: []
+  existing_patterns: []
+  existing_dependencies: []
+constraints:
+- Canonical source of truth is file-backed Campaign workspace under .owncanvas/campaigns/<campaign_id>/
+- CLI must use shared domain commands, not raw JSON editing
+- UI localStorage is runtime/cache only
+- CLI-created Campaigns must open in UI and UI-exported Campaigns must inspect/validate/diff
+  in CLI
+- UI/CLI concurrent edit or revision mismatch must fail as explicit conflict, no auto-merge
+- Campaign workspace layout must include campaign.json, assets/, outputs/, runs/,
+  snapshots/
+- campaign.json must preserve unknown UI/core fields and use extensions or metadata
+  for CLI/provider-specific data
+- schemaVersion is required and unsupported versions fail until explicit migrate command
+- Non-destructive authoring commands apply immediately by default and support --dry-run
+- All writes must use campaign lock, revision check, pre/post validation, pre-write
+  snapshot, temp file, fsync, and atomic rename
+- Structural validation errors block writes and runs
+- Draft incompleteness may be saved but must block run-ready generation
+- Destructive/high-risk commands require --yes and usually --expect-revision
+- --force must not bypass conflicts and is limited to validation override or irreversible
+  cleanup
+- Real provider generation requires explicit provider selection plus --allow-cost
+  or --max-cost-usd
+- Secrets may come from env vars, .env.local, or --env-file only and must never be
+  stored in campaign.json or printed
+- Default generation provider is deterministic mock
+- JSON mode must print only structured JSON to stdout and progress/logs/warnings to
+  stderr
+- 'Exit codes are stable: 0 success, 1 generic failure, 2 validation failure, 3 conflict,
+  4 budget/cost guard failure, 5 provider/generation failure, 6 usage error, 7 file/io/permission/lock
+  error'
+- apply accepts only domain command lists, not arbitrary raw JSON patch
+- Full UI parity, auto-merge, SQLite index, Git sync, multi-user collaboration, full
+  visual layout editing, advanced credential manager, OS keychain, and full arbitrary
+  JSON patch are v2
+acceptance_criteria:
+- workspace init creates .owncanvas/workspace.json and Campaign directory layout
+- campaign create/open/list/inspect/export work against file-backed workspace
+- block add/set/delete/restore supports text, image, and video blocks with stable
+  ids
+- edge connect/disconnect supports domain port syntax block_id:port_name
+- asset import/list stores reference assets and metadata
+- block set supports prompt, model, aspect ratio, count, duration, resolution, title,
+  position, selected options, and reference attachment via partial merge
+- apply plan.json and stdin JSON execute multiple domain commands atomically or write
+  nothing
+- validate checks schemaVersion, required fields, id uniqueness, block kind, block
+  properties, model selection, edge endpoints, port names, connection semantics, asset
+  refs, output refs, run manifest core fields, revision metadata, and workspace layout
+- default validate allows draft warnings with exit 0 and fails hard errors with exit
+  2
+- validate --run-ready and generate run promote readiness issues to errors
+- --strict or --warnings-as-errors can promote warnings to errors
+- inspect --json returns enough state for an agent to choose the next block set, edge
+  connect, validate, or generate run command
+- diff supports human summary/unified diff and --json structured entries
+- --json envelope includes schemaVersion, ok, command, workspacePath, campaignId,
+  revisionBefore, revisionAfter, changed, createdIds, updatedIds, deletedIds, selectedIds,
+  data, warnings, and errors
+- errors include code, message, path, command, retryable, severity, recoveryHint,
+  and details
+- idempotent no-ops return changed=false success where allowed
+- duplicate create/add with same id fails unless --if-not-exists is provided
+- repeated existing edge connect returns changed=false success
+- generate run supports block target, --canvas graph run, --from/--to subgraph run,
+  and --selection
+- generate status/logs/cancel/retry/outputs work by run id
+- mock graph run deterministically executes Text/Image/Video prompt/reference/output
+  handoff
+- mock run writes runs/<run_id>/ request, response, status, logs/events, pricing,
+  outputs, assets metadata, and Campaign visible output refs
+- partial generation preserves successful outputs, records failed jobs, marks graph
+  run partial_failed, and exits 5 by default
+- real provider run is skipped in default CI without key/budget and fails clearly
+  in real-smoke profile when missing
+- run manifest records stable public fields including run id, status, target, provider/serviceAdapterId,
+  model, input ids, output ids, timestamps, latency, costs, failure details, parentRunId,
+  attempt
+- provider raw payloads and raw logs are stored under raw/ or diagnostics as internal/best-effort
+- unknown fields/extensions are preserved through CLI edits
+- revision mismatch fails with exit code 3
+- budget guard failure exits 4
+- interrupted write does not corrupt campaign.json
+- snapshot restore can recover a previous valid Campaign state
+- CLI-created Campaign opens and saves in UI, then CLI validate succeeds
+- UI-exported Campaign can be inspected, diffed, validated, edited by CLI, and reopened
+  in UI
+ontology_schema:
+  name: OwnCanvasCliCampaignWorkspace
+  description: Domain model for a file-backed OwnCanvas Campaign workspace managed
+    by a stable agent/CI CLI, including Campaign documents, Generation Blocks, domain
+    edges, assets, generated outputs, generation runs, revisions, snapshots, validation
+    reports, and machine-readable command results.
+  fields:
+  - name: workspacePath
+    type: string
+    description: Path to discovered or explicit .owncanvas workspace
+    required: true
+  - name: workspaceConfig
+    type: object
+    description: workspace.json metadata and provider config references
+    required: true
+  - name: campaignId
+    type: string
+    description: Stable Campaign identifier
+    required: true
+  - name: campaignJson
+    type: object
+    description: Canonical Campaign document containing UI/CLI-visible domain state
+    required: true
+  - name: schemaVersion
+    type: string
+    description: Required schema version for validation and migration policy
+    required: true
+  - name: revision
+    type: object
+    description: Revision number, content hash, updatedAt, lastCommand, and lastActor
+      metadata
+    required: true
+  - name: campaignTitle
+    type: string
+    description: Human-readable Campaign title
+    required: true
+  - name: canvasState
+    type: object
+    description: UI-compatible canvas state or campaignSpec including blocks and edges
+    required: true
+  - name: blocks
+    type: array
+    description: Generation Blocks with stable id, kind, layout, properties, outputs,
+      and metadata
+    required: true
+  - name: blockId
+    type: string
+    description: Stable user-specified or deterministic kind/slug/sequence id
+    required: true
+  - name: blockKind
+    type: string
+    description: Supported kind such as text, image, or video
+    required: true
+  - name: blockProperties
+    type: object
+    description: Domain-safe editable fields such as prompt, model, aspectRatio, count,
+      duration, resolution, references, and selected options
+    required: true
+  - name: ports
+    type: array
+    description: Stable domain port names such as prompt, reference_image, generated_image_asset,
+      and generated_video_asset
+    required: true
+  - name: edges
+    type: array
+    description: Domain connections between source and target block ports
+    required: true
+  - name: edgeId
+    type: string
+    description: Deterministic id based on source, target, and port endpoints
+    required: true
+  - name: assets
+    type: array
+    description: Imported or generated asset metadata referenced by Campaign state
+    required: true
+  - name: assetId
+    type: string
+    description: Stable asset identifier used for files and references
+    required: true
+  - name: assetMetadata
+    type: object
+    description: mediaType, uri/path, usage, status, title, alt, file metadata, rights,
+      and generated metadata
+    required: true
+  - name: outputs
+    type: array
+    description: Generated output file references stored under outputs/ and linked
+      to asset metadata
+    required: true
+  - name: runs
+    type: array
+    description: Generation run manifests and records stored under runs/<run_id>/
+    required: true
+  - name: runId
+    type: string
+    description: Stable run identifier
+    required: true
+  - name: runStatus
+    type: string
+    description: queued, running, succeeded, failed, cancelled, timed_out, or partial_failed
+    required: true
+  - name: runTarget
+    type: object
+    description: Target block, canvas graph, subgraph, or selection for execution
+    required: true
+  - name: provider
+    type: object
+    description: Resolved provider/serviceAdapterId, model, credential reference,
+      and cost guard metadata
+    required: true
+  - name: pricing
+    type: object
+    description: Pricing snapshot, estimatedCostUsd, actualCostUsd when available,
+      and provider metrics basis
+    required: true
+  - name: failureDetails
+    type: object
+    description: Failure taxonomy, message, retryability, recovery hint, and job-level
+      details
+    required: true
+  - name: snapshots
+    type: array
+    description: Pre-write backups with revision, hash, timestamp, command, actor,
+      and changed paths
+    required: true
+  - name: validationReport
+    type: object
+    description: Errors, warnings, diagnostics, paths, and run-ready or strict mode
+      status
+    required: true
+  - name: diffEntries
+    type: array
+    description: Structured diff entries with path, operation, before, and after
+    required: true
+  - name: commandResult
+    type: object
+    description: Stable JSON response envelope for agent/CI parsing
+    required: true
+  - name: applyPlan
+    type: object
+    description: Atomic list of allowed domain commands such as block.add, block.set,
+      edge.connect, asset.import, and validate
+    required: true
+  - name: extensions
+    type: object
+    description: Preserved CLI, agent, provider, or UI-specific namespaced data not
+      part of strict core schema
+    required: true
+evaluation_principles:
+- name: UI Round Trip Safety
+  description: CLI changes must preserve UI-openable Campaign state and unknown fields
+  weight: 0.18
+- name: Agent Parseability
+  description: Commands must provide stable JSON envelopes, exit codes, ids, and diagnostics
+    usable by agents and CI
+  weight: 0.16
+- name: Domain Safety
+  description: Edits must go through domain commands with validation, port semantics,
+    and schema invariants instead of raw JSON mutation
+  weight: 0.15
+- name: Transaction Integrity
+  description: Writes must be atomic, snapshot-backed, revision-checked, lock-protected,
+    and rollback-safe
+  weight: 0.14
+- name: Execution Safety
+  description: Mock generation must be deterministic and real generation must require
+    credentials plus explicit cost opt-in and budget guards
+  weight: 0.12
+- name: Git Friendliness
+  description: campaign.json must use deterministic ids, key ordering, stable formatting,
+    and avoid meaningless reordering
+  weight: 0.08
+- name: Authoring Ergonomics
+  description: Common block, edge, asset, prompt, model, and batch edits should be
+    fast without excessive confirmation
+  weight: 0.08
+- name: Validation Clarity
+  description: Warnings and hard errors must be distinct, with strict/run-ready modes
+    and actionable recovery hints
+  weight: 0.06
+- name: Stable Public Contract
+  description: Agent/CI-facing schema, command outputs, run manifest core fields,
+    and exit codes must remain versioned and compatible
+  weight: 0.03
+exit_conditions:
+- name: SeedComplete
+  description: Structured requirements are sufficient to generate immutable Seed YAML
+  criteria: All required Seed fields are populated with concrete constraints, criteria,
+    ontology, evaluation principles, and exit conditions
+- name: ScopePinned
+  description: v1 CLI boundary is fixed
+  criteria: Authoring, validation, batch apply, deterministic mock execution, opt-in
+    real execution, storage, safety, and CI contracts are specified while v2 items
+    are excluded
+- name: ContractStable
+  description: Agent/CI public surfaces are fixed
+  criteria: Command set, JSON envelope, error schema, exit codes, validation reports,
+    inspect/diff outputs, run manifest core fields, and workspace layout are defined
+- name: AcceptanceTestable
+  description: Success can be verified without ambiguity
+  criteria: End-to-end CLI-created Campaign, UI round-trip, mock graph run, unknown
+    field preservation, revision conflict, interrupted write, and validation failure
+    scenarios are measurable
+- name: SafetyResolved
+  description: High-risk operation behavior is decided
+  criteria: Destructive commands, --yes, --expect-revision, --force, --dry-run, budget
+    guards, locks, snapshots, and rollback behavior have explicit criteria
+metadata:
+  seed_id: seed_44c68272afba
+  version: 1.0.0
+  created_at: '2026-05-17T18:29:19.463528Z'
+  ambiguity_score: 0.089
+  interview_id: interview_20260517_162114
+  parent_seed_id: null
