@@ -27,7 +27,13 @@ import {
   OwnCanvasCliRepositoryError,
   updateCampaignInWorkspace,
 } from "./model/workspace-repository.ts";
-import { isJsonObject, stableStringify } from "./model/stable-json.ts";
+import { diffJsonDocuments, formatDiffEntriesForHumans } from "./model/diff.ts";
+import { isJsonObject, parseJsonObject, stableStringify } from "./model/stable-json.ts";
+import {
+  createCampaignInspectSummary,
+  validateCampaignWorkspace,
+  type OwnCanvasCliValidationDiagnostic,
+} from "./model/validation.ts";
 
 export type OwnCanvasCliResultEnvelope = {
   schemaVersion: "owncanvas.cli-result.v1";
@@ -81,11 +87,15 @@ type ParsedCliArgs = {
     mediaType?: string;
     usage?: string;
     plan?: string;
+    against?: string;
     canvas: boolean;
     from?: string;
     to?: string;
     selection?: string;
     runId?: string;
+    runReady: boolean;
+    strict: boolean;
+    dryRun: boolean;
     ifNotExists: boolean;
     ifExists: boolean;
     json: boolean;
@@ -103,6 +113,11 @@ export async function runOwnCanvasCli(argv = process.argv.slice(2)) {
     writeResult(result, parsed.options.json);
     return 0;
   } catch (error) {
+    if (error instanceof OwnCanvasCliEnvelopeExit) {
+      writeResult(error.envelope, parsed.options.json);
+      return error.exitCode;
+    }
+
     const exitCode =
       error instanceof UsageError
         ? 6
@@ -211,6 +226,10 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
       changed: false,
       data: {
         campaign: result.document,
+        summary: await createCampaignInspectSummary({
+          document: result.document,
+          campaignDirectoryPath: result.paths.campaignDirectoryPath,
+        }),
         path: result.paths.campaignDirectoryPath,
       },
     });
@@ -383,6 +402,62 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
     return executeAuthoringCommands(parsed, campaignId, commands, "apply");
   }
 
+  if (commandGroup === "validate" && commandName === null) {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const report = await validateCampaignWorkspace({
+      root: options.root,
+      campaignId,
+      runReady: options.runReady,
+      strict: options.strict,
+    });
+    const envelope = createEnvelope({
+      ok: report.valid,
+      command: "validate",
+      workspacePath: report.workspacePath,
+      campaignId,
+      revisionAfter: report.summary.revision.hash,
+      changed: false,
+      data: { report },
+      warnings: report.warnings.map((diagnostic) =>
+        createDiagnosticFromValidation(diagnostic, "validate"),
+      ),
+      errors: report.errors.map((diagnostic) =>
+        createDiagnosticFromValidation(diagnostic, "validate"),
+      ),
+    });
+
+    if (!report.valid) {
+      throw new OwnCanvasCliEnvelopeExit(envelope, 2);
+    }
+
+    return envelope;
+  }
+
+  if (commandGroup === "diff" && commandName === null) {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const againstPath = requireOption(options.against, "--against", parsed);
+    const result = await inspectCampaignInWorkspace({
+      root: options.root,
+      id: campaignId,
+    });
+    const against = parseJsonObject(await readFile(againstPath, "utf8"));
+    const entries = diffJsonDocuments(against, result.document);
+
+    return createEnvelope({
+      ok: true,
+      command: "diff",
+      workspacePath: result.workspacePath,
+      campaignId,
+      revisionAfter: result.document.revision.hash,
+      changed: false,
+      data: {
+        againstPath,
+        entries,
+        human: formatDiffEntriesForHumans(entries),
+      },
+    });
+  }
+
   if (commandGroup === "generate" && commandName === "run") {
     const campaignId = requireOption(options.campaign, "--campaign", parsed);
     const target = createGenerationTarget(parsed);
@@ -510,6 +585,9 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
     ifNotExists: false,
     ifExists: false,
     canvas: false,
+    runReady: false,
+    strict: false,
+    dryRun: false,
     json: false,
   };
 
@@ -533,6 +611,21 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
 
     if (token === "--canvas") {
       options.canvas = true;
+      continue;
+    }
+
+    if (token === "--run-ready") {
+      options.runReady = true;
+      continue;
+    }
+
+    if (token === "--strict") {
+      options.strict = true;
+      continue;
+    }
+
+    if (token === "--dry-run") {
+      options.dryRun = true;
       continue;
     }
 
@@ -581,6 +674,8 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
         options.usage = value;
       } else if (token === "--plan") {
         options.plan = value;
+      } else if (token === "--against") {
+        options.against = value;
       } else if (token === "--from") {
         options.from = value;
       } else if (token === "--to") {
@@ -676,6 +771,11 @@ function writeResult(envelope: OwnCanvasCliResultEnvelope, json: boolean) {
     return;
   }
 
+  if (envelope.ok && typeof envelope.data?.human === "string") {
+    process.stdout.write(envelope.data.human);
+    return;
+  }
+
   if (envelope.ok) {
     process.stdout.write(`${envelope.command}: ok\n`);
     return;
@@ -733,6 +833,35 @@ async function executeAuthoringCommands(
   commands: OwnCanvasAuthoringCommand[],
   label: string,
 ): Promise<OwnCanvasCliResultEnvelope> {
+  if (parsed.options.dryRun) {
+    const inspected = await inspectCampaignInWorkspace({
+      root: parsed.options.root,
+      id: campaignId,
+    });
+    const result = applyAuthoringCommands(inspected.document, commands);
+
+    return createEnvelope({
+      ok: true,
+      command: label,
+      workspacePath: inspected.workspacePath,
+      campaignId,
+      revisionBefore: inspected.document.revision.hash,
+      revisionAfter: inspected.document.revision.hash,
+      changed: result.changed,
+      createdIds: result.createdIds,
+      updatedIds: result.updatedIds,
+      deletedIds: result.deletedIds,
+      data: {
+        dryRun: true,
+        result: {
+          commandCount: commands.length,
+          results: result.data.results,
+        },
+        campaignPreview: result.document,
+      },
+    });
+  }
+
   let authoringResult: OwnCanvasAuthoringResult | null = null;
   const updateResult = await updateCampaignInWorkspace({
     root: parsed.options.root,
@@ -873,6 +1002,7 @@ function isValueFlag(token: string) {
     "--media-type",
     "--usage",
     "--plan",
+    "--against",
     "--from",
     "--to",
     "--selection",
@@ -933,8 +1063,36 @@ function createDiagnostic(error: unknown, command: string): OwnCanvasCliDiagnost
   };
 }
 
+function createDiagnosticFromValidation(
+  diagnostic: OwnCanvasCliValidationDiagnostic,
+  command: string,
+): OwnCanvasCliDiagnostic {
+  return {
+    code: diagnostic.code,
+    message: diagnostic.message,
+    path: diagnostic.path,
+    command,
+    retryable: diagnostic.retryable,
+    severity: diagnostic.severity,
+    recoveryHint: diagnostic.recoveryHint,
+    details: diagnostic.details,
+  };
+}
+
 function getCommandLabel(parsed: ParsedCliArgs) {
   return [parsed.commandGroup, parsed.commandName].filter(Boolean).join(" ") || "unknown";
+}
+
+class OwnCanvasCliEnvelopeExit extends Error {
+  readonly envelope: OwnCanvasCliResultEnvelope;
+  readonly exitCode: number;
+
+  constructor(envelope: OwnCanvasCliResultEnvelope, exitCode: number) {
+    super(envelope.errors[0]?.message ?? `${envelope.command} failed.`);
+    this.name = "OwnCanvasCliEnvelopeExit";
+    this.envelope = envelope;
+    this.exitCode = exitCode;
+  }
 }
 
 class UsageError extends Error {

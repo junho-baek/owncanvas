@@ -15,12 +15,14 @@ type CliResult = {
     command?: unknown;
     workspacePath?: unknown;
     campaignId?: unknown;
+    revisionBefore?: unknown;
     revisionAfter?: unknown;
     changed?: unknown;
     data?: unknown;
     createdIds?: unknown;
     updatedIds?: unknown;
     deletedIds?: unknown;
+    warnings?: Array<{ code?: unknown }>;
     errors: Array<{ code?: unknown }>;
   };
 };
@@ -407,14 +409,182 @@ test("OwnCanvas CLI runs deterministic mock generation and exposes lifecycle com
   assert.equal((retry.json.data as { status: { parentRunId: string } }).status.parentRunId, "run_cli_canvas");
 });
 
-function runCli(args: string[]): CliResult {
-  const result = spawnSync(
-    process.execPath,
-    ["--experimental-strip-types", cliPath, ...args],
-    {
-      encoding: "utf8",
-    },
+test("OwnCanvas CLI validates, dry-runs, diffs, and uses stable exit codes", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "owncanvas-cli-contracts-"));
+  runCli(["workspace", "init", "--root", root, "--json"]);
+  runCli([
+    "campaign",
+    "create",
+    "--root",
+    root,
+    "--id",
+    "launch-pack",
+    "--json",
+  ]);
+  runCli([
+    "block",
+    "add",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--kind",
+    "image",
+    "--id",
+    "image_hero",
+    "--json",
+  ]);
+
+  const validateDraft = runCli([
+    "validate",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--json",
+  ]);
+  assert.equal(validateDraft.status, 0);
+  assert.equal(validateDraft.json.command, "validate");
+  assert.equal(validateDraft.json.ok, true);
+  assert.equal(validateDraft.json.warnings?.[0]?.code, "block.prompt_empty");
+
+  const validateReady = runCli([
+    "validate",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--run-ready",
+    "--json",
+  ]);
+  assert.equal(validateReady.status, 2);
+  assert.equal(validateReady.json.ok, false);
+  assert.equal(validateReady.json.errors[0]?.code, "block.prompt_empty");
+
+  const exportedPath = path.join(root, "exports", "before.json");
+  runCli([
+    "campaign",
+    "export",
+    "--root",
+    root,
+    "launch-pack",
+    "--out",
+    exportedPath,
+    "--json",
+  ]);
+  const planPath = path.join(root, "contracts-plan.json");
+  await writeFile(
+    planPath,
+    JSON.stringify({
+      commands: [{ type: "block.add", id: "text_prompt", kind: "text" }],
+    }),
+    "utf8",
   );
+
+  const dryRun = runCli([
+    "apply",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--plan",
+    planPath,
+    "--dry-run",
+    "--json",
+  ]);
+  assert.equal(dryRun.status, 0);
+  assert.equal((dryRun.json.data as { dryRun: boolean }).dryRun, true);
+  assert.equal(dryRun.json.revisionBefore, dryRun.json.revisionAfter);
+
+  const afterDryRun = runCli([
+    "campaign",
+    "inspect",
+    "--root",
+    root,
+    "launch-pack",
+    "--json",
+  ]);
+  assert.deepEqual(
+    ((afterDryRun.json.data as { campaign: { canvasState: { nodes: Array<{ id: string }> } } }).campaign.canvasState.nodes)
+      .map((node) => node.id),
+    ["image_hero"],
+  );
+  assert.equal(
+    (afterDryRun.json.data as { summary: { nodeCount: number } }).summary.nodeCount,
+    1,
+  );
+
+  runCli([
+    "apply",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--plan",
+    planPath,
+    "--json",
+  ]);
+  const structuredDiff = runCli([
+    "diff",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--against",
+    exportedPath,
+    "--json",
+  ]);
+  assert.equal(structuredDiff.status, 0);
+  assert.equal(structuredDiff.json.command, "diff");
+  assert.equal(
+    (structuredDiff.json.data as { entries: Array<{ path: string }> }).entries.some(
+      (entry) => entry.path === "canvasState.nodes.1",
+    ),
+    true,
+  );
+
+  const humanDiff = runCliRaw([
+    "diff",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--against",
+    exportedPath,
+  ]);
+  assert.equal(humanDiff.status, 0);
+  assert.match(humanDiff.stdout, /\+ canvasState\.nodes\.1:/);
+
+  const conflict = runCli([
+    "block",
+    "add",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--kind",
+    "text",
+    "--id",
+    "text_prompt",
+    "--json",
+  ]);
+  assert.equal(conflict.status, 3);
+  assert.equal(conflict.json.errors[0]?.code, "block_already_exists");
+
+  const fileError = runCli([
+    "campaign",
+    "inspect",
+    "--root",
+    path.join(root, "missing-workspace"),
+    "launch-pack",
+    "--json",
+  ]);
+  assert.equal(fileError.status, 7);
+  assert.equal(fileError.json.errors[0]?.code, "workspace_not_found");
+});
+
+function runCli(args: string[]): CliResult {
+  const result = runCliRaw(args);
   const trimmedStdout = result.stdout.trim();
 
   assert.notEqual(trimmedStdout, "", result.stderr);
@@ -425,4 +595,14 @@ function runCli(args: string[]): CliResult {
     stderr: result.stderr,
     json: JSON.parse(trimmedStdout) as CliResult["json"],
   };
+}
+
+function runCliRaw(args: string[]) {
+  return spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", cliPath, ...args],
+    {
+      encoding: "utf8",
+    },
+  );
 }
