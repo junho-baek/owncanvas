@@ -1274,7 +1274,7 @@ test("image generation docs panel metadata exposes selected provider model contr
 
   assert.deepEqual(docsMetadata.provider, {
     providerId: "replicate",
-    name: "Replicate",
+    name: "Replicate model service",
     credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
     credentialStatus: {
       state: "missing",

@@ -922,11 +922,12 @@ export const imageGenerationProviderPresets = [
   },
   {
     providerId: "replicate",
-    label: "Replicate",
+    label: "Replicate model service",
     capabilityId: "image.generate",
-    modelHint: "Provider-selected image model slug",
+    modelHint: "Serves selected image model slugs such as google/nano-banana",
     secretEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
-    notes: "Provider adapter maps the common node contract to a model-specific prediction request.",
+    notes:
+      "Execution service only; the user-facing generation choice is the selected image model.",
   },
   {
     providerId: "freepik-compatible",
@@ -1033,7 +1034,7 @@ export const imageGenerationModelCapabilities: ImageGenerationModelCapability[] 
   defineImageGenerationModelCapability({
     provider: {
       providerId: "replicate",
-      label: "Replicate",
+      label: "Replicate model service",
       secretEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
     },
     model: {
@@ -1220,7 +1221,7 @@ export const imageGenerationModelCapabilities: ImageGenerationModelCapability[] 
   defineImageGenerationModelCapability({
     provider: {
       providerId: "replicate",
-      label: "Replicate",
+      label: "Replicate model service",
       secretEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
     },
     model: {
@@ -1384,7 +1385,7 @@ export const imageGenerationModelCapabilities: ImageGenerationModelCapability[] 
   defineImageGenerationModelCapability({
     provider: {
       providerId: "replicate",
-      label: "Replicate",
+      label: "Replicate model service",
       secretEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
     },
     model: {

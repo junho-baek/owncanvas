@@ -4926,7 +4926,7 @@ const generationBlockDefinitions = {
       { label: "Setup", value: "Image style controls", state: "OPTIONAL" },
       { label: "Creative Output", value: "Image assets", state: "READY" },
     ],
-    properties: createImageGenerationNodeProperties({ providerId: "freepik-compatible" }),
+    properties: createImageGenerationNodeProperties(),
   },
   video: {
     kind: "video",
@@ -5034,9 +5034,7 @@ export function createCampaignBlock(
     position,
     ...(kind === "image"
       ? {
-          properties: createImageGenerationNodeProperties({
-            providerId: "freepik-compatible",
-          }),
+          properties: createImageGenerationNodeProperties(),
         }
       : {}),
   };

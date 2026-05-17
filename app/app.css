@@ -2071,6 +2071,25 @@ button {
   padding: 0 8px;
 }
 
+.space-count-stepper {
+  display: grid;
+  width: 16px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.space-count-stepper:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
 .space-control-chip.model {
   min-width: 0;
   max-width: 132px;

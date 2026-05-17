@@ -347,6 +347,8 @@ const publishingScheduleModeOptions = [
   "recurring",
 ] as const;
 
+type ImageGenerationBatchCount = ImageGenerationNodeProperties["batchCount"];
+
 function createDefaultLandingPageConversionElement(
   campaign: CampaignDraft,
 ): CampaignLandingPageConversionElementConfiguration {
@@ -970,6 +972,54 @@ export function CreativeCanvasScreen({
     });
   }, [setNodes, updateCampaignCanvas]);
 
+  const handleImageBatchCountChange = useCallback((
+    nodeId: string,
+    direction: -1 | 1,
+  ) => {
+    setNodes((currentNodes) => {
+      let didUpdate = false;
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (node.id !== nodeId || !isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        const nextBatchCount = Math.min(
+          10,
+          Math.max(1, properties.batchCount + direction),
+        ) as ImageGenerationBatchCount;
+
+        if (nextBatchCount === properties.batchCount) {
+          return node;
+        }
+
+        didUpdate = true;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: {
+              ...properties,
+              batchCount: nextBatchCount,
+            },
+          },
+        };
+      });
+
+      if (!didUpdate) {
+        return currentNodes;
+      }
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
   const handleImageInspectorOpen = useCallback((nodeId: string) => {
     setNodes((currentNodes) => {
       const nextNodes = currentNodes.map((node) => {
@@ -1220,6 +1270,7 @@ export function CreativeCanvasScreen({
         <GenerationBlockNode
           {...(props as NodeProps<CreativeFlowNode>)}
           onImageAspectRatioChange={handleImageAspectRatioChange}
+          onImageBatchCountChange={handleImageBatchCountChange}
           onImageInspectorOpen={handleImageInspectorOpen}
           onImageReferenceAttach={handleImageReferenceAttach}
           onImageReferenceRemove={handleImageReferenceRemove}
@@ -1234,6 +1285,7 @@ export function CreativeCanvasScreen({
     }),
     [
       handleImageAspectRatioChange,
+      handleImageBatchCountChange,
       handleImageInspectorOpen,
       handleImageReferenceAttach,
       handleImageReferenceRemove,
@@ -1566,12 +1618,12 @@ function ImageGenerationInspectorPanel({
           <h2>Model summary</h2>
           <dl>
             <div>
-              <dt>Provider</dt>
-              <dd>{docsMetadata.provider.name}</dd>
-            </div>
-            <div>
               <dt>Model</dt>
               <dd>{docsMetadata.selectedModel.name}</dd>
+            </div>
+            <div>
+              <dt>Served by</dt>
+              <dd>{docsMetadata.provider.name}</dd>
             </div>
             <div>
               <dt>Status</dt>
@@ -1627,8 +1679,8 @@ function ImageGenerationInspectorPanel({
 
       <details className="image-generation-developer-details">
         <summary>Developer details</summary>
-        <section aria-label="Provider diagnostics">
-          <h2>Provider diagnostics</h2>
+        <section aria-label="Model service diagnostics">
+          <h2>Service diagnostics</h2>
           <dl>
             <div>
               <dt>Credential env</dt>
@@ -4010,6 +4062,7 @@ function GenerationBlockNode({
   data,
   selected,
   onImageAspectRatioChange,
+  onImageBatchCountChange,
   onImageInspectorOpen,
   onImageReferenceAttach,
   onImageReferenceRemove,
@@ -4024,6 +4077,7 @@ function GenerationBlockNode({
     nodeId: string,
     aspectRatio: ImageGenerationAspectRatio,
   ) => void;
+  onImageBatchCountChange: (nodeId: string, direction: -1 | 1) => void;
   onImageInspectorOpen: (nodeId: string) => void;
   onImageReferenceAttach: (
     nodeId: string,
@@ -4101,6 +4155,9 @@ function GenerationBlockNode({
           Icon={Icon}
           onAspectRatioChange={(aspectRatio) => {
             onImageAspectRatioChange(data.id, aspectRatio);
+          }}
+          onBatchCountChange={(direction) => {
+            onImageBatchCountChange(data.id, direction);
           }}
           onOpenInspector={() => {
             onImageInspectorOpen(data.id);
@@ -4309,6 +4366,7 @@ function FreepikReferenceImageNode({
   details,
   Icon,
   onAspectRatioChange,
+  onBatchCountChange,
   onOpenInspector,
   onReferenceAttach,
   onReferenceRemove,
@@ -4325,6 +4383,7 @@ function FreepikReferenceImageNode({
   details: ImageGenerationNodeProperties;
   Icon: ComponentType<{ className?: string }>;
   onAspectRatioChange: (aspectRatio: ImageGenerationAspectRatio) => void;
+  onBatchCountChange: (direction: -1 | 1) => void;
   onOpenInspector: () => void;
   onReferenceAttach: (referenceInput: ImageGenerationNodeReferenceInput) => void;
   onReferenceRemove: (
@@ -4350,7 +4409,6 @@ function FreepikReferenceImageNode({
   const activeProvider = details.providerPresets.find(
     (provider) => provider.providerId === details.providerId,
   );
-  const modelLabel = activeProvider?.label === "Freepik-style" ? "Google Nano Ban..." : (activeProvider?.label ?? details.providerId);
   const promptPort = details.inputs.find((port) => port.id === "prompt");
   const referencePort =
     details.inputs.find((port) => port.id === "reference_image" && port.dataType === "asset");
@@ -4384,6 +4442,11 @@ function FreepikReferenceImageNode({
         }
       : null;
   const referenceTrayVisible = selected || details.uiState.referenceTrayOpen;
+  const modelCapability = resolveImageGenerationNodeModelCapability(details);
+  const modelLabel =
+    modelCapability?.model.label ??
+    activeProvider?.label ??
+    details.modelSlug;
   const [referenceUrlDraft, setReferenceUrlDraft] = useState("");
   const [referenceAttachmentMessage, setReferenceAttachmentMessage] = useState<
     string | null
@@ -4407,7 +4470,6 @@ function FreepikReferenceImageNode({
     invalidReferenceAttachment === null ? referenceAttachmentState : "invalid";
   const referenceTrayValidationMessage =
     invalidReferenceAttachment?.validation.message ?? referenceAttachmentMessage;
-  const modelCapability = resolveImageGenerationNodeModelCapability(details);
   const aspectRatioSelectorOptions =
     resolveImageGenerationAspectRatioSelectorOptions(modelCapability);
   const defaultCampaignAssetId = campaignAssetReferences[0]?.id ?? "";
@@ -4714,11 +4776,27 @@ function FreepikReferenceImageNode({
         />
 
         <div className="space-node-controls nodrag" aria-label="Image generation settings">
-          <button className="space-control-chip count" type="button" aria-label="Output count">
-            <span>−</span>
+          <div className="space-control-chip count" role="group" aria-label="Output count">
+            <button
+              className="space-count-stepper"
+              type="button"
+              aria-label="Decrease output count"
+              onClick={() => onBatchCountChange(-1)}
+              disabled={details.batchCount <= 1}
+            >
+              −
+            </button>
             <strong>x{details.batchCount}</strong>
-            <span>＋</span>
-          </button>
+            <button
+              className="space-count-stepper"
+              type="button"
+              aria-label="Increase output count"
+              onClick={() => onBatchCountChange(1)}
+              disabled={details.batchCount >= 10}
+            >
+              ＋
+            </button>
+          </div>
           <button className="space-control-chip model" type="button" aria-label="Model selector">
             <span>{modelLabel}</span>
             <em>⌄</em>

@@ -9,6 +9,15 @@
 - Provider request id도 asset generated metadata와 workflow output에 함께 남는 계약을 확인했다.
 - 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `npm run typecheck`.
 
+## [2026-05-17] image-model-vs-model-service-boundary | UI/domain correction
+
+- Image Block의 사용자-facing 선택 단위를 Replicate 같은 모델 서빙 서비스가 아니라 `Nano Banana` 같은 실제 이미지 생성 모델로 정리했다.
+- 인스펙터 요약은 `Model`을 먼저 보여주고 Replicate는 `Served by` 서비스 계층으로만 보조 표시한다.
+- 내부 Go generation service routing은 기존 `provider: "replicate"` 계약을 유지하되, README와 위키에 이 값이 사용자-facing Provider 이름이 아니라 transport/service route임을 명시했다.
+- 실제 Replicate token이 설정된 로컬 환경에서 `google/nano-banana` x3 Image Block fan-out을 실행했고, 생성 노드 3개가 `succeeded`, Campaign Asset 3개가 저장되며 reload 후 preview image 3개가 복원되는 것을 확인했다.
+- 증거: `output/playwright/real-generation-x3-model-service.png`, `output/playwright/real-generation-x3-reload-persisted.png`, `output/playwright/real-generation-x3-canvas-clean.png`.
+- Durable note: [모델 서비스와 생성 모델 | Model Service vs Generation Model](concepts/model-service-vs-generation-model.md).
+
 ## [2026-05-17] duplicated-fanout-output-render-coverage | Sub-AC 3.4.2
 
 - duplicated Image Block x3 completion contract test를 추가해 각 duplicated node result가 deterministic persisted Creative Output asset id와 provider URL을 유지하고 request/job/node mapping 검증을 통과하는지 확인했다.

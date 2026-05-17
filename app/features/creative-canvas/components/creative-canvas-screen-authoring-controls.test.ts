@@ -179,6 +179,10 @@ test("created generation blocks avoid console labels and provider setup copy", (
     createdBlocks.map((block) => block.title),
     expectedTitles,
   );
+  assert.equal(
+    createdBlocks.find((block) => block.kind === "image")?.properties?.modelSlug,
+    "google/nano-banana",
+  );
 
   for (const block of createdBlocks) {
     assert.doesNotMatch(
@@ -696,8 +700,16 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   assert.equal(defaultImageGeneration.frame.height, IMAGE_GENERATION_DEFAULT_FRAME.height);
   assert.match(creativeCanvasScreen, /className="space-node-controls nodrag"/);
   assert.match(creativeCanvasScreen, /aria-label="Image generation settings"/);
+  assert.match(creativeCanvasScreen, /const handleImageBatchCountChange = useCallback/);
+  assert.match(creativeCanvasScreen, /onImageBatchCountChange\(data\.id, direction\)/);
   assert.match(creativeCanvasScreen, /className="space-control-chip count"/);
+  assert.match(creativeCanvasScreen, /role="group" aria-label="Output count"/);
+  assert.match(creativeCanvasScreen, /aria-label="Decrease output count"/);
+  assert.match(creativeCanvasScreen, /onClick=\{\(\) => onBatchCountChange\(-1\)\}/);
   assert.match(creativeCanvasScreen, /<strong>x\{details\.batchCount\}<\/strong>/);
+  assert.match(creativeCanvasScreen, /aria-label="Increase output count"/);
+  assert.match(creativeCanvasScreen, /onClick=\{\(\) => onBatchCountChange\(1\)\}/);
+  assert.match(appCss, /\.space-count-stepper\s*\{[\s\S]*width:\s*16px/);
   assert.match(creativeCanvasScreen, /className="space-control-chip model"/);
   assert.match(creativeCanvasScreen, /<span>\{modelLabel\}<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip ratio"/);
@@ -750,17 +762,18 @@ test("Image generation docs panel renders provider model documentation", () => {
   assert.match(panelSource, /aria-label="Image Block setup"/);
   assert.match(panelSource, /<span>Image setup<\/span>/);
   assert.match(panelSource, /<h2>Model summary<\/h2>/);
-  assert.match(panelSource, /<dt>Provider<\/dt>/);
   assert.match(panelSource, /<dt>Model<\/dt>/);
+  assert.match(panelSource, /<dt>Served by<\/dt>/);
   assert.match(panelSource, /<dt>Status<\/dt>/);
   assert.match(panelSource, /<h2>Inputs<\/h2>/);
   assert.match(panelSource, /<h2>Creative controls<\/h2>/);
   assert.match(panelSource, /<details className="image-generation-developer-details">/);
   assert.match(panelSource, /<summary>Developer details<\/summary>/);
-  assert.match(panelSource, /<h2>Provider diagnostics<\/h2>/);
+  assert.match(panelSource, /aria-label="Model service diagnostics"/);
+  assert.match(panelSource, /<h2>Service diagnostics<\/h2>/);
   assert.match(panelSource, /<h2>Adapter mapping<\/h2>/);
   assert.match(panelSource, /<h2>Model limits<\/h2>/);
-  assert.doesNotMatch(panelSource, /Provider settings|Provider model docs|Required inputs|Schema adapter|Compatibility/);
+  assert.doesNotMatch(panelSource, /<dt>Provider<\/dt>|Provider settings|Provider model docs|Required inputs|Schema adapter|Compatibility/);
   assert.match(
     appCss,
     /\.image-generation-inspector-panel\s*\{[\s\S]*position:\s*fixed/,
