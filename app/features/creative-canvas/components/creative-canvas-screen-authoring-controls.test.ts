@@ -23,6 +23,10 @@ const creativeCanvasScreen = readFileSync(
   new URL("./creative-canvas-screen.tsx", import.meta.url),
   "utf8",
 );
+const imageGenerationNodeModel = readFileSync(
+  new URL("../model/image-generation-node.ts", import.meta.url),
+  "utf8",
+);
 const appCss = readFileSync(new URL("../../../app.css", import.meta.url), "utf8");
 
 function splitCampaignPanelDeveloperDetails(panelSource: string) {
@@ -711,7 +715,18 @@ test("Spaces-style image generation node keeps bottom setting chips", () => {
   assert.match(creativeCanvasScreen, /onClick=\{\(\) => onBatchCountChange\(1\)\}/);
   assert.match(appCss, /\.space-count-stepper\s*\{[\s\S]*width:\s*16px/);
   assert.match(creativeCanvasScreen, /className="space-control-chip model"/);
-  assert.match(creativeCanvasScreen, /<span>\{modelLabel\}<\/span>/);
+  assert.match(imageNodeSource, /resolveImageGenerationModelPickerOptions\(details\)/);
+  assert.match(imageNodeSource, /parseImageGenerationModelPickerValue/);
+  assert.match(imageNodeSource, /onModelChange\(parsedSelection\)/);
+  assert.match(imageNodeSource, /<select[\s\S]*aria-label="Image model"/);
+  assert.match(imageNodeSource, /modelPickerOptions\.map/);
+  assert.match(imageNodeSource, /data-service-adapter-id=\{option\.serviceAdapterId\}/);
+  assert.match(imageNodeSource, /data-service-model-ref=\{option\.serviceModelRef\}/);
+  assert.match(imageNodeSource, /disabled=\{option\.disabled\}/);
+  assert.match(imageNodeSource, /title=\{option\.disabledReason \?\? undefined\}/);
+  assert.match(imageNodeSource, /\{option\.label\}/);
+  assert.doesNotMatch(imageNodeSource, /activeProvider\?\.label/);
+  assert.doesNotMatch(imageNodeSource, /<span>\{modelLabel\}<\/span>/);
   assert.match(creativeCanvasScreen, /className="space-control-chip ratio"/);
   assert.match(imageNodeSource, /value=\{details\.aspectRatio\}/);
   assert.match(imageNodeSource, /onChange=\{handleAspectRatioChange\}/);
@@ -1548,6 +1563,10 @@ test("Image Block run buttons call the fan-out run handler", () => {
     creativeCanvasScreen,
     "function FreepikReferenceImageNode",
   );
+  const runImageGenerationNodeSource = getFunctionSource(
+    creativeCanvasScreen,
+    "const runImageGenerationNode = useCallback",
+  );
 
   assert.match(creativeCanvasScreen, /createImageGenerationFanOutPlan/);
   assert.match(creativeCanvasScreen, /createImageGenerationSingleNodeRetryPlan/);
@@ -1569,6 +1588,7 @@ test("Image Block run buttons call the fan-out run handler", () => {
   assert.match(creativeCanvasScreen, /GenerationPersistenceMissing/);
   assert.match(creativeCanvasScreen, /succeedImageGenerationNodeV2Transition/);
   assert.match(creativeCanvasScreen, /failImageGenerationNodeV2Transition/);
+  assert.match(creativeCanvasScreen, /validateImageGenerationFanOutReadiness/);
   assert.match(creativeCanvasScreen, /try \{[\s\S]*await fetch/);
   assert.match(creativeCanvasScreen, /catch \{[\s\S]*return null/);
   assert.match(
@@ -1591,6 +1611,26 @@ test("Image Block run buttons call the fan-out run handler", () => {
   assert.match(
     creativeCanvasScreen,
     /const sourceProperties = sourceNode\.data\.properties;[\s\S]*if \(sourceProperties\.uiState\.status === "failed"\) \{[\s\S]*createImageGenerationSingleNodeRetryPlan\(\{[\s\S]*sourceNode,[\s\S]*queueImageGenerationNodeV2Transition\(sourceProperties\)[\s\S]*applyImageGenerationBatchFailure\([\s\S]*\[sourceNode\.id\][\s\S]*applyImageGenerationBatchResults\(persisted\.response, \[sourceNode\.id\]\);[\s\S]*return;[\s\S]*\}/,
+  );
+  assert.match(
+    runImageGenerationNodeSource,
+    /const readiness = validateImageGenerationFanOutReadiness\(sourceProperties\);[\s\S]*readiness\.error !== null[\s\S]*const compatibilityError = readiness\.error;[\s\S]*failImageGenerationNodeV2Transition\([\s\S]*sourceProperties,[\s\S]*compatibilityError[\s\S]*\)[\s\S]*return;[\s\S]*const plan = createImageGenerationFanOutPlan/,
+  );
+  assert.match(
+    imageGenerationNodeModel,
+    /ImageGenerationCompatibilityError/,
+  );
+  assert.match(
+    runImageGenerationNodeSource,
+    /validateImageGenerationFanOutReadiness\(sourceProperties\)[\s\S]*return;[\s\S]*const plan = createImageGenerationFanOutPlan[\s\S]*\.\.\.plan\.createdNodes/,
+  );
+  assert.match(
+    runImageGenerationNodeSource,
+    /createImageGenerationFanOutPlan\(\{[\s\S]*existingEdges:\s*canvasSnapshotRef\.current\.edges/,
+  );
+  assert.match(
+    runImageGenerationNodeSource,
+    /const nextEdges = \[[\s\S]*\.\.\.canvasSnapshotRef\.current\.edges,[\s\S]*\.\.\.plan\.createdEdges,[\s\S]*\];/,
   );
   assert.match(
     creativeCanvasScreen,

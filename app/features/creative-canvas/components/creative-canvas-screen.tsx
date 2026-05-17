@@ -135,9 +135,11 @@ import {
   isImageGenerationNodeProperties,
   listImageGenerationReferenceTrayAttachments,
   openImageGenerationNodeInspectorTransition,
+  parseImageGenerationModelPickerValue,
   queueImageGenerationNodeV2Transition,
   reorderImageGenerationNodeReferenceTransition,
   removeImageGenerationNodeReferenceTransition,
+  resolveImageGenerationModelPickerOptions,
   resolveImageGenerationDocsPanelMetadata,
   resolveImageGenerationAspectRatioSelectorOptions,
   resolveImageGenerationOutputNextNodeActions,
@@ -147,13 +149,16 @@ import {
   resolveImageGenerationNodeStatus,
   resolveImageGenerationNodeStatusView,
   selectImageGenerationNodeAspectRatioTransition,
+  selectImageGenerationNodeModelTransition,
   succeedImageGenerationNodeV2Transition,
   validateImageGenerationReferenceAttachmentDraft,
+  validateImageGenerationFanOutReadiness,
   type ImageGenerationAspectRatio,
   type ImageGenerationInputControlDefaultValue,
   type ImageGenerationOutputNextNodeActionKind,
   type ImageGenerationNodeReferenceInput,
   type ImageGenerationNodeProperties,
+  type ImageGenerationProviderId,
   type ImageGenerationReferenceTrayAttachment,
 } from "~/features/creative-canvas/model/image-generation-node";
 
@@ -842,10 +847,37 @@ export function CreativeCanvasScreen({
         return;
       }
 
+      const readiness = validateImageGenerationFanOutReadiness(sourceProperties);
+
+      if (!readiness.valid && readiness.error !== null) {
+        const compatibilityError = readiness.error;
+        const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
+          if (node.id !== sourceNode.id) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              properties: failImageGenerationNodeV2Transition(
+                sourceProperties,
+                compatibilityError,
+              ),
+            },
+          };
+        });
+
+        setNodes(nextNodes);
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+        return;
+      }
+
       const plan = createImageGenerationFanOutPlan({
         campaignId: currentCampaign.id,
         sourceNode,
         existingNodes: canvasSnapshotRef.current.nodes,
+        existingEdges: canvasSnapshotRef.current.edges,
         now: () => new Date().toISOString(),
       });
       const nextNodes = [
@@ -855,7 +887,10 @@ export function CreativeCanvasScreen({
         })),
         ...plan.createdNodes,
       ];
-      const nextEdges = canvasSnapshotRef.current.edges;
+      const nextEdges = [
+        ...canvasSnapshotRef.current.edges,
+        ...plan.createdEdges,
+      ];
       const nextCampaign = syncCampaignFromCreativeCanvasInteraction(
         currentCampaign,
         nextNodes,
@@ -912,6 +947,7 @@ export function CreativeCanvasScreen({
     onCampaignChange,
     setEdges,
     setNodes,
+    updateCampaignCanvas,
   ]);
 
   const getConnectionEventPoint = (event: MouseEvent | TouchEvent) => {
@@ -960,6 +996,38 @@ export function CreativeCanvasScreen({
           data: {
             ...node.data,
             properties: nextProperties,
+          },
+        };
+      });
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handleImageModelChange = useCallback((
+    nodeId: string,
+    selection: { providerId: ImageGenerationProviderId; modelSlug: string },
+  ) => {
+    setNodes((currentNodes) => {
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (node.id !== nodeId || !isImageGenerationNodeProperties(properties)) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: selectImageGenerationNodeModelTransition(
+              properties,
+              selection,
+            ),
           },
         };
       });
@@ -1271,6 +1339,7 @@ export function CreativeCanvasScreen({
           {...(props as NodeProps<CreativeFlowNode>)}
           onImageAspectRatioChange={handleImageAspectRatioChange}
           onImageBatchCountChange={handleImageBatchCountChange}
+          onImageModelChange={handleImageModelChange}
           onImageInspectorOpen={handleImageInspectorOpen}
           onImageReferenceAttach={handleImageReferenceAttach}
           onImageReferenceRemove={handleImageReferenceRemove}
@@ -1286,6 +1355,7 @@ export function CreativeCanvasScreen({
     [
       handleImageAspectRatioChange,
       handleImageBatchCountChange,
+      handleImageModelChange,
       handleImageInspectorOpen,
       handleImageReferenceAttach,
       handleImageReferenceRemove,
@@ -4063,6 +4133,7 @@ function GenerationBlockNode({
   selected,
   onImageAspectRatioChange,
   onImageBatchCountChange,
+  onImageModelChange,
   onImageInspectorOpen,
   onImageReferenceAttach,
   onImageReferenceRemove,
@@ -4078,6 +4149,10 @@ function GenerationBlockNode({
     aspectRatio: ImageGenerationAspectRatio,
   ) => void;
   onImageBatchCountChange: (nodeId: string, direction: -1 | 1) => void;
+  onImageModelChange: (
+    nodeId: string,
+    selection: { providerId: ImageGenerationProviderId; modelSlug: string },
+  ) => void;
   onImageInspectorOpen: (nodeId: string) => void;
   onImageReferenceAttach: (
     nodeId: string,
@@ -4158,6 +4233,9 @@ function GenerationBlockNode({
           }}
           onBatchCountChange={(direction) => {
             onImageBatchCountChange(data.id, direction);
+          }}
+          onModelChange={(selection) => {
+            onImageModelChange(data.id, selection);
           }}
           onOpenInspector={() => {
             onImageInspectorOpen(data.id);
@@ -4367,6 +4445,7 @@ function FreepikReferenceImageNode({
   Icon,
   onAspectRatioChange,
   onBatchCountChange,
+  onModelChange,
   onOpenInspector,
   onReferenceAttach,
   onReferenceRemove,
@@ -4384,6 +4463,9 @@ function FreepikReferenceImageNode({
   Icon: ComponentType<{ className?: string }>;
   onAspectRatioChange: (aspectRatio: ImageGenerationAspectRatio) => void;
   onBatchCountChange: (direction: -1 | 1) => void;
+  onModelChange: (
+    selection: { providerId: ImageGenerationProviderId; modelSlug: string },
+  ) => void;
   onOpenInspector: () => void;
   onReferenceAttach: (referenceInput: ImageGenerationNodeReferenceInput) => void;
   onReferenceRemove: (
@@ -4406,9 +4488,6 @@ function FreepikReferenceImageNode({
   sourceImageNodeId: string;
   tone: GenerationBlockTone;
 }) {
-  const activeProvider = details.providerPresets.find(
-    (provider) => provider.providerId === details.providerId,
-  );
   const promptPort = details.inputs.find((port) => port.id === "prompt");
   const referencePort =
     details.inputs.find((port) => port.id === "reference_image" && port.dataType === "asset");
@@ -4443,10 +4522,8 @@ function FreepikReferenceImageNode({
       : null;
   const referenceTrayVisible = selected || details.uiState.referenceTrayOpen;
   const modelCapability = resolveImageGenerationNodeModelCapability(details);
-  const modelLabel =
-    modelCapability?.model.label ??
-    activeProvider?.label ??
-    details.modelSlug;
+  const modelPickerOptions = resolveImageGenerationModelPickerOptions(details);
+  const selectedModelValue = `${modelCapability?.provider.providerId ?? details.providerId}:${modelCapability?.model.slug ?? details.modelSlug}`;
   const [referenceUrlDraft, setReferenceUrlDraft] = useState("");
   const [referenceAttachmentMessage, setReferenceAttachmentMessage] = useState<
     string | null
@@ -4525,6 +4602,17 @@ function FreepikReferenceImageNode({
   }, [cleanupStaleReferenceSelections]);
   const handleAspectRatioChange = (event: ChangeEvent<HTMLSelectElement>) => {
     onAspectRatioChange(event.currentTarget.value as ImageGenerationAspectRatio);
+  };
+  const handleModelChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const parsedSelection = parseImageGenerationModelPickerValue(
+      event.currentTarget.value,
+    );
+
+    if (parsedSelection === null) {
+      return;
+    }
+
+    onModelChange(parsedSelection);
   };
   const applyReferenceAttachmentValidation = (
     validation: ReturnType<typeof validateImageGenerationReferenceAttachmentDraft>,
@@ -4797,10 +4885,28 @@ function FreepikReferenceImageNode({
               ＋
             </button>
           </div>
-          <button className="space-control-chip model" type="button" aria-label="Model selector">
-            <span>{modelLabel}</span>
+          <label className="space-control-chip model" aria-label="Model selector">
+            <select
+              className="space-control-select"
+              value={selectedModelValue}
+              onChange={handleModelChange}
+              aria-label="Image model"
+            >
+              {modelPickerOptions.map((option) => (
+                <option
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                  data-service-adapter-id={option.serviceAdapterId}
+                  data-service-model-ref={option.serviceModelRef}
+                  title={option.disabledReason ?? undefined}
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <em>⌄</em>
-          </button>
+          </label>
           <label className="space-control-chip ratio" aria-label="Aspect ratio selector">
             <Maximize2 className="size-3" />
             <select
