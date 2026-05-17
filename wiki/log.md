@@ -2758,3 +2758,10 @@
 - Ouroboros interview `interview_20260517_071611` 결정사항을 바탕으로 Seed `seed_f02200db0442`를 생성했다. 범위는 Image Block xN fan-out 시 참조 이미지 edge를 각 독립 output node로 복제하고, Replicate 같은 실행 서비스를 user-facing model/provider로 노출하지 않는 catalog/adapter layer를 추가하는 첫 slice다.
 - Seed 사본을 `docs/seeds/image-block-reference-fanout-catalog.seed.yaml`에 저장했다. 표준 Ouroboros seed 위치에도 `~/.ouroboros/seeds/seed_f02200db0442.yaml`로 보관했다.
 - GitHub publish 결과: parent epic #25, fan-out reference edge task #26, model catalog/adapter task #27, incompatible reference fan-out blocking task #28을 생성했다.
+
+## [2026-05-17] image-block-reference-fanout-catalog | seed execution
+
+- Seed `seed_f02200db0442`의 첫 Superpowers subagent-driven execution slice를 구현했다. Image Block xN fan-out은 source Image Block으로 들어오는 prompt/reference React Flow edge를 각 독립 output Image Block으로 복제하고, 기존 edge metadata를 보존한다.
+- compact model selector는 Replicate 같은 실행 서비스를 user-facing model로 노출하지 않고 catalog model entry(Nano Banana, GPT Image, Seedream 3)를 표시한다. 현재 reference count와 맞지 않는 model은 disabled reason을 가진 option으로 표시한다.
+- fan-out 실행 전 `validateImageGenerationFanOutReadiness()`가 model/reference compatibility를 검사해 incompatible reference count에서는 output node/edge를 만들지 않고 source Image Block에 inline compatibility error를 남긴다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), focused TS tests 118/118 pass, `npm run typecheck`, `git diff --check`.
