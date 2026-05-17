@@ -6,13 +6,15 @@ import {
   createImageGenerationNodeProperties,
   createImageGenerationNodeProviderRequest,
   isImageGenerationNodeProperties,
+  validateImageGenerationFanOutReadiness,
   type ImageGenerationNodeProperties,
 } from "../model/image-generation-node.ts";
-import type { CreativeFlowNode } from "./react-flow-canvas.ts";
+import type { CreativeFlowEdge, CreativeFlowNode } from "./react-flow-canvas.ts";
 
 export type ImageGenerationFanOutPlan = {
   batchId: string;
   createdNodes: CreativeFlowNode[];
+  createdEdges: CreativeFlowEdge[];
   batch: GenerationBatchRequest;
 };
 
@@ -20,6 +22,7 @@ export function createImageGenerationFanOutPlan(input: {
   campaignId: string;
   sourceNode: CreativeFlowNode;
   existingNodes: CreativeFlowNode[];
+  existingEdges?: CreativeFlowEdge[];
   now: () => string;
 }): ImageGenerationFanOutPlan {
   const properties = input.sourceNode.data.properties;
@@ -32,6 +35,12 @@ export function createImageGenerationFanOutPlan(input: {
   }
 
   const count = properties.batchCount;
+  const readiness = validateImageGenerationFanOutReadiness(properties);
+
+  if (!readiness.valid) {
+    throw new Error(readiness.error?.message ?? "Image Block is not ready to fan out");
+  }
+
   const providerRequest = createImageGenerationNodeProviderRequest({
     properties,
     prompt: properties.prompt,
@@ -50,10 +59,17 @@ export function createImageGenerationFanOutPlan(input: {
       index,
     }),
   );
+  const createdEdges = createFanOutReferenceEdges({
+    sourceNodeId: input.sourceNode.id,
+    createdNodes,
+    existingEdges: input.existingEdges ?? [],
+    batchId,
+  });
 
   return {
     batchId,
     createdNodes,
+    createdEdges,
     batch: createGenerationBatchRequest({
       batchId,
       campaignId: input.campaignId,
@@ -98,6 +114,7 @@ export function createImageGenerationSingleNodeRetryPlan(input: {
   return {
     batchId,
     createdNodes: [],
+    createdEdges: [],
     batch: createGenerationBatchRequest({
       batchId,
       campaignId: input.campaignId,
@@ -112,6 +129,28 @@ export function createImageGenerationSingleNodeRetryPlan(input: {
       },
     }),
   };
+}
+
+function createFanOutReferenceEdges(input: {
+  sourceNodeId: string;
+  createdNodes: CreativeFlowNode[];
+  existingEdges: CreativeFlowEdge[];
+  batchId: string;
+}): CreativeFlowEdge[] {
+  const fanOutInputEdges = input.existingEdges.filter(
+    (edge) =>
+      edge.target === input.sourceNodeId &&
+      (edge.targetHandle === "inputs.prompt" ||
+        edge.targetHandle === "inputs.reference_image"),
+  );
+
+  return input.createdNodes.flatMap((node, nodeIndex) =>
+    fanOutInputEdges.map((edge, edgeIndex) => ({
+      ...edge,
+      id: `${input.batchId}_${nodeIndex + 1}_edge_${edgeIndex + 1}_${edge.id}`,
+      target: node.id,
+    })),
+  );
 }
 
 function createQueuedImageGenerationNode(input: {

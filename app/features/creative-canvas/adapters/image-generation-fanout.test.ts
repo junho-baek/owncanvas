@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { MarkerType } from "@xyflow/react";
+
 import {
   createImageGenerationFrame,
   createImageGenerationNodeProperties,
@@ -14,6 +16,7 @@ import {
 } from "./image-generation-fanout.ts";
 import {
   createGenerationFlowNode,
+  type CreativeFlowEdge,
   type CreativeFlowNode,
 } from "./react-flow-canvas.ts";
 
@@ -77,6 +80,7 @@ test("createImageGenerationFanOutPlan creates same-type queued image nodes and a
 
   assert.equal(plan.batchId, "image_source_batch_20260517000000000");
   assert.equal(plan.createdNodes.length, 3);
+  assert.equal(plan.createdEdges.length, 0);
   assert.equal(plan.batch.fanOutCount, 3);
   assert.deepEqual(
     plan.createdNodes.map((node) => node.id),
@@ -144,6 +148,225 @@ test("createImageGenerationFanOutPlan creates same-type queued image nodes and a
     assert.equal(node.data.properties.uiState.selectedResultAssetId, null);
     assert.equal(node.data.properties.uiState.outputConnectionReady, false);
   }
+});
+
+test("createImageGenerationFanOutPlan duplicates prompt and reference edges to every output node", () => {
+  const source = imageNode({ id: "image_source", x: 100, y: 200, batchCount: 3 });
+  const existingEdges: CreativeFlowEdge[] = [
+    {
+      id: "edge_prompt_to_image",
+      source: "prompt_source",
+      sourceHandle: "outputs.prompt",
+      target: "image_source",
+      targetHandle: "inputs.prompt",
+      type: "smoothstep",
+      label: "prompt",
+      data: { edgeType: "prompt" },
+      markerStart: {
+        type: MarkerType.Arrow,
+        width: 12,
+        height: 12,
+        color: "#0f172a",
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 18,
+        height: 18,
+        color: "#2563eb",
+      },
+      style: {
+        stroke: "#2563eb",
+        strokeWidth: 2,
+      },
+      labelStyle: {
+        fill: "#1e3a8a",
+        fontSize: 11,
+        fontWeight: 700,
+      },
+      labelBgPadding: [8, 4],
+      labelBgBorderRadius: 999,
+      labelBgStyle: {
+        fill: "#eff6ff",
+        fillOpacity: 0.96,
+      },
+    },
+    {
+      id: "edge_ref_to_image",
+      source: "reference_source",
+      sourceHandle: "outputs.generated_image_asset",
+      target: "image_source",
+      targetHandle: "inputs.reference_image",
+      type: "smoothstep",
+      label: "reference image",
+      data: { edgeType: "asset-generation" },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 18,
+        height: 18,
+        color: "#0f766e",
+      },
+      style: {
+        stroke: "#0f766e",
+        strokeWidth: 2,
+        strokeDasharray: "4 3",
+      },
+      labelStyle: {
+        fill: "#115e59",
+        fontSize: 10,
+        fontWeight: 700,
+      },
+      labelBgPadding: [10, 5],
+      labelBgBorderRadius: 6,
+      labelBgStyle: {
+        fill: "#f0fdfa",
+        fillOpacity: 0.94,
+      },
+    },
+  ];
+
+  const plan = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: source,
+    existingNodes: [source],
+    existingEdges,
+    now: () => "2026-05-17T00:00:00.000Z",
+  });
+
+  assert.equal(plan.createdEdges.length, 6);
+
+  for (const [nodeIndex, node] of plan.createdNodes.entries()) {
+    const incomingEdges = plan.createdEdges.filter(
+      (edge) => edge.target === node.id,
+    );
+
+    assert.equal(incomingEdges.length, 2);
+    assert.deepEqual(
+      incomingEdges.map((edge) => edge.id),
+      [
+        `image_source_batch_20260517000000000_${nodeIndex + 1}_edge_1_edge_prompt_to_image`,
+        `image_source_batch_20260517000000000_${nodeIndex + 1}_edge_2_edge_ref_to_image`,
+      ],
+    );
+    assert.deepEqual(
+      incomingEdges.map((edge) => ({
+        source: edge.source,
+        sourceHandle: edge.sourceHandle,
+        target: edge.target,
+        targetHandle: edge.targetHandle,
+        type: edge.type,
+        label: edge.label,
+        data: edge.data,
+        markerStart: edge.markerStart,
+        markerEnd: edge.markerEnd,
+        style: edge.style,
+        labelStyle: edge.labelStyle,
+        labelBgPadding: edge.labelBgPadding,
+        labelBgBorderRadius: edge.labelBgBorderRadius,
+        labelBgStyle: edge.labelBgStyle,
+      })),
+      [
+        {
+          source: "prompt_source",
+          sourceHandle: "outputs.prompt",
+          target: node.id,
+          targetHandle: "inputs.prompt",
+          type: "smoothstep",
+          label: "prompt",
+          data: { edgeType: "prompt" },
+          markerStart: {
+            type: MarkerType.Arrow,
+            width: 12,
+            height: 12,
+            color: "#0f172a",
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 18,
+            height: 18,
+            color: "#2563eb",
+          },
+          style: {
+            stroke: "#2563eb",
+            strokeWidth: 2,
+          },
+          labelStyle: {
+            fill: "#1e3a8a",
+            fontSize: 11,
+            fontWeight: 700,
+          },
+          labelBgPadding: [8, 4],
+          labelBgBorderRadius: 999,
+          labelBgStyle: {
+            fill: "#eff6ff",
+            fillOpacity: 0.96,
+          },
+        },
+        {
+          source: "reference_source",
+          sourceHandle: "outputs.generated_image_asset",
+          target: node.id,
+          targetHandle: "inputs.reference_image",
+          type: "smoothstep",
+          label: "reference image",
+          data: { edgeType: "asset-generation" },
+          markerStart: undefined,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 18,
+            height: 18,
+            color: "#0f766e",
+          },
+          style: {
+            stroke: "#0f766e",
+            strokeWidth: 2,
+            strokeDasharray: "4 3",
+          },
+          labelStyle: {
+            fill: "#115e59",
+            fontSize: 10,
+            fontWeight: 700,
+          },
+          labelBgPadding: [10, 5],
+          labelBgBorderRadius: 6,
+          labelBgStyle: {
+            fill: "#f0fdfa",
+            fillOpacity: 0.94,
+          },
+        },
+      ],
+    );
+  }
+});
+
+test("createImageGenerationFanOutPlan blocks incompatible references before creating nodes or edges", () => {
+  const source = imageNode({ id: "image_source", x: 100, y: 200, batchCount: 3 });
+  const gptImageSource: CreativeFlowNode = {
+    ...source,
+    data: {
+      ...source.data,
+      properties: createImageGenerationNodeProperties({
+        ...source.data.properties,
+        providerId: "replicate",
+        modelSlug: "openai/gpt-image-1",
+        referenceImages: [
+          { type: "url", ref: "https://cdn.example.test/reference-one.png" },
+          { type: "url", ref: "https://cdn.example.test/reference-two.png" },
+        ],
+      }),
+    },
+  };
+
+  assert.throws(
+    () =>
+      createImageGenerationFanOutPlan({
+        campaignId: "campaign_fanout",
+        sourceNode: gptImageSource,
+        existingNodes: [gptImageSource],
+        existingEdges: [],
+        now: () => "2026-05-17T00:00:00.000Z",
+      }),
+    /GPT Image accepts at most 1 reference image/,
+  );
 });
 
 test("createImageGenerationSingleNodeRetryPlan retries a failed duplicated Image Block in place", () => {
