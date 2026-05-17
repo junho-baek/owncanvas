@@ -15,7 +15,8 @@
 - 인스펙터 요약은 `Model`을 먼저 보여주고 Replicate는 `Served by` 서비스 계층으로만 보조 표시한다.
 - 내부 Go generation service routing은 기존 `provider: "replicate"` 계약을 유지하되, README와 위키에 이 값이 사용자-facing Provider 이름이 아니라 transport/service route임을 명시했다.
 - 실제 Replicate token이 설정된 로컬 환경에서 `google/nano-banana` x3 Image Block fan-out을 실행했고, 생성 노드 3개가 `succeeded`, Campaign Asset 3개가 저장되며 reload 후 preview image 3개가 복원되는 것을 확인했다.
-- 증거: `output/playwright/real-generation-x3-model-service.png`, `output/playwright/real-generation-x3-reload-persisted.png`, `output/playwright/real-generation-x3-canvas-clean.png`.
+- 같은 QA campaign에서 한 duplicated node를 `failed` 상태로 만들어 retry affordance를 확인한 뒤 해당 node만 재실행했고, retry 후 다시 `succeeded` 및 persisted Creative Output 참조가 복원되는 것을 확인했다.
+- 증거: `output/playwright/real-generation-x3-model-service.png`, `output/playwright/real-generation-x3-reload-persisted.png`, `output/playwright/real-generation-x3-canvas-clean.png`, `output/playwright/real-generation-x3-one-failed-retry-affordance.png`, `output/playwright/real-generation-x3-retry-succeeded.png`.
 - Durable note: [모델 서비스와 생성 모델 | Model Service vs Generation Model](concepts/model-service-vs-generation-model.md).
 
 ## [2026-05-17] duplicated-fanout-output-render-coverage | Sub-AC 3.4.2
