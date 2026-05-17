@@ -82,7 +82,7 @@ npm run typecheck
 
 Expected: all tests pass and typecheck exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/features/creative-canvas/model/generation-batch-persistence.ts app/features/creative-canvas/model/generation-batch-persistence.test.ts app/routes/api.campaign-generation.ts app/routes/campaign-generation-api.test.ts
@@ -96,7 +96,7 @@ git commit -m "model: share generation batch persistence"
 - Modify: `app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`
 - Test: `app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`
 
-- [ ] **Step 1: Write static regression**
+- [x] **Step 1: Write static regression**
 
 Add assertions that `CreativeCanvasScreen` imports `persistGenerationBatchResponseToCampaign`, applies it after `submitImageGenerationBatch()`, and updates `campaignRef.current`/`onCampaignChange` before applying Image Block result refs.
 
@@ -108,7 +108,7 @@ node --experimental-strip-types --test app/features/creative-canvas/components/c
 
 Expected before implementation: FAIL.
 
-- [ ] **Step 2: Apply client-side persistence**
+- [x] **Step 2: Apply client-side persistence**
 
 After a successful route response, call:
 
@@ -122,7 +122,7 @@ const persisted = persistGenerationBatchResponseToCampaign({
 
 Then update `campaignRef.current`, call `onCampaignChange?.(persisted.campaign)`, and pass `persisted.response` to `applyImageGenerationBatchResults()`. This keeps `campaign.assets[]`, `canvasState.nodes[].properties.assetGeneration`, and Image Block selected output refs in browser `localStorage`.
 
-- [ ] **Step 3: Verify task**
+- [x] **Step 3: Verify task**
 
 Run:
 

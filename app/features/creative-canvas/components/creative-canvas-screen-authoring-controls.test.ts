@@ -1542,6 +1542,7 @@ test("Image Block run buttons call the fan-out run handler", () => {
   assert.match(creativeCanvasScreen, /GenerationBatchResponse/);
   assert.match(creativeCanvasScreen, /GenerationJobResult/);
   assert.match(creativeCanvasScreen, /isGenerationBatchResponse/);
+  assert.match(creativeCanvasScreen, /persistGenerationBatchResponseToCampaign/);
   assert.match(creativeCanvasScreen, /applyImageGenerationBatchResults/);
   assert.match(creativeCanvasScreen, /applyImageGenerationBatchFailure/);
   assert.match(creativeCanvasScreen, /GenerationServiceResultMissing/);
@@ -1566,7 +1567,11 @@ test("Image Block run buttons call the fan-out run handler", () => {
   );
   assert.match(
     creativeCanvasScreen,
-    /applyImageGenerationBatchResults\([\s\S]*response,[\s\S]*plan\.createdNodes\.map\(\(node\) => node\.id\),[\s\S]*\);/,
+    /const persisted = persistGenerationBatchResponseToCampaign\(\{[\s\S]*campaign:\s*campaignRef\.current \?\? nextCampaign,[\s\S]*request:\s*plan\.batch,[\s\S]*response,[\s\S]*\}\);/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /campaignRef\.current = persisted\.campaign;[\s\S]*onCampaignChange\?\.\(persisted\.campaign\);[\s\S]*applyImageGenerationBatchResults\([\s\S]*persisted\.response,[\s\S]*plan\.createdNodes\.map\(\(node\) => node\.id\),[\s\S]*\);/,
   );
   assert.match(
     creativeCanvasScreen,

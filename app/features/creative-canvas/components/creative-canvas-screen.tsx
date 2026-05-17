@@ -125,6 +125,7 @@ import {
   type GenerationBatchResponse,
   type GenerationJobResult,
 } from "~/features/creative-canvas/model/generation-batch";
+import { persistGenerationBatchResponseToCampaign } from "~/features/creative-canvas/model/generation-batch-persistence";
 import {
   IMAGE_GENERATION_COMPACT_FRAME_LIMITS,
   attachImageGenerationNodeReferenceTransition,
@@ -826,8 +827,17 @@ export function CreativeCanvasScreen({
         return;
       }
 
-      applyImageGenerationBatchResults(
+      const persisted = persistGenerationBatchResponseToCampaign({
+        campaign: campaignRef.current ?? nextCampaign,
+        request: plan.batch,
         response,
+      });
+
+      campaignRef.current = persisted.campaign;
+      onCampaignChange?.(persisted.campaign);
+
+      applyImageGenerationBatchResults(
+        persisted.response,
         plan.createdNodes.map((node) => node.id),
       );
     } catch {

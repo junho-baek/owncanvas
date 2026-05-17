@@ -14,21 +14,25 @@ import {
   type CampaignAssetGenerationJobStatusSnapshot,
   type CampaignAssetGenerationResultMetadata,
   type CampaignCanvasBlock,
-  type CampaignRecord,
+  type CampaignDraft,
 } from "./creative-canvas.ts";
 
-export type PersistGenerationBatchResponseToCampaignResult = {
-  campaign: CampaignRecord;
+export type PersistGenerationBatchResponseToCampaignResult<
+  TCampaign extends CampaignDraft = CampaignDraft,
+> = {
+  campaign: TCampaign;
   response: GenerationBatchResponse;
   persistedCreativeOutputAssetIds: Map<string, string>;
 };
 
-export function persistGenerationBatchResponseToCampaign(input: {
-  campaign: CampaignRecord;
+export function persistGenerationBatchResponseToCampaign<
+  TCampaign extends CampaignDraft,
+>(input: {
+  campaign: TCampaign;
   request: GenerationBatchRequest;
   response: GenerationBatchResponse;
   now?: () => string;
-}): PersistGenerationBatchResponseToCampaignResult {
+}): PersistGenerationBatchResponseToCampaignResult<TCampaign> {
   const safeResponse = stripPersistedCreativeOutputRefs(input.response);
   const executionResult = createCampaignExecutionResultFromGenerationBatch({
     campaign: input.campaign,
@@ -113,7 +117,7 @@ function attachPersistedCreativeOutputRefs(
 }
 
 function createCampaignExecutionResultFromGenerationBatch(input: {
-  campaign: CampaignRecord;
+  campaign: CampaignDraft;
   request: GenerationBatchRequest;
   response: GenerationBatchResponse;
   observedAt: string;
@@ -260,7 +264,7 @@ function getReusableExistingGenerationJobForNode(
 }
 
 export function hasGenerationBatchJobOwnershipConflict(
-  campaign: CampaignRecord,
+  campaign: CampaignDraft,
   request: GenerationBatchRequest,
 ): boolean {
   const existingJobsById = new Map(
@@ -444,11 +448,11 @@ function createExecutionRecord(
   };
 }
 
-function linkGenerationJobsToCanvasNodes(
-  campaign: CampaignRecord,
+function linkGenerationJobsToCanvasNodes<TCampaign extends CampaignDraft>(
+  campaign: TCampaign,
   jobs: CampaignAssetGenerationJob[],
   request: GenerationBatchRequest,
-): CampaignRecord {
+): TCampaign {
   const nodeIdsByJobId = new Map(
     request.jobs.map((job) => [job.jobId, job.nodeId] as const),
   );
@@ -491,7 +495,7 @@ function linkJobsToNodes(
 }
 
 function isGenerationJobLinkedToDifferentCanvasNode(
-  campaign: CampaignRecord,
+  campaign: CampaignDraft,
   job: GenerationJobRequest,
 ): boolean {
   return [...campaign.campaignSpec.nodes, ...campaign.canvasState.nodes].some(
