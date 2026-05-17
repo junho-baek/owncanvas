@@ -58,6 +58,8 @@ export type ImageGenerationProviderPreset = {
 
 export type ImageGenerationProviderId = ImageGenerationProviderPreset["providerId"];
 
+export type ImageGenerationServiceAdapterId = "replicate";
+
 export type ImageGenerationModelCapabilityKey =
   `${ImageGenerationProviderId}:${string}`;
 
@@ -664,6 +666,17 @@ export type ImageGenerationNodeProviderRequest = {
   schemaAdapter: ImageGenerationSchemaAdapter;
   validation: ImageGenerationNodeValidationResult;
   replicate: ImageGenerationReplicatePredictionRequest;
+};
+
+export type ImageGenerationModelPickerOption = {
+  value: string;
+  providerId: ImageGenerationProviderId;
+  modelSlug: string;
+  label: string;
+  serviceAdapterId: ImageGenerationServiceAdapterId;
+  serviceModelRef: string;
+  disabled: boolean;
+  disabledReason: string | null;
 };
 
 export type ImageGenerationDocsPanelControlSummary = {
@@ -1855,6 +1868,119 @@ export function listImageGenerationModelCapabilities(
   return imageGenerationModelCapabilities.filter(
     (modelCapability) => modelCapability.provider.providerId === input.providerId,
   );
+}
+
+function getImageGenerationServiceAdapterId(
+  capability: ImageGenerationModelCapability,
+): ImageGenerationServiceAdapterId {
+  return capability.replicate?.providerId ?? "replicate";
+}
+
+function getImageGenerationServiceModelRef(
+  capability: ImageGenerationModelCapability,
+): string {
+  return capability.replicate?.modelRef ?? capability.model.slug;
+}
+
+export function resolveImageGenerationModelPickerOptions(
+  properties: Pick<ImageGenerationNodeProperties, "referenceImages">,
+): ImageGenerationModelPickerOption[] {
+  return listImageGenerationModelCapabilities().map((capability) => {
+    const validation = validateImageGenerationNodeModelOptions(capability, {
+      referenceImages: properties.referenceImages,
+    });
+    const firstError = validation.issues.find(
+      (issue) => issue.severity === "error",
+    );
+    const providerId = capability.provider.providerId;
+    const modelSlug = capability.model.slug;
+
+    return {
+      value: createImageGenerationModelCapabilityKey({ providerId, modelSlug }),
+      providerId,
+      modelSlug,
+      label: capability.model.label,
+      serviceAdapterId: getImageGenerationServiceAdapterId(capability),
+      serviceModelRef: getImageGenerationServiceModelRef(capability),
+      disabled: firstError !== undefined,
+      disabledReason: firstError?.message ?? null,
+    };
+  });
+}
+
+export function parseImageGenerationModelPickerValue(
+  value: string,
+): { providerId: ImageGenerationProviderId; modelSlug: string } | null {
+  const separatorIndex = value.indexOf(":");
+
+  if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
+    return null;
+  }
+
+  const providerId = value.slice(0, separatorIndex) as ImageGenerationProviderId;
+  const modelSlug = value.slice(separatorIndex + 1);
+
+  if (!getImageGenerationModelCapability({ providerId, modelSlug })) {
+    return null;
+  }
+
+  return { providerId, modelSlug };
+}
+
+export function selectImageGenerationNodeModelTransition(
+  properties: ImageGenerationNodeProperties,
+  selection: string | Pick<ImageGenerationModelPickerOption, "providerId" | "modelSlug">,
+): ImageGenerationNodeProperties {
+  const parsedSelection =
+    typeof selection === "string"
+      ? parseImageGenerationModelPickerValue(selection)
+      : selection;
+
+  if (
+    !parsedSelection ||
+    !getImageGenerationModelCapability(parsedSelection)
+  ) {
+    return properties;
+  }
+
+  return {
+    ...properties,
+    providerId: parsedSelection.providerId,
+    modelSlug: parsedSelection.modelSlug,
+  };
+}
+
+export function validateImageGenerationFanOutReadiness(
+  properties: Pick<
+    ImageGenerationNodeProperties,
+    "providerId" | "modelSlug" | "aspectRatio" | "referenceImages"
+  >,
+): { valid: boolean; error: ImageGenerationNodeFailureDetails | null } {
+  const capability = resolveImageGenerationNodeModelCapability(properties);
+  const validation = validateImageGenerationNodeModelOptions(capability, {
+    aspectRatio: properties.aspectRatio,
+    referenceImages: properties.referenceImages,
+  });
+  const firstError = validation.issues.find(
+    (issue) => issue.severity === "error",
+  );
+
+  if (firstError === undefined) {
+    return { valid: true, error: null };
+  }
+
+  return {
+    valid: false,
+    error: {
+      name: "ImageGenerationCompatibilityError",
+      category: "provider_rejected",
+      message: firstError.message,
+      providerId: properties.providerId,
+      modelSlug: properties.modelSlug,
+      providerRequestId: null,
+      retryable: false,
+    },
+  };
 }
 
 export function resolveImageGenerationNodeModelCapability(

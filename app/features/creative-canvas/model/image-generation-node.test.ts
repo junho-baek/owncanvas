@@ -39,6 +39,8 @@ import {
   resolveImageGenerationAspectRatioCompatibilityRule,
   resolveImageGenerationAspectRatioSelectorOptions,
   resolveImageGenerationDocsPanelMetadata,
+  resolveImageGenerationModelPickerOptions,
+  validateImageGenerationFanOutReadiness,
   resizeImageGenerationNodeFrameTransition,
   resolveImageGenerationReferenceTrayCapability,
   resolveImageGenerationReferenceTrayEmptyState,
@@ -2242,6 +2244,112 @@ test("unsupported model options are hidden disabled or rejected by capability sc
     ],
   );
   assert.equal(rejectedSeedreamReference.feedback.label, "Unsupported");
+});
+
+test("image generation model picker resolves model-first catalog options", () => {
+  const options = resolveImageGenerationModelPickerOptions(
+    createImageGenerationNodeProperties({
+      providerId: "replicate",
+      modelSlug: "google/nano-banana",
+      referenceImages: [],
+    }),
+  );
+
+  assert.deepEqual(options, [
+    {
+      value: "replicate:google/nano-banana",
+      providerId: "replicate",
+      modelSlug: "google/nano-banana",
+      label: "Nano Banana",
+      serviceAdapterId: "replicate",
+      serviceModelRef: "google/nano-banana",
+      disabled: false,
+      disabledReason: null,
+    },
+    {
+      value: "replicate:openai/gpt-image-1",
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+      label: "GPT Image",
+      serviceAdapterId: "replicate",
+      serviceModelRef: "openai/gpt-image-1",
+      disabled: false,
+      disabledReason: null,
+    },
+    {
+      value: "replicate:bytedance/seedream-3",
+      providerId: "replicate",
+      modelSlug: "bytedance/seedream-3",
+      label: "Seedream 3",
+      serviceAdapterId: "replicate",
+      serviceModelRef: "bytedance/seedream-3",
+      disabled: false,
+      disabledReason: null,
+    },
+  ]);
+  for (const option of options) {
+    assert.doesNotMatch(option.label, /Replicate/i);
+  }
+});
+
+test("image generation model picker disables incompatible reference options", () => {
+  const options = resolveImageGenerationModelPickerOptions(
+    createImageGenerationNodeProperties({
+      referenceImages: [
+        { type: "url", ref: "https://cdn.example.test/reference-one.png" },
+        { type: "url", ref: "https://cdn.example.test/reference-two.png" },
+      ],
+    }),
+  );
+
+  assert.deepEqual(
+    options.map((option) => ({
+      label: option.label,
+      disabled: option.disabled,
+      disabledReason: option.disabledReason,
+    })),
+    [
+      {
+        label: "Nano Banana",
+        disabled: false,
+        disabledReason: null,
+      },
+      {
+        label: "GPT Image",
+        disabled: true,
+        disabledReason: "GPT Image accepts at most 1 reference image(s).",
+      },
+      {
+        label: "Seedream 3",
+        disabled: true,
+        disabledReason: "Seedream 3 does not accept reference images.",
+      },
+    ],
+  );
+});
+
+test("image generation fan-out readiness returns compatibility error for invalid model options", () => {
+  const properties = createImageGenerationNodeProperties({
+    providerId: "replicate",
+    modelSlug: "openai/gpt-image-1",
+    referenceImages: [
+      { type: "url", ref: "https://cdn.example.test/reference-one.png" },
+      { type: "url", ref: "https://cdn.example.test/reference-two.png" },
+    ],
+  });
+
+  assert.deepEqual(validateImageGenerationFanOutReadiness(properties), {
+    valid: false,
+    error: {
+      name: "ImageGenerationCompatibilityError",
+      category: "provider_rejected",
+      message: "GPT Image accepts at most 1 reference image(s).",
+      providerId: "replicate",
+      modelSlug: "openai/gpt-image-1",
+      providerRequestId: null,
+      retryable: false,
+    },
+  });
 });
 
 test("image generation reference attachment drafts validate uploads and URLs before provider requests", () => {
