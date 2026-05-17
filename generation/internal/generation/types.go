@@ -23,6 +23,7 @@ type GenerationSpec struct {
 	SpecID       string                 `json:"specId"`
 	CampaignID   string                 `json:"campaignId"`
 	SourceNodeID string                 `json:"sourceNodeId"`
+	MediaType    string                 `json:"mediaType,omitempty"`
 	Prompt       string                 `json:"prompt"`
 	Provider     string                 `json:"provider"`
 	Model        string                 `json:"model"`
@@ -42,6 +43,7 @@ type GenerationBatch struct {
 type GenerationJob struct {
 	JobID       string                 `json:"jobId"`
 	NodeID      string                 `json:"nodeId"`
+	MediaType   string                 `json:"mediaType,omitempty"`
 	Prompt      string                 `json:"prompt"`
 	Provider    string                 `json:"provider"`
 	Model       string                 `json:"model"`

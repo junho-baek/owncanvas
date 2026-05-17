@@ -60,6 +60,7 @@ import {
   createImageGenerationFanOutPlan,
   createImageGenerationSingleNodeRetryPlan,
 } from "~/features/creative-canvas/adapters/image-generation-fanout";
+import { createVideoGenerationRunPlan } from "~/features/creative-canvas/adapters/video-generation-run";
 import {
   applyImageOutputNextNodeActionToCanvas,
   createGenerationFlowNode,
@@ -161,6 +162,20 @@ import {
   type ImageGenerationProviderId,
   type ImageGenerationReferenceTrayAttachment,
 } from "~/features/creative-canvas/model/image-generation-node";
+import {
+  createVideoGenerationNodeProperties,
+  createVideoGenerationFailureDetails,
+  failVideoGenerationNodeTransition,
+  isVideoGenerationNodeProperties,
+  queueVideoGenerationNodeTransition,
+  resolveVideoGenerationModelPickerOptions,
+  selectVideoGenerationNodeModelTransition,
+  succeedVideoGenerationNodeTransition,
+  validateVideoGenerationRunReadiness,
+  type VideoGenerationModelSlug,
+  type VideoGenerationNodeProperties,
+  type VideoGenerationResolution,
+} from "~/features/creative-canvas/model/video-generation-node";
 
 const blockIcons = {
   text: Type,
@@ -413,6 +428,49 @@ function applyImageGenerationJobResult(
   return properties;
 }
 
+function applyVideoGenerationJobResult(
+  properties: VideoGenerationNodeProperties,
+  result: GenerationJobResult,
+): VideoGenerationNodeProperties {
+  if (
+    result.status === "succeeded" &&
+    result.persistedCreativeOutputAssetId !== undefined
+  ) {
+    return succeedVideoGenerationNodeTransition(properties, {
+      generatedAssetIds: [result.persistedCreativeOutputAssetId],
+      metadataRunId: result.providerRequestId || null,
+      costUsageRunId: null,
+    });
+  }
+
+  if (result.status === "succeeded") {
+    return failVideoGenerationNodeTransition(
+      properties,
+      createVideoGenerationFailureDetails(properties, {
+        name: "GenerationPersistenceMissing",
+        message: "Generated Creative Output was not persisted.",
+        providerRequestId: result.providerRequestId || null,
+        retryable: true,
+      }),
+    );
+  }
+
+  if (result.status === "failed") {
+    return failVideoGenerationNodeTransition(
+      properties,
+      createVideoGenerationFailureDetails(properties, {
+        name: result.error?.name ?? "provider_error",
+        category: result.error?.category,
+        message: result.error?.message ?? "Generation failed.",
+        providerRequestId: result.providerRequestId || null,
+        retryable: result.error?.retryable ?? null,
+      }),
+    );
+  }
+
+  return properties;
+}
+
 export function CreativeCanvasScreen({
   campaign,
   onCampaignChange,
@@ -470,6 +528,13 @@ export function CreativeCanvasScreen({
       campaign === undefined
         ? []
         : campaign.assets.filter((asset) => asset.mediaType === "image"),
+    [campaign],
+  );
+  const campaignVideoAssets = useMemo(
+    () =>
+      campaign === undefined
+        ? []
+        : campaign.assets.filter((asset) => asset.mediaType === "video"),
     [campaign],
   );
   const openImageGenerationInspector = useMemo(() => {
@@ -653,6 +718,92 @@ export function CreativeCanvasScreen({
             providerRequestId: null,
             retryable: true,
           }),
+        },
+      };
+    });
+
+    setNodes(nextNodes);
+    updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+  }, [setNodes, updateCampaignCanvas]);
+
+  const applyVideoGenerationBatchResults = useCallback((
+    batchResponse: GenerationBatchResponse,
+    expectedNodeIds: string[],
+  ) => {
+    const resultsByNodeId = new Map(
+      batchResponse.results.map((result) => [result.nodeId, result]),
+    );
+    const expectedNodeIdSet = new Set(expectedNodeIds);
+    const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
+      const properties = node.data.properties;
+
+      if (
+        !expectedNodeIdSet.has(node.id) ||
+        !isVideoGenerationNodeProperties(properties)
+      ) {
+        return node;
+      }
+
+      const result = resultsByNodeId.get(node.id);
+
+      if (result === undefined) {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: failVideoGenerationNodeTransition(
+              properties,
+              createVideoGenerationFailureDetails(properties, {
+                name: "GenerationServiceResultMissing",
+                message:
+                  "Generation batch did not return a result for this node.",
+                retryable: true,
+              }),
+            ),
+          },
+        };
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: applyVideoGenerationJobResult(properties, result),
+        },
+      };
+    });
+
+    setNodes(nextNodes);
+    updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+  }, [setNodes, updateCampaignCanvas]);
+
+  const applyVideoGenerationBatchFailure = useCallback((
+    nodeIds: string[],
+    message: string,
+  ) => {
+    const failedNodeIds = new Set(nodeIds);
+    const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
+      const properties = node.data.properties;
+
+      if (
+        !failedNodeIds.has(node.id) ||
+        !isVideoGenerationNodeProperties(properties)
+      ) {
+        return node;
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: failVideoGenerationNodeTransition(
+            properties,
+            createVideoGenerationFailureDetails(properties, {
+              name: "GenerationServiceError",
+              message,
+              retryable: true,
+            }),
+          ),
         },
       };
     });
@@ -946,6 +1097,122 @@ export function CreativeCanvasScreen({
     applyImageGenerationBatchResults,
     onCampaignChange,
     setEdges,
+    setNodes,
+    updateCampaignCanvas,
+  ]);
+
+  const runVideoGenerationNode = useCallback(async (nodeId: string) => {
+    try {
+      const currentCampaign = campaignRef.current;
+      const sourceNode = canvasSnapshotRef.current.nodes.find(
+        (node) => node.id === nodeId,
+      );
+
+      if (
+        !currentCampaign ||
+        !sourceNode ||
+        !isVideoGenerationNodeProperties(sourceNode.data.properties)
+      ) {
+        return;
+      }
+
+      const sourceProperties = sourceNode.data.properties;
+      const referenceImageUri =
+        sourceProperties.referenceImageUri ??
+        currentCampaign.assets.find(
+          (asset) =>
+            asset.id ===
+            (sourceProperties.referenceImageAssetId ??
+              sourceProperties.sourceOutputAssetId),
+        )?.uri ??
+        null;
+      const readiness = validateVideoGenerationRunReadiness({
+        properties: sourceProperties,
+        referenceImageUri,
+      });
+
+      if (!readiness.valid) {
+        const nextNodes = canvasSnapshotRef.current.nodes.map((node) =>
+          node.id !== sourceNode.id
+            ? node
+            : {
+                ...node,
+                data: {
+                  ...node.data,
+                  properties: failVideoGenerationNodeTransition(
+                    sourceProperties,
+                    readiness.error,
+                  ),
+                },
+              },
+        );
+
+        setNodes(nextNodes);
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+        return;
+      }
+
+      const plan = createVideoGenerationRunPlan({
+        campaignId: currentCampaign.id,
+        sourceNode,
+        existingNodes: canvasSnapshotRef.current.nodes,
+        campaignAssets: currentCampaign.assets,
+        now: () => new Date().toISOString(),
+      });
+      const nextNodes = canvasSnapshotRef.current.nodes.map((node) => {
+        if (node.id !== sourceNode.id) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: queueVideoGenerationNodeTransition(sourceProperties),
+          },
+        };
+      });
+      const nextCampaign = syncCampaignFromCreativeCanvasInteraction(
+        currentCampaign,
+        nextNodes,
+        canvasSnapshotRef.current.edges,
+      );
+
+      canvasSnapshotRef.current = {
+        nodes: nextNodes,
+        edges: canvasSnapshotRef.current.edges,
+      };
+      campaignRef.current = nextCampaign;
+      setNodes(nextNodes);
+      onCampaignChange?.(nextCampaign);
+
+      const response = await submitImageGenerationBatch(plan.batch);
+
+      if (response === null) {
+        applyVideoGenerationBatchFailure(
+          [sourceNode.id],
+          "Generation batch did not complete.",
+        );
+        return;
+      }
+
+      const persisted = persistGenerationBatchResponseToCampaign({
+        campaign: campaignRef.current ?? nextCampaign,
+        request: plan.batch,
+        response,
+      });
+
+      campaignRef.current = persisted.campaign;
+      onCampaignChange?.(persisted.campaign);
+
+      applyVideoGenerationBatchResults(persisted.response, [sourceNode.id]);
+    } catch {
+      return;
+    }
+  }, [
+    applyVideoGenerationBatchFailure,
+    applyVideoGenerationBatchResults,
+    onCampaignChange,
     setNodes,
     updateCampaignCanvas,
   ]);
@@ -1332,6 +1599,135 @@ export function CreativeCanvasScreen({
     });
   }, [setNodes, updateCampaignCanvas]);
 
+  const handleVideoModelChange = useCallback((
+    nodeId: string,
+    modelSlug: VideoGenerationModelSlug,
+  ) => {
+    setNodes((currentNodes) => {
+      let didUpdate = false;
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (
+          node.id !== nodeId ||
+          !isVideoGenerationNodeProperties(properties) ||
+          properties.modelSlug === modelSlug
+        ) {
+          return node;
+        }
+
+        didUpdate = true;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: selectVideoGenerationNodeModelTransition(
+              properties,
+              modelSlug,
+            ),
+          },
+        };
+      });
+
+      if (!didUpdate) {
+        return currentNodes;
+      }
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handleVideoDurationChange = useCallback((
+    nodeId: string,
+    durationSeconds: number,
+  ) => {
+    setNodes((currentNodes) => {
+      let didUpdate = false;
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (
+          node.id !== nodeId ||
+          !isVideoGenerationNodeProperties(properties) ||
+          properties.durationSeconds === durationSeconds
+        ) {
+          return node;
+        }
+
+        didUpdate = true;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: createVideoGenerationNodeProperties({
+              ...properties,
+              durationSeconds,
+            }),
+          },
+        };
+      });
+
+      if (!didUpdate) {
+        return currentNodes;
+      }
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
+  const handleVideoResolutionChange = useCallback((
+    nodeId: string,
+    resolution: VideoGenerationResolution,
+  ) => {
+    setNodes((currentNodes) => {
+      let didUpdate = false;
+      const nextNodes = currentNodes.map((node) => {
+        const properties = node.data.properties;
+
+        if (
+          node.id !== nodeId ||
+          !isVideoGenerationNodeProperties(properties) ||
+          properties.resolution === resolution
+        ) {
+          return node;
+        }
+
+        didUpdate = true;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: createVideoGenerationNodeProperties({
+              ...properties,
+              resolution,
+            }),
+          },
+        };
+      });
+
+      if (!didUpdate) {
+        return currentNodes;
+      }
+
+      queueMicrotask(() => {
+        updateCampaignCanvas(nextNodes, canvasSnapshotRef.current.edges);
+      });
+
+      return nextNodes;
+    });
+  }, [setNodes, updateCampaignCanvas]);
+
   const creativeNodeTypes = useMemo<NodeTypes>(
     () => ({
       generation: (props) => (
@@ -1347,8 +1743,13 @@ export function CreativeCanvasScreen({
           onRunImageGeneration={runImageGenerationNode}
           onImagePromptChange={handleImagePromptChange}
           onNonImagePromptChange={handleNonImagePromptChange}
+          onVideoModelChange={handleVideoModelChange}
+          onVideoDurationChange={handleVideoDurationChange}
+          onVideoResolutionChange={handleVideoResolutionChange}
+          onRunVideoGeneration={runVideoGenerationNode}
           campaignAssetReferences={campaignAssetReferences}
           campaignImageAssets={campaignImageAssets}
+          campaignVideoAssets={campaignVideoAssets}
         />
       ),
     }),
@@ -1363,8 +1764,13 @@ export function CreativeCanvasScreen({
       runImageGenerationNode,
       handleImagePromptChange,
       handleNonImagePromptChange,
+      handleVideoModelChange,
+      handleVideoDurationChange,
+      handleVideoResolutionChange,
+      runVideoGenerationNode,
       campaignAssetReferences,
       campaignImageAssets,
+      campaignVideoAssets,
     ],
   );
 
@@ -4140,9 +4546,14 @@ function GenerationBlockNode({
   onImageReferenceReorder,
   onImagePromptChange,
   onNonImagePromptChange,
+  onVideoModelChange,
+  onVideoDurationChange,
+  onVideoResolutionChange,
   onRunImageGeneration,
+  onRunVideoGeneration,
   campaignAssetReferences,
   campaignImageAssets,
+  campaignVideoAssets,
 }: NodeProps<CreativeFlowNode> & {
   onImageAspectRatioChange: (
     nodeId: string,
@@ -4173,9 +4584,20 @@ function GenerationBlockNode({
   ) => void;
   onImagePromptChange: (nodeId: string, prompt: string) => void;
   onNonImagePromptChange: (nodeId: string, prompt: string) => void;
+  onVideoModelChange: (
+    nodeId: string,
+    modelSlug: VideoGenerationModelSlug,
+  ) => void;
+  onVideoDurationChange: (nodeId: string, durationSeconds: number) => void;
+  onVideoResolutionChange: (
+    nodeId: string,
+    resolution: VideoGenerationResolution,
+  ) => void;
   onRunImageGeneration: (nodeId: string) => void;
+  onRunVideoGeneration: (nodeId: string) => void;
   campaignAssetReferences: CampaignAssetSummary[];
   campaignImageAssets: CampaignAsset[];
+  campaignVideoAssets: CampaignAsset[];
 }) {
   const Icon = blockIcons[data.kind];
   const imageGeneration = isImageGenerationNodeProperties(data.properties)
@@ -4271,6 +4693,17 @@ function GenerationBlockNode({
       onPromptChange={(prompt) => {
         onNonImagePromptChange(data.id, prompt);
       }}
+      onVideoModelChange={(modelSlug) => {
+        onVideoModelChange(data.id, modelSlug);
+      }}
+      onVideoDurationChange={(durationSeconds) => {
+        onVideoDurationChange(data.id, durationSeconds);
+      }}
+      onVideoResolutionChange={(resolution) => {
+        onVideoResolutionChange(data.id, resolution);
+      }}
+      onRunVideoGeneration={() => onRunVideoGeneration(data.id)}
+      campaignVideoAssets={campaignVideoAssets}
       selected={selected}
     />
   );
@@ -4280,11 +4713,21 @@ function NonImageGenerationNodeShell({
   data,
   Icon,
   onPromptChange,
+  onVideoModelChange,
+  onVideoDurationChange,
+  onVideoResolutionChange,
+  onRunVideoGeneration,
+  campaignVideoAssets,
   selected,
 }: {
   data: CreativeFlowNode["data"];
   Icon: ComponentType<{ className?: string }>;
   onPromptChange: (prompt: string) => void;
+  onVideoModelChange: (modelSlug: VideoGenerationModelSlug) => void;
+  onVideoDurationChange: (durationSeconds: number) => void;
+  onVideoResolutionChange: (resolution: VideoGenerationResolution) => void;
+  onRunVideoGeneration: () => void;
+  campaignVideoAssets: CampaignAsset[];
   selected: boolean;
 }) {
   const ports = resolveNonImageGenerationNodePorts(data.kind);
@@ -4292,8 +4735,33 @@ function NonImageGenerationNodeShell({
   const outputPorts = ports.filter((port) => port.direction === "output");
   const PrimaryIcon = resolveNonImageGenerationPrimaryIcon(data.kind);
   const needsPrompt = nonImageGenerationNodeNeedsPrompt(data.kind);
+  const videoGeneration = isVideoGenerationNodeProperties(data.properties)
+    ? data.properties
+    : null;
   const promptPlaceholder = resolveNonImageGenerationPromptPlaceholder(data);
-  const promptValue = resolveNonImageGenerationPromptValue(data);
+  const promptValue =
+    videoGeneration === null
+      ? resolveNonImageGenerationPromptValue(data)
+      : videoGeneration.prompt;
+  const videoModelOptions =
+    videoGeneration === null
+      ? []
+      : resolveVideoGenerationModelPickerOptions({
+          selectedModelSlug: videoGeneration.modelSlug,
+          hasReferenceImage:
+            videoGeneration.referenceImageUri !== null ||
+            videoGeneration.referenceImageAssetId !== null ||
+            videoGeneration.sourceOutputAssetId !== undefined,
+        });
+  const selectedGeneratedVideo =
+    videoGeneration === null
+      ? null
+      : campaignVideoAssets.find(
+          (asset) =>
+            asset.id ===
+            (videoGeneration.uiState.selectedResultAssetId ??
+              videoGeneration.latestResultRefs.generatedAssetIds[0]),
+        ) ?? null;
   const shellClassName = cn(
     "space-image-node-shell",
     "space-generation-node-shell",
@@ -4321,7 +4789,11 @@ function NonImageGenerationNodeShell({
         </div>
 
         <div className="space-node-toolbar nodrag" aria-label="Node actions">
-          <button type="button" aria-label={`Run ${data.title} node`}>
+          <button
+            type="button"
+            aria-label={`Run ${data.title} node`}
+            onClick={videoGeneration === null ? undefined : onRunVideoGeneration}
+          >
             <Play className="size-4" fill="currentColor" />
           </button>
           <button type="button" aria-label="Action menu">⌄</button>
@@ -4343,9 +4815,29 @@ function NonImageGenerationNodeShell({
             !needsPrompt && "promptless",
           )}
         >
+          {selectedGeneratedVideo === null ? null : (
+            <figure
+              className="space-generated-video-preview"
+              data-generated-asset-id={selectedGeneratedVideo.id}
+              aria-label={selectedGeneratedVideo.title}
+            >
+              <video
+                src={selectedGeneratedVideo.uri}
+                controls
+                muted
+                loop
+                playsInline
+              />
+            </figure>
+          )}
+
           <GenerationNodePortStack ports={inputPorts} tone={data.tone} />
 
-          <div className="space-generation-node-primary" aria-hidden="true">
+          <div
+            className="space-generation-node-primary"
+            aria-hidden="true"
+            data-hidden={selectedGeneratedVideo !== null}
+          >
             <PrimaryIcon className="size-8" />
           </div>
 
@@ -4364,14 +4856,90 @@ function NonImageGenerationNodeShell({
             className="space-node-controls nodrag"
             aria-label={`${data.title} settings`}
           >
-            <button
-              className="space-control-chip model"
-              type="button"
-              aria-label={`${data.title} mode`}
-            >
-              <span>Draft</span>
-              <em>⌄</em>
-            </button>
+            {videoGeneration === null ? (
+              <button
+                className="space-control-chip model"
+                type="button"
+                aria-label={`${data.title} mode`}
+              >
+                <span>Draft</span>
+                <em>⌄</em>
+              </button>
+            ) : (
+              <>
+                <label
+                  className="space-control-chip model"
+                  aria-label="Video model selector"
+                >
+                  <select
+                    className="space-control-select"
+                    value={videoGeneration.modelSlug}
+                    onChange={(event) => {
+                      onVideoModelChange(
+                        event.currentTarget.value as VideoGenerationModelSlug,
+                      );
+                    }}
+                    aria-label="Video model"
+                  >
+                    {videoModelOptions.map((option) => (
+                      <option
+                        key={option.value}
+                        value={option.value}
+                        disabled={option.disabled}
+                        data-service-adapter-id={option.serviceAdapterId}
+                        data-service-model-ref={option.serviceModelRef}
+                        title={option.disabledReason ?? undefined}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <em>⌄</em>
+                </label>
+                <label
+                  className="space-control-chip quality"
+                  aria-label="Video duration selector"
+                >
+                  <select
+                    className="space-control-select compact"
+                    value={videoGeneration.durationSeconds}
+                    onChange={(event) => {
+                      onVideoDurationChange(Number(event.currentTarget.value));
+                    }}
+                    aria-label="Video duration"
+                  >
+                    {[2, 5, 10, 15].map((durationSeconds) => (
+                      <option key={durationSeconds} value={durationSeconds}>
+                        {durationSeconds}s
+                      </option>
+                    ))}
+                  </select>
+                  <em>⌄</em>
+                </label>
+                <label
+                  className="space-control-chip quality"
+                  aria-label="Video resolution selector"
+                >
+                  <select
+                    className="space-control-select compact"
+                    value={videoGeneration.resolution}
+                    onChange={(event) => {
+                      onVideoResolutionChange(
+                        event.currentTarget.value as VideoGenerationResolution,
+                      );
+                    }}
+                    aria-label="Video resolution"
+                  >
+                    {["480p", "720p", "1080p"].map((resolution) => (
+                      <option key={resolution} value={resolution}>
+                        {resolution}
+                      </option>
+                    ))}
+                  </select>
+                  <em>⌄</em>
+                </label>
+              </>
+            )}
             <button
               className="space-control-chip icon"
               type="button"
@@ -4385,6 +4953,7 @@ function NonImageGenerationNodeShell({
             className="space-run-button nodrag"
             type="button"
             aria-label={`Run ${data.title}`}
+            onClick={videoGeneration === null ? undefined : onRunVideoGeneration}
           >
             <Play className="size-4" fill="currentColor" />
           </button>

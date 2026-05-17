@@ -32,11 +32,61 @@ func validGenerationJob(jobID string, nodeID string) GenerationJob {
 	return GenerationJob{
 		JobID:       jobID,
 		NodeID:      nodeID,
+		MediaType:   "image",
 		Prompt:      "coral product shot",
 		Provider:    "mock",
 		Model:       "mock-image",
 		AspectRatio: "1:1",
 		Parameters:  map[string]interface{}{},
+	}
+}
+
+func TestValidateGenerationBatchAcceptsVideoMediaType(t *testing.T) {
+	job := validGenerationJob("job_video", "video_node")
+	job.MediaType = "video"
+
+	batch := validGenerationBatch(1, []GenerationJob{job})
+	batch.Spec = &GenerationSpec{
+		SpecID:       "spec_video",
+		CampaignID:   batch.CampaignID,
+		SourceNodeID: batch.SourceNodeID,
+		MediaType:    "video",
+		Prompt:       job.Prompt,
+		Provider:     job.Provider,
+		Model:        "bytedance/seedance-1-lite",
+		AspectRatio:  "16:9",
+		Parameters:   map[string]interface{}{},
+	}
+
+	if err := validateGenerationBatch(batch); err != nil {
+		t.Fatalf("validateGenerationBatch returned error: %v", err)
+	}
+}
+
+func TestValidateGenerationBatchRejectsUnsupportedMediaType(t *testing.T) {
+	job := validGenerationJob("job_audio", "audio_node")
+	job.MediaType = "audio"
+
+	err := validateGenerationBatch(validGenerationBatch(1, []GenerationJob{job}))
+	if err == nil || !strings.Contains(err.Error(), "mediaType must be image or video") {
+		t.Fatalf("validateGenerationBatch error = %v, want media type error", err)
+	}
+}
+
+func TestMockProviderReturnsVideoOutputForVideoJobs(t *testing.T) {
+	job := validGenerationJob("job_video", "video_node")
+	job.MediaType = "video"
+
+	result, err := MockProvider{}.Generate(context.Background(), job)
+	if err != nil {
+		t.Fatalf("MockProvider.Generate returned error: %v", err)
+	}
+
+	if result.ProviderURL != "https://mock.owncanvas.local/video_node.mp4" {
+		t.Fatalf("ProviderURL = %q", result.ProviderURL)
+	}
+	if result.MimeType != "video/mp4" {
+		t.Fatalf("MimeType = %q, want video/mp4", result.MimeType)
 	}
 }
 

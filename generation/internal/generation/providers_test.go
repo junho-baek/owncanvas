@@ -116,6 +116,127 @@ func TestReplicateProviderCreatesPredictionAndMapsSuccessfulImageOutput(t *testi
 	}
 }
 
+func TestReplicateProviderClampsSyncWaitHeaderButKeepsPollingBudget(t *testing.T) {
+	var gotPrefer string
+
+	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		gotPrefer = request.Header.Get("prefer")
+		return jsonResponse(200, `{
+			"id": "replicate_prediction_wait",
+			"status": "succeeded",
+			"output": "https://replicate.delivery/pbxt/generated-output.png"
+		}`), nil
+	})}
+
+	provider := NewReplicateProvider(ReplicateProviderConfig{
+		APIToken:    "test-token",
+		BaseURL:     "https://api.test.replicate.local",
+		HTTPClient:  httpClient,
+		WaitSeconds: 300,
+	})
+
+	_, err := provider.Generate(context.Background(), GenerationJob{
+		JobID:       "job_wait",
+		NodeID:      "node_wait",
+		Prompt:      "coral product shot",
+		Provider:    "replicate",
+		Model:       "google/nano-banana",
+		AspectRatio: "1:1",
+		Parameters:  map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+
+	if gotPrefer != "wait=60" {
+		t.Fatalf("Prefer = %q, want wait=60", gotPrefer)
+	}
+}
+
+func TestReplicateProviderPollsProcessingPredictionAndMapsVideoOutput(t *testing.T) {
+	var requestedPaths []string
+
+	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requestedPaths = append(requestedPaths, request.URL.Path)
+
+		switch request.Method + " " + request.URL.Path {
+		case "POST /v1/models/bytedance/seedance-1-lite/predictions":
+			return jsonResponse(200, `{
+				"id": "seedance_processing",
+				"status": "processing",
+				"output": null,
+				"urls": {
+					"get": "https://api.test.replicate.local/v1/predictions/seedance_processing"
+				}
+			}`), nil
+		case "GET /v1/predictions/seedance_processing":
+			return jsonResponse(200, `{
+				"id": "seedance_processing",
+				"status": "succeeded",
+				"output": "https://replicate.delivery/pbxt/owncanvas-ceo-animation.mp4",
+				"completed_at": "2026-05-17T04:05:06Z"
+			}`), nil
+		default:
+			t.Fatalf("unexpected replicate request %s %s", request.Method, request.URL.Path)
+		}
+
+		return nil, nil
+	})}
+
+	provider := NewReplicateProvider(ReplicateProviderConfig{
+		APIToken:     "test-token",
+		BaseURL:      "https://api.test.replicate.local",
+		HTTPClient:   httpClient,
+		WaitSeconds:  3,
+		PollInterval: time.Millisecond,
+		Now: func() time.Time {
+			return time.Date(2026, 5, 17, 3, 4, 5, 0, time.UTC)
+		},
+	})
+
+	result, err := provider.Generate(context.Background(), GenerationJob{
+		JobID:       "job_video",
+		NodeID:      "video_node",
+		MediaType:   "video",
+		Prompt:      "educational 3D animation",
+		Provider:    "replicate",
+		Model:       "bytedance/seedance-1-lite",
+		AspectRatio: "16:9",
+		Parameters: map[string]any{
+			"replicate": map[string]any{
+				"input": map[string]any{
+					"prompt":       "educational 3D animation",
+					"duration":     float64(2),
+					"resolution":   "480p",
+					"aspect_ratio": "16:9",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+
+	if len(requestedPaths) != 2 {
+		t.Fatalf("requested paths = %#v, want create and poll", requestedPaths)
+	}
+	if result.ProviderRequestID != "seedance_processing" {
+		t.Fatalf("providerRequestId = %q", result.ProviderRequestID)
+	}
+	if result.ProviderURL != "https://replicate.delivery/pbxt/owncanvas-ceo-animation.mp4" {
+		t.Fatalf("providerUrl = %q", result.ProviderURL)
+	}
+	if result.MimeType != "video/mp4" {
+		t.Fatalf("mimeType = %q, want video/mp4", result.MimeType)
+	}
+	if result.Width != 1024 || result.Height != 576 {
+		t.Fatalf("dimensions = %dx%d, want 1024x576", result.Width, result.Height)
+	}
+	if result.GeneratedAt != "2026-05-17T04:05:06Z" {
+		t.Fatalf("generatedAt = %q", result.GeneratedAt)
+	}
+}
+
 func TestReplicateProviderUsesNestedReplicateInputParameters(t *testing.T) {
 	var gotBody map[string]any
 	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {

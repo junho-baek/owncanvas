@@ -1,5 +1,7 @@
 export const GENERATION_BATCH_MAX_FAN_OUT = 10;
 
+export type GenerationMediaType = "image" | "video";
+
 export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
 export type GenerationJobFailureCategory =
@@ -13,6 +15,7 @@ export type GenerationSpec = {
   specId: string;
   campaignId: string;
   sourceNodeId: string;
+  mediaType: GenerationMediaType;
   prompt: string;
   provider: string;
   model: string;
@@ -23,6 +26,7 @@ export type GenerationSpec = {
 export type GenerationJobRequest = {
   jobId: string;
   nodeId: string;
+  mediaType: GenerationMediaType;
   prompt: string;
   provider: string;
   model: string;
@@ -87,6 +91,7 @@ export function createGenerationBatchRequest(input: {
   batchId: string;
   campaignId: string;
   sourceNodeId: string;
+  mediaType?: GenerationMediaType;
   prompt: string;
   provider: string;
   model: string;
@@ -95,6 +100,7 @@ export function createGenerationBatchRequest(input: {
   parameters: Record<string, unknown>;
 }): GenerationBatchRequest {
   const fanOutCount = input.nodeIds.length;
+  const mediaType = input.mediaType ?? "image";
 
   if (fanOutCount < 1 || fanOutCount > GENERATION_BATCH_MAX_FAN_OUT) {
     throw new Error("fan-out count must be between 1 and 10");
@@ -104,6 +110,7 @@ export function createGenerationBatchRequest(input: {
     specId: `${input.batchId}_spec`,
     campaignId: input.campaignId,
     sourceNodeId: input.sourceNodeId,
+    mediaType,
     prompt: input.prompt,
     provider: input.provider,
     model: input.model,
@@ -120,6 +127,7 @@ export function createGenerationBatchRequest(input: {
     jobs: input.nodeIds.map((nodeId, index) => ({
       jobId: `${input.batchId}_job_${index + 1}`,
       nodeId,
+      mediaType,
       prompt: input.prompt,
       provider: input.provider,
       model: input.model,
@@ -256,6 +264,7 @@ function isGenerationSpec(value: unknown): value is GenerationSpec {
     isNonEmptyString(value.specId) &&
     isNonEmptyString(value.campaignId) &&
     isNonEmptyString(value.sourceNodeId) &&
+    (value.mediaType === undefined || isGenerationMediaType(value.mediaType)) &&
     isString(value.prompt) &&
     isNonEmptyString(value.provider) &&
     isNonEmptyString(value.model) &&
@@ -269,6 +278,7 @@ function isGenerationJobRequest(value: unknown): value is GenerationJobRequest {
     isRecord(value) &&
     isNonEmptyString(value.jobId) &&
     isNonEmptyString(value.nodeId) &&
+    (value.mediaType === undefined || isGenerationMediaType(value.mediaType)) &&
     isString(value.prompt) &&
     isNonEmptyString(value.provider) &&
     isNonEmptyString(value.model) &&
@@ -326,6 +336,10 @@ function isGenerationJobStatus(value: unknown): value is GenerationJobStatus {
     typeof value === "string" &&
     generationJobStatuses.includes(value as GenerationJobStatus)
   );
+}
+
+function isGenerationMediaType(value: unknown): value is GenerationMediaType {
+  return value === "image" || value === "video";
 }
 
 function isFanOutCount(value: unknown): value is number {

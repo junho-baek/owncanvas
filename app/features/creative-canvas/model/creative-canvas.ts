@@ -15,6 +15,7 @@ import {
   verifyAgentInstalledPluginUsable,
 } from "../../plugins/model/plugin-representation.ts";
 import { createImageGenerationNodeProperties } from "./image-generation-node.ts";
+import { createVideoGenerationNodeProperties } from "./video-generation-node.ts";
 
 export type GenerationBlockKind =
   | "text"
@@ -4940,6 +4941,7 @@ const generationBlockDefinitions = {
       { label: "Setup", value: "Motion direction", state: "WAITING" },
       { label: "Creative Output", value: "Video candidates", state: "WAITING" },
     ],
+    properties: createVideoGenerationNodeProperties(),
   },
   voice: {
     kind: "voice",
@@ -5036,6 +5038,10 @@ export function createCampaignBlock(
       ? {
           properties: createImageGenerationNodeProperties(),
         }
+      : kind === "video"
+        ? {
+            properties: createVideoGenerationNodeProperties(),
+          }
       : {}),
   };
 }

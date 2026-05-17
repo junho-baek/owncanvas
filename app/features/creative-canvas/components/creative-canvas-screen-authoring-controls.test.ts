@@ -187,6 +187,10 @@ test("created generation blocks avoid console labels and provider setup copy", (
     createdBlocks.find((block) => block.kind === "image")?.properties?.modelSlug,
     "google/nano-banana",
   );
+  assert.equal(
+    createdBlocks.find((block) => block.kind === "video")?.properties?.modelSlug,
+    "bytedance/seedance-1-lite",
+  );
 
   for (const block of createdBlocks) {
     assert.doesNotMatch(
@@ -222,6 +226,41 @@ test("created generation blocks avoid console labels and provider setup copy", (
     generationNodeSource,
     /LLM Block|Agent Block|Custom Block|MODEL|PLUGIN|BYO LLM account|BYO provider|Configured LLM provider|Agent plugin|Custom plugin/,
   );
+});
+
+test("Video Block has provider-backed run controls and generated video preview", () => {
+  const screenStart = creativeCanvasScreen.indexOf("export function CreativeCanvasScreen");
+  const generationNodeStart = creativeCanvasScreen.indexOf(
+    "function GenerationBlockNode",
+  );
+  const nonImageNodeStart = creativeCanvasScreen.indexOf(
+    "function NonImageGenerationNodeShell",
+  );
+  const portStackStart = creativeCanvasScreen.indexOf(
+    "function GenerationNodePortStack",
+  );
+  assert.notEqual(screenStart, -1);
+  assert.notEqual(generationNodeStart, -1);
+  assert.notEqual(nonImageNodeStart, -1);
+  assert.notEqual(portStackStart, -1);
+
+  const screenSource = creativeCanvasScreen.slice(screenStart, generationNodeStart);
+  const nonImageNodeSource = creativeCanvasScreen.slice(
+    nonImageNodeStart,
+    portStackStart,
+  );
+
+  assert.match(creativeCanvasScreen, /createVideoGenerationRunPlan/);
+  assert.match(creativeCanvasScreen, /isVideoGenerationNodeProperties/);
+  assert.match(screenSource, /const runVideoGenerationNode = useCallback/);
+  assert.match(screenSource, /createVideoGenerationRunPlan/);
+  assert.match(nonImageNodeSource, /resolveVideoGenerationModelPickerOptions/);
+  assert.match(nonImageNodeSource, /aria-label="Video model selector"/);
+  assert.match(nonImageNodeSource, /aria-label="Video duration selector"/);
+  assert.match(nonImageNodeSource, /aria-label="Video resolution selector"/);
+  assert.match(nonImageNodeSource, /space-generated-video-preview/);
+  assert.match(nonImageNodeSource, /<video\s+src=\{selectedGeneratedVideo\.uri\}/);
+  assert.match(appCss, /\.space-generated-video-preview/);
 });
 
 test("right panel reads as a campaign brief instead of required metadata", () => {

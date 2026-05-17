@@ -50,14 +50,55 @@ test("createGenerationBatchRequest caps fan-out at x10 and preserves node job ma
     specId: "batch_contract_spec",
     campaignId: "campaign_contract",
     sourceNodeId: "source_image",
+    mediaType: "image",
     prompt: "same prompt",
     provider: "mock",
     model: "mock-image",
     aspectRatio: "9:16",
     parameters: { size: "1024x1792" },
   });
+  assert.equal(request.jobs[0]?.mediaType, "image");
   assert.equal(request.jobs[0]?.prompt, "same prompt");
   assert.deepEqual(request.jobs[0]?.parameters, { size: "1024x1792" });
+});
+
+test("createGenerationBatchRequest can target Video Block generation", () => {
+  const request = createGenerationBatchRequest({
+    batchId: "batch_video_contract",
+    campaignId: "campaign_contract",
+    sourceNodeId: "video_source",
+    mediaType: "video",
+    prompt: "educational 3D animation",
+    provider: "replicate",
+    model: "bytedance/seedance-1-lite",
+    aspectRatio: "16:9",
+    nodeIds: ["video_source"],
+    parameters: {
+      replicate: {
+        input: {
+          prompt: "educational 3D animation",
+          duration: 2,
+          resolution: "480p",
+          aspect_ratio: "16:9",
+        },
+      },
+    },
+  });
+
+  assert.equal(request.spec.mediaType, "video");
+  assert.equal(request.jobs[0]?.mediaType, "video");
+  assert.equal(request.jobs[0]?.model, "bytedance/seedance-1-lite");
+  assert.deepEqual(request.jobs[0]?.parameters, {
+    replicate: {
+      input: {
+        prompt: "educational 3D animation",
+        duration: 2,
+        resolution: "480p",
+        aspect_ratio: "16:9",
+      },
+    },
+  });
+  assert.equal(isGenerationBatchRequest(request), true);
 });
 
 test("createGenerationBatchRequest rejects more than ten nodes", () => {
@@ -236,6 +277,13 @@ test("isGenerationBatchRequest rejects malformed fan-out and jobs contract", () 
     isGenerationBatchRequest({
       ...validRequest,
       jobs: [{ ...validRequest.jobs[0], provider: "" }],
+    }),
+    false,
+  );
+  assert.equal(
+    isGenerationBatchRequest({
+      ...validRequest,
+      spec: { ...validRequest.spec, mediaType: "audio" },
     }),
     false,
   );

@@ -2,6 +2,7 @@ node_modules
 .react-router
 build
 dist
+output/
 .env
 .env.*
 !.env.example

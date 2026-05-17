@@ -80,6 +80,20 @@ func (provider MockProvider) Generate(ctx context.Context, job GenerationJob) (G
 	default:
 	}
 
+	if job.MediaType == "video" {
+		return GenerationResult{
+			JobID:             job.JobID,
+			NodeID:            job.NodeID,
+			Status:            JobStatusSucceeded,
+			ProviderRequestID: "mock_request_" + job.JobID,
+			ProviderURL:       fmt.Sprintf("https://mock.owncanvas.local/%s.mp4", job.NodeID),
+			MimeType:          "video/mp4",
+			Width:             1280,
+			Height:            720,
+			GeneratedAt:       mockGeneratedAt,
+		}, nil
+	}
+
 	return GenerationResult{
 		JobID:             job.JobID,
 		NodeID:            job.NodeID,

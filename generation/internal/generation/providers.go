@@ -17,6 +17,7 @@ import (
 const (
 	DefaultReplicateBaseURL       = "https://api.replicate.com"
 	DefaultReplicateWaitSeconds   = 60
+	DefaultReplicatePollInterval  = 2 * time.Second
 	DefaultReplicateOutputMime    = "image/png"
 	ReplicateAPITokenEnvName      = "OWNCANVAS_REPLICATE_API_TOKEN"
 	ReplicateBaseURLEnvName       = "OWNCANVAS_REPLICATE_BASE_URL"
@@ -112,19 +113,21 @@ func (provider MissingCredentialProvider) Generate(ctx context.Context, job Gene
 }
 
 type ReplicateProviderConfig struct {
-	APIToken    string
-	BaseURL     string
-	HTTPClient  *http.Client
-	WaitSeconds int
-	Now         func() time.Time
+	APIToken     string
+	BaseURL      string
+	HTTPClient   *http.Client
+	WaitSeconds  int
+	PollInterval time.Duration
+	Now          func() time.Time
 }
 
 type ReplicateProvider struct {
-	apiToken    string
-	baseURL     string
-	httpClient  *http.Client
-	waitSeconds int
-	now         func() time.Time
+	apiToken     string
+	baseURL      string
+	httpClient   *http.Client
+	waitSeconds  int
+	pollInterval time.Duration
+	now          func() time.Time
 }
 
 func NewReplicateProvider(config ReplicateProviderConfig) ReplicateProvider {
@@ -142,6 +145,10 @@ func NewReplicateProvider(config ReplicateProviderConfig) ReplicateProvider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	pollInterval := config.PollInterval
+	if pollInterval <= 0 {
+		pollInterval = DefaultReplicatePollInterval
+	}
 
 	now := config.Now
 	if now == nil {
@@ -149,11 +156,12 @@ func NewReplicateProvider(config ReplicateProviderConfig) ReplicateProvider {
 	}
 
 	return ReplicateProvider{
-		apiToken:    strings.TrimSpace(config.APIToken),
-		baseURL:     strings.TrimRight(baseURL, "/"),
-		httpClient:  httpClient,
-		waitSeconds: waitSeconds,
-		now:         now,
+		apiToken:     strings.TrimSpace(config.APIToken),
+		baseURL:      strings.TrimRight(baseURL, "/"),
+		httpClient:   httpClient,
+		waitSeconds:  waitSeconds,
+		pollInterval: pollInterval,
+		now:          now,
 	}
 }
 
@@ -208,7 +216,7 @@ func (provider ReplicateProvider) Generate(ctx context.Context, job GenerationJo
 
 	request.Header.Set("authorization", "Bearer "+provider.apiToken)
 	request.Header.Set("content-type", "application/json")
-	request.Header.Set("prefer", fmt.Sprintf("wait=%d", provider.waitSeconds))
+	request.Header.Set("prefer", fmt.Sprintf("wait=%d", provider.syncWaitSeconds()))
 
 	response, err := provider.httpClient.Do(request)
 	if err != nil {
@@ -254,6 +262,10 @@ func (provider ReplicateProvider) Generate(ctx context.Context, job GenerationJo
 			true,
 			nil,
 		)
+	}
+	prediction, err = provider.waitForReplicatePrediction(ctx, prediction)
+	if err != nil {
+		return GenerationResult{}, err
 	}
 	if prediction.Status == "failed" || prediction.Status == "canceled" {
 		if prediction.Error != nil {
@@ -302,6 +314,13 @@ func (provider ReplicateProvider) Generate(ctx context.Context, job GenerationJo
 
 func (provider ReplicateProvider) redact(message string) string {
 	return redactGenerationSecrets(message, provider.apiToken)
+}
+
+func (provider ReplicateProvider) syncWaitSeconds() int {
+	if provider.waitSeconds > 60 {
+		return 60
+	}
+	return provider.waitSeconds
 }
 
 func (provider ReplicateProvider) predictionURL(model string) string {
@@ -365,6 +384,154 @@ type replicatePredictionResponse struct {
 	Output      json.RawMessage `json:"output"`
 	Error       any             `json:"error"`
 	CompletedAt string          `json:"completed_at"`
+	URLs        struct {
+		Cancel string `json:"cancel"`
+		Get    string `json:"get"`
+	} `json:"urls"`
+}
+
+func (provider ReplicateProvider) waitForReplicatePrediction(
+	ctx context.Context,
+	prediction replicatePredictionResponse,
+) (replicatePredictionResponse, error) {
+	if !shouldPollReplicatePrediction(prediction) {
+		return prediction, nil
+	}
+	if strings.TrimSpace(prediction.URLs.Get) == "" {
+		return prediction, nil
+	}
+
+	deadline := time.Now().Add(time.Duration(provider.waitSeconds) * time.Second)
+	firstPoll := true
+
+	for shouldPollReplicatePrediction(prediction) {
+		if time.Now().After(deadline) {
+			provider.cancelReplicatePrediction(ctx, prediction.URLs.Cancel)
+			return replicatePredictionResponse{}, NewExecutionError(
+				"GenerationProviderPredictionTimeout",
+				GenerationErrorCategoryProviderExecution,
+				fmt.Sprintf("replicate prediction %q did not complete within %d seconds", prediction.ID, provider.waitSeconds),
+				true,
+				nil,
+			)
+		}
+
+		if !firstPoll {
+			timer := time.NewTimer(provider.pollInterval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return replicatePredictionResponse{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		firstPoll = false
+
+		nextPrediction, err := provider.getReplicatePrediction(ctx, prediction.URLs.Get)
+		if err != nil {
+			return replicatePredictionResponse{}, err
+		}
+		if nextPrediction.ID == "" {
+			return replicatePredictionResponse{}, NewExecutionError(
+				"GenerationProviderInvalidResponse",
+				GenerationErrorCategoryProviderResponse,
+				"replicate prediction response missing id",
+				true,
+				nil,
+			)
+		}
+		prediction = nextPrediction
+	}
+
+	return prediction, nil
+}
+
+func (provider ReplicateProvider) cancelReplicatePrediction(
+	ctx context.Context,
+	cancelURL string,
+) {
+	if strings.TrimSpace(cancelURL) == "" {
+		return
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cancelURL, nil)
+	if err != nil {
+		return
+	}
+	request.Header.Set("authorization", "Bearer "+provider.apiToken)
+
+	response, err := provider.httpClient.Do(request)
+	if err != nil {
+		return
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+}
+
+func shouldPollReplicatePrediction(prediction replicatePredictionResponse) bool {
+	if prediction.Status == "failed" || prediction.Status == "canceled" {
+		return false
+	}
+	if _, ok := parseReplicateCreativeOutput(prediction.Output, "1:1"); ok {
+		return false
+	}
+	return prediction.Status == "starting" || prediction.Status == "processing"
+}
+
+func (provider ReplicateProvider) getReplicatePrediction(
+	ctx context.Context,
+	getURL string,
+) (replicatePredictionResponse, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, getURL, nil)
+	if err != nil {
+		return replicatePredictionResponse{}, NewExecutionError(
+			"GenerationTransportRequestInvalid",
+			GenerationErrorCategoryTransport,
+			provider.redact("create replicate polling request: "+err.Error()),
+			false,
+			err,
+		)
+	}
+	request.Header.Set("authorization", "Bearer "+provider.apiToken)
+
+	response, err := provider.httpClient.Do(request)
+	if err != nil {
+		return replicatePredictionResponse{}, NewExecutionError(
+			"GenerationTransportRequestFailed",
+			GenerationErrorCategoryTransport,
+			provider.redact("execute replicate polling request: "+err.Error()),
+			true,
+			err,
+		)
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return replicatePredictionResponse{}, NewExecutionError(
+			"GenerationTransportResponseReadFailed",
+			GenerationErrorCategoryTransport,
+			provider.redact("read replicate polling response: "+err.Error()),
+			true,
+			err,
+		)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return replicatePredictionResponse{}, provider.replicateAPIError(response.StatusCode, body)
+	}
+
+	var prediction replicatePredictionResponse
+	if err := json.Unmarshal(body, &prediction); err != nil {
+		return replicatePredictionResponse{}, NewExecutionError(
+			"GenerationProviderInvalidResponse",
+			GenerationErrorCategoryProviderResponse,
+			provider.redact("decode replicate polling response: "+err.Error()),
+			true,
+			err,
+		)
+	}
+
+	return prediction, nil
 }
 
 func (provider ReplicateProvider) replicateAPIError(statusCode int, body []byte) ExecutionError {
@@ -621,6 +788,12 @@ func mimeTypeForOutputURL(outputURL string) string {
 		return "image/webp"
 	case strings.HasSuffix(path, ".png"):
 		return "image/png"
+	case strings.HasSuffix(path, ".mp4"):
+		return "video/mp4"
+	case strings.HasSuffix(path, ".webm"):
+		return "video/webm"
+	case strings.HasSuffix(path, ".mov"):
+		return "video/quicktime"
 	default:
 		return DefaultReplicateOutputMime
 	}

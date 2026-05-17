@@ -27,6 +27,22 @@ function createImageBlock(id: string, x: number): CampaignCanvasBlock {
   };
 }
 
+function createVideoBlock(id: string, x: number): CampaignCanvasBlock {
+  return {
+    id,
+    kind: "video",
+    type: "video",
+    title: "Video",
+    subtitle: "Ready",
+    description: "Video generation",
+    tone: "violet",
+    status: "DRAFT",
+    contracts: [],
+    position: { x, y: 0 },
+    properties: {},
+  };
+}
+
 test("persistGenerationBatchResponseToCampaign stores local Creative Output refs for succeeded duplicated Image Blocks", () => {
   const storage = new MemoryStorage();
   const campaign = createBlankCampaignRecord(storage, {
@@ -222,6 +238,108 @@ test("persistGenerationBatchResponseToCampaign stores local Creative Output refs
         },
       },
     ],
+  );
+});
+
+test("persistGenerationBatchResponseToCampaign stores Video Block outputs as video assets", () => {
+  const storage = new MemoryStorage();
+  const campaign = createBlankCampaignRecord(storage, {
+    id: "campaign_video_generation_persistence",
+    now: () => "2026-05-17T05:00:00.000Z",
+  });
+  const request = createGenerationBatchRequest({
+    batchId: "video_source_video_20260517050000000",
+    campaignId: campaign.id,
+    sourceNodeId: "video_source",
+    mediaType: "video",
+    prompt: "educational 3D animation about an AI-native CEO co-coding",
+    provider: "replicate",
+    model: "bytedance/seedance-1-lite",
+    aspectRatio: "16:9",
+    nodeIds: ["video_source"],
+    parameters: {
+      replicate: {
+        input: {
+          prompt: "educational 3D animation about an AI-native CEO co-coding",
+          duration: 2,
+          resolution: "480p",
+          aspect_ratio: "16:9",
+          fps: 24,
+        },
+      },
+    },
+  });
+  const campaignWithNode = {
+    ...campaign,
+    campaignSpec: {
+      ...campaign.campaignSpec,
+      nodes: [createVideoBlock("video_source", 0)],
+    },
+    canvasState: {
+      ...campaign.canvasState,
+      nodes: [createVideoBlock("video_source", 0)],
+    },
+  };
+  const response: GenerationBatchResponse = {
+    batchId: request.batchId,
+    results: [
+      {
+        jobId: request.jobs[0]!.jobId,
+        nodeId: "video_source",
+        status: "succeeded",
+        providerRequestId: "replicate_video_prediction_1",
+        providerUrl: "https://replicate.delivery/pbxt/owncanvas-ceo.mp4",
+        mimeType: "video/mp4",
+        width: 1024,
+        height: 576,
+        generatedAt: "2026-05-17T05:00:02.000Z",
+      },
+    ],
+  };
+
+  const result = persistGenerationBatchResponseToCampaign({
+    campaign: campaignWithNode,
+    request,
+    response,
+    now: () => "2026-05-17T05:00:03.000Z",
+  });
+
+  assert.equal(
+    result.response.results[0]?.persistedCreativeOutputAssetId,
+    "asset_video_source_creative_output",
+  );
+  assert.deepEqual(
+    result.campaign.assets.map((asset) => ({
+      id: asset.id,
+      mediaType: asset.mediaType,
+      uri: asset.uri,
+      mimeType: asset.mimeType,
+      durationSeconds: asset.generatedMetadata?.durationSeconds,
+      frameRate: asset.generatedMetadata?.frameRate,
+    })),
+    [
+      {
+        id: "asset_video_source_creative_output",
+        mediaType: "video",
+        uri: "https://replicate.delivery/pbxt/owncanvas-ceo.mp4",
+        mimeType: "video/mp4",
+        durationSeconds: 2,
+        frameRate: 24,
+      },
+    ],
+  );
+  assert.equal(
+    result.campaign.campaignSpec.assetGenerationJobs?.[0]?.mediaType,
+    "video",
+  );
+  assert.equal(
+    result.campaign.campaignSpec.assetGenerationJobs?.[0]?.capabilityId,
+    "generate.video",
+  );
+  assert.equal(
+    result.campaign.campaignSpec.assetGenerationJobs?.[0]?.videoInputs
+      ?.durationSeconds,
+    2,
   );
 });
 

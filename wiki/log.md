@@ -2765,3 +2765,10 @@
 - compact model selector는 Replicate 같은 실행 서비스를 user-facing model로 노출하지 않고 catalog model entry(Nano Banana, GPT Image, Seedream 3)를 표시한다. 현재 reference count와 맞지 않는 model은 disabled reason을 가진 option으로 표시한다.
 - fan-out 실행 전 `validateImageGenerationFanOutReadiness()`가 model/reference compatibility를 검사해 incompatible reference count에서는 output node/edge를 만들지 않고 source Image Block에 inline compatibility error를 남긴다.
 - 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), focused TS tests 118/118 pass, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-17] video-generation-provider-slice | Superpowers execution
+
+- Superpowers plan `docs/superpowers/plans/2026-05-17-video-generation-provider-slice.md` 기준으로 Video Block에 provider-backed generation slice를 연결했다. Replicate는 service adapter로만 유지하고, 사용자-facing model catalog는 Seedance/Kling 모델명 중심으로 노출한다.
+- `mediaType: "video"` generation batch contract, Go provider polling, video MIME detection, video Creative Output persistence, Video Block run planner/UI controls를 추가했다. 기본 smoke 설정은 `bytedance/seedance-1-lite`, 2초, 480p, 16:9이며 `bytedance/seedance-1-pro-fast`와 `kwaivgi/kling-v2.1`도 catalog에 포함했다.
+- 실제 provider smoke에서 `bytedance/seedance-1-lite`는 장시간 처리되어 cancel했고, `bytedance/seedance-1-pro-fast`로 2초 480p MP4 생성에 성공했다. 산출물은 `output/replicate/owncanvas-ai-native-ceo-seedance-pro-fast.mp4`에 보관했다.
+- 검증: focused TS tests 77/77 pass, `go test ./...` in `generation`, `npm run typecheck`, `npm run build`, `git diff --check`.

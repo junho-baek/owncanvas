@@ -180,6 +180,9 @@ func validateGenerationSpec(spec GenerationSpec) error {
 	if strings.TrimSpace(spec.SourceNodeID) == "" {
 		return errors.New("spec.sourceNodeId is required")
 	}
+	if !isValidGenerationMediaType(spec.MediaType) {
+		return errors.New("spec.mediaType must be image or video")
+	}
 	if strings.TrimSpace(spec.Prompt) == "" {
 		return errors.New("spec.prompt is required")
 	}
@@ -203,6 +206,9 @@ func validateGenerationJob(index int, job GenerationJob) error {
 	if strings.TrimSpace(job.NodeID) == "" {
 		return fmt.Errorf("%s.nodeId is required", prefix)
 	}
+	if !isValidGenerationMediaType(job.MediaType) {
+		return fmt.Errorf("%s.mediaType must be image or video", prefix)
+	}
 	if strings.TrimSpace(job.Prompt) == "" {
 		return fmt.Errorf("%s.prompt is required", prefix)
 	}
@@ -216,6 +222,11 @@ func validateGenerationJob(index int, job GenerationJob) error {
 		return fmt.Errorf("%s.aspectRatio is required", prefix)
 	}
 	return nil
+}
+
+func isValidGenerationMediaType(mediaType string) bool {
+	trimmed := strings.TrimSpace(mediaType)
+	return trimmed == "" || trimmed == "image" || trimmed == "video"
 }
 
 func generationErrorFromExecutionError(err error) GenerationError {

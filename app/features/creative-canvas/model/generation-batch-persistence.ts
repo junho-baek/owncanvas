@@ -1,5 +1,6 @@
 import {
   createGeneratedCreativeOutputAssetId,
+  type GenerationMediaType,
   type GenerationBatchRequest,
   type GenerationBatchResponse,
   type GenerationJobRequest,
@@ -132,6 +133,9 @@ function createCampaignExecutionResultFromGenerationBatch(input: {
   );
   const jobs = input.response.results.map((result, index) => {
     const requestJob = requestJobsById.get(result.jobId);
+    const mediaType = resolveGenerationMediaType(
+      requestJob?.mediaType ?? input.request.spec.mediaType,
+    );
     const expectedAssetId = createGeneratedCreativeOutputAssetId(result.nodeId);
     const existingJob = getReusableExistingGenerationJobForNode(
       existingJobsById.get(result.jobId),
@@ -150,6 +154,9 @@ function createCampaignExecutionResultFromGenerationBatch(input: {
               assetId,
               prompt: requestJob?.prompt ?? input.request.spec.prompt,
               model: requestJob?.model ?? input.request.spec.model,
+              mediaType,
+              parameters:
+                requestJob?.parameters ?? input.request.spec.parameters,
               index,
             }),
           ]
@@ -178,10 +185,10 @@ function createCampaignExecutionResultFromGenerationBatch(input: {
               message: result.error.message,
               stack: null,
               jobId: result.jobId,
-              mediaType: "image" as const,
+              mediaType,
               providerPluginId:
                 requestJob?.provider ?? input.request.spec.provider,
-              capabilityId: "generate.image",
+              capabilityId: generationCapabilityIdForMediaType(mediaType),
               attempt,
               failedAt: generatedAt,
             },
@@ -191,9 +198,9 @@ function createCampaignExecutionResultFromGenerationBatch(input: {
 
     return {
       id: result.jobId,
-      mediaType: "image",
+      mediaType,
       providerPluginId: requestJob?.provider ?? input.request.spec.provider,
-      capabilityId: "generate.image",
+      capabilityId: generationCapabilityIdForMediaType(mediaType),
       requiredInputs: [
         {
           key: "prompt",
@@ -202,21 +209,53 @@ function createCampaignExecutionResultFromGenerationBatch(input: {
           dataType: "text",
         },
       ],
-      imageInputs: {
-        prompt: requestJob?.prompt ?? input.request.spec.prompt,
-        negativePrompt: "",
-        referenceAssetIds: [],
-        productAssetIds: [],
-        count: 1,
-        aspectRatio: requestJob?.aspectRatio ?? input.request.spec.aspectRatio,
-        size: {
-          width: result.width,
-          height: result.height,
-        },
-        style: "",
-        seed: null,
-        providerParameters: requestJob?.parameters ?? input.request.spec.parameters,
-      },
+      ...(mediaType === "image"
+        ? {
+            imageInputs: {
+              prompt: requestJob?.prompt ?? input.request.spec.prompt,
+              negativePrompt: "",
+              referenceAssetIds: [],
+              productAssetIds: [],
+              count: 1,
+              aspectRatio:
+                requestJob?.aspectRatio ?? input.request.spec.aspectRatio,
+              size: {
+                width: result.width,
+                height: result.height,
+              },
+              style: "",
+              seed: null,
+              providerParameters:
+                requestJob?.parameters ?? input.request.spec.parameters,
+            },
+          }
+        : {
+            videoInputs: {
+              prompt: requestJob?.prompt ?? input.request.spec.prompt,
+              negativePrompt: "",
+              storyboard: {},
+              script: "",
+              referenceAssetIds: [],
+              productAssetIds: [],
+              count: 1,
+              aspectRatio:
+                requestJob?.aspectRatio ?? input.request.spec.aspectRatio,
+              durationSeconds: resolveVideoDurationSeconds(
+                requestJob?.parameters ?? input.request.spec.parameters,
+              ),
+              resolution: {
+                width: result.width,
+                height: result.height,
+              },
+              frameRate: resolveVideoFrameRate(
+                requestJob?.parameters ?? input.request.spec.parameters,
+              ),
+              style: "",
+              seed: null,
+              providerParameters:
+                requestJob?.parameters ?? input.request.spec.parameters,
+            },
+          }),
       outputTargets: [{ assetId, field: "uri" }],
       ...(resultMetadata.length === 0 ? {} : { resultMetadata }),
       status: result.status === "succeeded" ? "completed" : "failed",
@@ -298,6 +337,8 @@ function createResultMetadataFromGenerationJob(input: {
   assetId: string;
   prompt: string;
   model: string;
+  mediaType: GenerationMediaType;
+  parameters: Record<string, unknown>;
   index: number;
 }): CampaignAssetGenerationResultMetadata {
   return {
@@ -307,6 +348,12 @@ function createResultMetadataFromGenerationJob(input: {
     mimeType: input.result.mimeType,
     width: input.result.width,
     height: input.result.height,
+    ...(input.mediaType === "video"
+      ? {
+          durationSeconds: resolveVideoDurationSeconds(input.parameters),
+          frameRate: resolveVideoFrameRate(input.parameters),
+        }
+      : {}),
     ...(input.result.thumbnailUri === undefined
       ? {}
       : { thumbnailUri: input.result.thumbnailUri }),
@@ -320,6 +367,37 @@ function createResultMetadataFromGenerationJob(input: {
     costUsd: null,
     finishReason: "completed",
   };
+}
+
+function resolveGenerationMediaType(value: unknown): GenerationMediaType {
+  return value === "video" ? "video" : "image";
+}
+
+function generationCapabilityIdForMediaType(mediaType: GenerationMediaType) {
+  return mediaType === "video" ? "generate.video" : "generate.image";
+}
+
+function resolveVideoDurationSeconds(parameters: Record<string, unknown>) {
+  return numberFromReplicateInput(parameters, "duration") ?? 0;
+}
+
+function resolveVideoFrameRate(parameters: Record<string, unknown>) {
+  return numberFromReplicateInput(parameters, "fps") ?? 24;
+}
+
+function numberFromReplicateInput(
+  parameters: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const replicate = isRecord(parameters.replicate) ? parameters.replicate : null;
+  const input = replicate !== null && isRecord(replicate.input)
+    ? replicate.input
+    : isRecord(parameters.input)
+      ? parameters.input
+      : parameters;
+  const value = input[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function cloneCampaignAssetGenerationResultMetadata(
