@@ -583,6 +583,136 @@ test("OwnCanvas CLI validates, dry-runs, diffs, and uses stable exit codes", asy
   assert.equal(fileError.json.errors[0]?.code, "workspace_not_found");
 });
 
+test("OwnCanvas CLI keeps provider runs opt-in and records guarded manifests", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "owncanvas-cli-provider-"));
+  runCli(["workspace", "init", "--root", root, "--json"]);
+  runCli([
+    "campaign",
+    "create",
+    "--root",
+    root,
+    "--id",
+    "launch-pack",
+    "--json",
+  ]);
+  runCli([
+    "block",
+    "add",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--kind",
+    "image",
+    "--id",
+    "image_hero",
+    "--json",
+  ]);
+  runCli([
+    "block",
+    "set",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--prompt",
+    "Create a launch image",
+    "--json",
+  ]);
+  const envFile = path.join(root, "provider.env");
+  await writeFile(envFile, "OWNCANVAS_REPLICATE_API_TOKEN=test-token\n", "utf8");
+
+  const defaultMock = runCli([
+    "generate",
+    "run",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--run-id",
+    "run_default_mock",
+    "--json",
+  ]);
+  assert.equal(defaultMock.status, 0);
+  assert.equal((defaultMock.json.data as { status: { provider?: string } }).status.provider, "mock");
+
+  const missingCostIntent = runCli([
+    "generate",
+    "run",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--provider",
+    "real",
+    "--env-file",
+    envFile,
+    "--json",
+  ]);
+  assert.equal(missingCostIntent.status, 4);
+  assert.equal(missingCostIntent.json.errors[0]?.code, "cost_intent_required");
+
+  const missingCredential = runCli([
+    "generate",
+    "run",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--provider",
+    "real",
+    "--allow-cost",
+    "--json",
+  ]);
+  assert.equal(missingCredential.status, 5);
+  assert.equal(missingCredential.json.errors[0]?.code, "provider_credential_missing");
+
+  const fakeFailure = runCli([
+    "generate",
+    "run",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--provider",
+    "fake-failure",
+    "--allow-cost",
+    "--max-cost-usd",
+    "1",
+    "--env-file",
+    envFile,
+    "--run-id",
+    "run_provider_failure",
+    "--json",
+  ]);
+  assert.equal(fakeFailure.status, 5);
+  assert.equal(fakeFailure.json.errors[0]?.code, "provider_fake_failure");
+
+  const manifestPath = path.join(
+    root,
+    ".owncanvas",
+    "campaigns",
+    "launch-pack",
+    "runs",
+    "run_provider_failure",
+    "provider-manifest.json",
+  );
+  const manifestRaw = await readFile(manifestPath, "utf8");
+  const manifest = JSON.parse(manifestRaw) as {
+    status: string;
+    failureDetails: Array<{ code: string }>;
+  };
+
+  assert.equal(manifest.status, "failed");
+  assert.equal(manifest.failureDetails[0]?.code, "provider_fake_failure");
+  assert.equal(manifestRaw.includes("test-token"), false);
+});
+
 function runCli(args: string[]): CliResult {
   const result = runCliRaw(args);
   const trimmedStdout = result.stdout.trim();

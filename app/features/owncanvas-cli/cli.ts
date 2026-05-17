@@ -34,6 +34,13 @@ import {
   validateCampaignWorkspace,
   type OwnCanvasCliValidationDiagnostic,
 } from "./model/validation.ts";
+import {
+  createProviderRunId,
+  loadProviderRunEnvironment,
+  OwnCanvasProviderRunError,
+  resolveProviderRunIntent,
+  writeProviderRunManifest,
+} from "./model/provider-runs.ts";
 
 export type OwnCanvasCliResultEnvelope = {
   schemaVersion: "owncanvas.cli-result.v1";
@@ -88,6 +95,9 @@ type ParsedCliArgs = {
     usage?: string;
     plan?: string;
     against?: string;
+    provider?: string;
+    envFile?: string;
+    maxCostUsd?: string;
     canvas: boolean;
     from?: string;
     to?: string;
@@ -96,6 +106,7 @@ type ParsedCliArgs = {
     runReady: boolean;
     strict: boolean;
     dryRun: boolean;
+    allowCost: boolean;
     ifNotExists: boolean;
     ifExists: boolean;
     json: boolean;
@@ -122,9 +133,11 @@ export async function runOwnCanvasCli(argv = process.argv.slice(2)) {
       error instanceof UsageError
         ? 6
         : error instanceof OwnCanvasAuthoringError
-          ? error.exitCode
+        ? error.exitCode
         : error instanceof OwnCanvasCliRepositoryError
           ? error.exitCode
+          : error instanceof OwnCanvasProviderRunError
+            ? error.exitCode
           : 1;
     const diagnostic = createDiagnostic(error, command);
     const envelope = createEnvelope({
@@ -461,6 +474,119 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
   if (commandGroup === "generate" && commandName === "run") {
     const campaignId = requireOption(options.campaign, "--campaign", parsed);
     const target = createGenerationTarget(parsed);
+    const providerMode = options.provider ?? "mock";
+
+    if (providerMode !== "mock") {
+      const env = await loadProviderRunEnvironment({
+        root: options.root,
+        envFilePath: options.envFile,
+      });
+      const intent = resolveProviderRunIntent({
+        providerMode,
+        allowCost: options.allowCost,
+        maxCostUsd:
+          options.maxCostUsd === undefined
+            ? null
+            : parseNumberOption(options.maxCostUsd, "--max-cost-usd"),
+        env,
+      });
+      const runId =
+        options.runId ??
+        createProviderRunId({
+          campaignId,
+          target,
+          providerMode: intent.providerMode,
+        });
+
+      if (intent.providerMode === "fake-success") {
+        const result = await executeMockGenerationRun({
+          root: options.root,
+          campaignId,
+          target,
+          runId,
+        });
+        const manifest = await writeProviderRunManifest({
+          root: options.root,
+          runId,
+          campaignId,
+          target,
+          providerMode: intent.providerMode,
+          serviceAdapterId: intent.serviceAdapterId,
+          model: resolveProviderModelFromResponse(result.response.outputs),
+          inputs: { target, credentialEnvName: intent.credentialEnvName },
+          outputs: result.response.outputs,
+          status: toProviderRunStatus(result.status.status),
+          estimatedCostUsd: intent.estimatedCostUsd,
+          actualCostUsd: null,
+          startedAt: result.status.startedAt,
+          completedAt: result.status.completedAt,
+          failureDetails: result.status.failureDetails.map((failure) => ({
+            code: "mock_generation_failure",
+            message: failure.message,
+            retryable: failure.retryable,
+          })),
+        });
+
+        return createEnvelope({
+          ok: true,
+          command: "generate run",
+          workspacePath: result.paths.campaignDirectoryPath,
+          campaignId,
+          revisionAfter: result.campaign.revision.hash,
+          changed: true,
+          createdIds: result.response.outputs.map((output) => output.assetId),
+          data: {
+            runId: result.runId,
+            status: result.status,
+            response: result.response,
+            providerManifest: manifest.manifest,
+            paths: result.paths,
+          },
+        });
+      }
+
+      await writeProviderRunManifest({
+        root: options.root,
+        runId,
+        campaignId,
+        target,
+        providerMode: intent.providerMode,
+        serviceAdapterId: intent.serviceAdapterId,
+        model: null,
+        inputs: { target, credentialEnvName: intent.credentialEnvName },
+        status: "failed",
+        estimatedCostUsd: intent.estimatedCostUsd,
+        actualCostUsd: null,
+        completedAt: new Date().toISOString(),
+        failureDetails: [
+          {
+            code:
+              intent.providerMode === "fake-failure"
+                ? "provider_fake_failure"
+                : "provider_execution_unavailable",
+            message:
+              intent.providerMode === "fake-failure"
+                ? "Fake provider failed."
+                : "Real provider adapters are guarded but not executed in this CLI slice.",
+            retryable: intent.providerMode !== "fake-failure",
+          },
+        ],
+      });
+      throw new OwnCanvasProviderRunError({
+        code:
+          intent.providerMode === "fake-failure"
+            ? "provider_fake_failure"
+            : "provider_execution_unavailable",
+        message:
+          intent.providerMode === "fake-failure"
+            ? "Fake provider failed."
+            : "Real provider adapters are guarded but not executed in this CLI slice.",
+        exitCode: 5,
+        recoveryHint: "Use mock generation, or install a real provider adapter implementation.",
+        details: { runId, providerMode: intent.providerMode },
+      });
+    }
+
     const result = await executeMockGenerationRun({
       root: options.root,
       campaignId,
@@ -588,6 +714,7 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
     runReady: false,
     strict: false,
     dryRun: false,
+    allowCost: false,
     json: false,
   };
 
@@ -626,6 +753,11 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
 
     if (token === "--dry-run") {
       options.dryRun = true;
+      continue;
+    }
+
+    if (token === "--allow-cost") {
+      options.allowCost = true;
       continue;
     }
 
@@ -676,6 +808,12 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
         options.plan = value;
       } else if (token === "--against") {
         options.against = value;
+      } else if (token === "--provider") {
+        options.provider = value;
+      } else if (token === "--env-file") {
+        options.envFile = value;
+      } else if (token === "--max-cost-usd") {
+        options.maxCostUsd = value;
       } else if (token === "--from") {
         options.from = value;
       } else if (token === "--to") {
@@ -730,6 +868,20 @@ function createGenerationTarget(parsed: ParsedCliArgs): MockGenerationTarget {
     kind: "block",
     blockId: requirePosition(parsed, 0, "block id"),
   };
+}
+
+function toProviderRunStatus(status: string) {
+  if (status === "succeeded" || status === "failed" || status === "partial_failed") {
+    return status;
+  }
+
+  return "failed";
+}
+
+function resolveProviderModelFromResponse(
+  outputs: Array<{ blockId: string }>,
+) {
+  return outputs.length > 0 ? "mock-backed-provider-fake" : null;
 }
 
 function createEnvelope(input: {
@@ -1003,6 +1155,9 @@ function isValueFlag(token: string) {
     "--usage",
     "--plan",
     "--against",
+    "--provider",
+    "--env-file",
+    "--max-cost-usd",
     "--from",
     "--to",
     "--selection",
@@ -1035,6 +1190,19 @@ function createDiagnostic(error: unknown, command: string): OwnCanvasCliDiagnost
       severity: "error",
       recoveryHint: null,
       details: null,
+    };
+  }
+
+  if (error instanceof OwnCanvasProviderRunError) {
+    return {
+      code: error.code,
+      message: error.message,
+      path: null,
+      command,
+      retryable: error.exitCode === 5,
+      severity: "error",
+      recoveryHint: error.recoveryHint,
+      details: error.details,
     };
   }
 
