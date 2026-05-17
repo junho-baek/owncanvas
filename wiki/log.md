@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-18] owncanvas-cli-agent-contracts | Issues #31-#33
+
+- Superpowers 계획 문서 [OwnCanvas CLI Agent Contracts Implementation Plan](../docs/superpowers/plans/2026-05-18-owncanvas-cli-agent-contracts.md)을 작성하고, 남은 CLI 이슈 `#33`, `#31`, `#32`를 순서대로 이행했다.
+- `#33`: `validate`, `diff`, `apply --dry-run`, `campaign inspect` summary, stable JSON envelope failure path를 추가했다. `validate --run-ready`/`--strict`는 draft warning을 error로 승격하며 validation failure는 exit code `2`를 반환한다.
+- `#31`: mock generation을 기본값으로 유지하고, `--provider real|replicate|fake-*`는 credential과 `--allow-cost`/`--max-cost-usd` 없이는 실행되지 않게 했다. Budget guard는 exit code `4`, provider/generation failure는 exit code `5`로 분리했고, provider run manifest/status/response/pricing/events 파일은 secret redaction 후 저장한다.
+- `#32`: write-capable CLI update는 변경 직전 snapshot을 남기고, `--expect-revision` mismatch는 conflict exit code `3`으로 실패한다. `snapshot list`, `snapshot restore --yes --expect-revision`, destructive `--yes` guard, explicit no-op `migrate` 명령을 추가했다.
+- 검증: `npm run skills:check`는 기존과 동일하게 DDD/marketing 외부 skill 8개 누락을 보고했으며 `llm-wiki`/Superpowers/gstack skill은 사용 가능했다. `node --experimental-strip-types --test app/features/owncanvas-cli/model/workspace-repository.test.ts app/features/owncanvas-cli/model/authoring-commands.test.ts app/features/owncanvas-cli/model/mock-generation.test.ts app/features/owncanvas-cli/model/validation.test.ts app/features/owncanvas-cli/model/diff.test.ts app/features/owncanvas-cli/model/provider-runs.test.ts app/features/owncanvas-cli/model/snapshots.test.ts app/features/owncanvas-cli/cli.test.ts`는 54개 테스트 통과, `npm run typecheck` 통과, `git diff --check` 통과.
+
 ## [2026-05-17] actual-ui-image-to-video-generation-qa | UI provider flow
 
 - Image Block generated-output next-node menu에서 `Video Block source` 액션을 실제 영상 provider 연결 상태에 맞게 available로 열었다.
