@@ -2796,3 +2796,10 @@
 - 핵심 범위는 Campaign workspace 생성/열기, Generation Block 추가/수정, prompt/model/reference/edge 연결, validate/inspect/diff/apply, deterministic mock generation, opt-in real provider generation, graph/canvas run, 비용 추적이다.
 - Workflow execution은 아직 시작하지 않았다. 생성된 seed가 고정 산출물이며, 다음 단계는 publish 또는 implementation run이다.
 - Publish 결과: GitHub Epic #29와 하위 Task #30, #31, #32, #33, #34, #35를 생성했다. Seed 사본은 `docs/seeds/owncanvas-agent-cli.seed.yaml`에 저장했다.
+
+## [2026-05-18] owncanvas-cli-foundation | Issue #35
+
+- Superpowers plan `docs/superpowers/plans/2026-05-18-owncanvas-cli-foundation.md` 기준으로 OwnCanvas CLI 첫 slice를 구현했다. 범위는 file-backed `.owncanvas` workspace, Campaign directory layout, Campaign document revision metadata, deterministic JSON, basic CLI JSON envelope다.
+- 새 feature folder `app/features/owncanvas-cli/`를 만들고, 기존 Creative Canvas `createBlankCampaignRecord()`를 사용해 UI-compatible Campaign record를 생성한 뒤 file-backed `revision` metadata를 얹도록 했다. Campaign document mutation은 helper를 통해 unknown field를 보존한다.
+- `npm run owncanvas:cli -- workspace init/status --json`, `campaign create/list/open/inspect/export --json` 경로를 추가했다. Campaign directory는 `.owncanvas/campaigns/<campaign_id>/campaign.json`과 `assets/`, `outputs/`, `runs/`, `snapshots/`를 만든다.
+- 검증: `node --experimental-strip-types --test app/features/owncanvas-cli/model/workspace-repository.test.ts app/features/owncanvas-cli/cli.test.ts`, `npm run typecheck`, `git diff --check`.

@@ -7,6 +7,7 @@
     "commit:title": "node scripts/check-commit-title.mjs",
     "commit:title:test": "node --test scripts/check-commit-title.test.mjs",
     "dev": "react-router dev",
+    "owncanvas:cli": "node --experimental-strip-types app/features/owncanvas-cli/cli.ts",
     "start": "react-router-serve ./build/server/index.js",
     "skills:check": "node scripts/check-skills.mjs",
     "skills:check:strict": "node scripts/check-skills.mjs --strict",
