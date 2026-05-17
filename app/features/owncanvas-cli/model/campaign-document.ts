@@ -31,6 +31,12 @@ export type RenameFileBackedCampaignDocumentInput = {
   actor?: string;
 };
 
+export type ReviseFileBackedCampaignDocumentInput = {
+  command: string;
+  now?: () => string;
+  actor?: string;
+};
+
 const CAMPAIGN_SCHEMA_VERSION = "owncanvas.campaign.v1";
 const DEFAULT_ACTOR = "owncanvas-cli";
 
@@ -85,6 +91,33 @@ export function renameFileBackedCampaignDocument<
     previousHash: document.revision.hash,
     updatedAt: timestamp,
     lastCommand: "campaign.rename",
+    lastActor: actor,
+  }) as TDocument;
+}
+
+export function reviseFileBackedCampaignDocument<
+  TDocument extends FileBackedCampaignDocument,
+>(
+  document: TDocument,
+  {
+    command,
+    now = () => new Date().toISOString(),
+    actor = DEFAULT_ACTOR,
+  }: ReviseFileBackedCampaignDocumentInput,
+): TDocument {
+  assertSupportedCampaignDocument(document);
+
+  const timestamp = now();
+  const nextDocument = {
+    ...document,
+    updatedAt: timestamp,
+  };
+
+  return attachRevision(nextDocument, {
+    number: document.revision.number + 1,
+    previousHash: document.revision.hash,
+    updatedAt: timestamp,
+    lastCommand: command,
     lastActor: actor,
   }) as TDocument;
 }

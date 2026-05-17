@@ -10,7 +10,9 @@ import path from "node:path";
 
 import {
   assertSupportedCampaignDocument,
+  calculateCampaignDocumentHash,
   createFileBackedCampaignDocument,
+  reviseFileBackedCampaignDocument,
   type FileBackedCampaignDocument,
 } from "./campaign-document.ts";
 import { parseJsonObject, stableStringify } from "./stable-json.ts";
@@ -92,6 +94,15 @@ export type CampaignInput = WorkspaceInput & {
 
 export type ExportCampaignInput = CampaignInput & {
   out: string;
+};
+
+export type UpdateCampaignInput = CampaignInput & {
+  command: string;
+  now?: () => string;
+  actor?: string;
+  update: (
+    document: FileBackedCampaignDocument,
+  ) => FileBackedCampaignDocument | Promise<FileBackedCampaignDocument>;
 };
 
 export async function initializeWorkspace({
@@ -271,6 +282,45 @@ export async function exportCampaignFromWorkspace({
   };
 }
 
+export async function updateCampaignInWorkspace({
+  root = process.cwd(),
+  id,
+  command,
+  now,
+  actor,
+  update,
+}: UpdateCampaignInput) {
+  const inspected = await inspectCampaignInWorkspace({ root, id });
+  const revisionBefore = inspected.document.revision.hash;
+  const updatedDocument = await update(cloneCampaignDocument(inspected.document));
+  assertSupportedCampaignDocument(updatedDocument);
+
+  if (calculateCampaignDocumentHash(updatedDocument) === revisionBefore) {
+    return {
+      ...inspected,
+      changed: false,
+      revisionBefore,
+      revisionAfter: revisionBefore,
+      document: inspected.document,
+    };
+  }
+
+  const revisedDocument = reviseFileBackedCampaignDocument(updatedDocument, {
+    command,
+    now,
+    actor,
+  });
+  await writeJsonFileAtomic(inspected.paths.campaignJsonPath, revisedDocument);
+
+  return {
+    ...inspected,
+    changed: true,
+    revisionBefore,
+    revisionAfter: revisedDocument.revision.hash,
+    document: revisedDocument,
+  };
+}
+
 export function getWorkspacePaths(root: string): OwnCanvasWorkspacePaths {
   const rootPath = path.resolve(root);
   const workspacePath = path.join(rootPath, OWNCANVAS_WORKSPACE_DIRECTORY);
@@ -364,7 +414,7 @@ async function readJsonObject(filePath: string) {
   }
 }
 
-async function writeJsonFileAtomic(filePath: string, value: unknown) {
+export async function writeJsonFileAtomic(filePath: string, value: unknown) {
   await mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = path.join(
     path.dirname(filePath),
@@ -373,6 +423,12 @@ async function writeJsonFileAtomic(filePath: string, value: unknown) {
 
   await writeFile(temporaryPath, stableStringify(value), "utf8");
   await rename(temporaryPath, filePath);
+}
+
+function cloneCampaignDocument(
+  document: FileBackedCampaignDocument,
+): FileBackedCampaignDocument {
+  return JSON.parse(JSON.stringify(document)) as FileBackedCampaignDocument;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

@@ -2803,3 +2803,11 @@
 - 새 feature folder `app/features/owncanvas-cli/`를 만들고, 기존 Creative Canvas `createBlankCampaignRecord()`를 사용해 UI-compatible Campaign record를 생성한 뒤 file-backed `revision` metadata를 얹도록 했다. Campaign document mutation은 helper를 통해 unknown field를 보존한다.
 - `npm run owncanvas:cli -- workspace init/status --json`, `campaign create/list/open/inspect/export --json` 경로를 추가했다. Campaign directory는 `.owncanvas/campaigns/<campaign_id>/campaign.json`과 `assets/`, `outputs/`, `runs/`, `snapshots/`를 만든다.
 - 검증: `node --experimental-strip-types --test app/features/owncanvas-cli/model/workspace-repository.test.ts app/features/owncanvas-cli/cli.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-18] owncanvas-cli-authoring | Issue #30
+
+- Superpowers plan `docs/superpowers/plans/2026-05-18-owncanvas-cli-authoring.md` 기준으로 CLI authoring slice를 구현했다. 범위는 Generation Block add/set/remove/restore, domain edge connect/disconnect, reference asset import/list, multi-command `apply`다.
+- `authoring-commands.ts`를 추가해 CLI 명령을 Campaign domain helper(`createCampaignBlock`, `applyCampaignCanvasEditAction`, `createCampaignAsset`, `addCampaignAsset`)로 통과시키도록 했다. 삭제된 Block은 `extensions.owncanvasCli.deletedBlocks`에 보관해 restore할 수 있게 했다.
+- `updateCampaignInWorkspace()`와 `reviseFileBackedCampaignDocument()`를 추가해 변경이 있을 때만 `campaign.json`을 쓰고 revision hash/previousHash/lastCommand를 갱신한다. 반복 edge connect, duplicate add with `--if-not-exists`, missing disconnect with `--if-exists`는 idempotent no-op으로 처리된다.
+- CLI 표면은 `block add/set/remove/restore`, `edge connect/disconnect`, `asset import/list`, `apply --plan`을 지원하며 `--json` envelope에 created/updated/deleted id를 포함한다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/features/owncanvas-cli/model/workspace-repository.test.ts app/features/owncanvas-cli/model/authoring-commands.test.ts app/features/owncanvas-cli/cli.test.ts`, `npm run typecheck`, `git diff --check`.
