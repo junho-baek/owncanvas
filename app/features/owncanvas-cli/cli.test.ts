@@ -713,6 +713,182 @@ test("OwnCanvas CLI keeps provider runs opt-in and records guarded manifests", a
   assert.equal(manifestRaw.includes("test-token"), false);
 });
 
+test("OwnCanvas CLI snapshots write commands and restores guarded Campaign state", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "owncanvas-cli-recovery-"));
+  runCli(["workspace", "init", "--root", root, "--json"]);
+  runCli([
+    "campaign",
+    "create",
+    "--root",
+    root,
+    "--id",
+    "launch-pack",
+    "--json",
+  ]);
+  runCli([
+    "block",
+    "add",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--kind",
+    "image",
+    "--id",
+    "image_hero",
+    "--json",
+  ]);
+  const beforeSet = runCli([
+    "campaign",
+    "inspect",
+    "--root",
+    root,
+    "launch-pack",
+    "--json",
+  ]);
+
+  runCli([
+    "block",
+    "set",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--prompt",
+    "Create a launch image",
+    "--expect-revision",
+    String(beforeSet.json.revisionAfter),
+    "--json",
+  ]);
+  const staleWrite = runCli([
+    "block",
+    "set",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--prompt",
+    "Stale edit",
+    "--expect-revision",
+    "stale",
+    "--json",
+  ]);
+  assert.equal(staleWrite.status, 3);
+  assert.equal(staleWrite.json.errors[0]?.code, "revision_conflict");
+
+  const destructiveWithoutYes = runCli([
+    "block",
+    "remove",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--json",
+  ]);
+  assert.equal(destructiveWithoutYes.status, 6);
+  assert.equal(destructiveWithoutYes.json.errors[0]?.code, "usage_error");
+
+  const beforeRemove = runCli([
+    "campaign",
+    "inspect",
+    "--root",
+    root,
+    "launch-pack",
+    "--json",
+  ]);
+  runCli([
+    "block",
+    "remove",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "image_hero",
+    "--yes",
+    "--expect-revision",
+    String(beforeRemove.json.revisionAfter),
+    "--json",
+  ]);
+
+  const snapshots = runCli([
+    "snapshot",
+    "list",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--json",
+  ]);
+  const removeSnapshot = (
+    snapshots.json.data as {
+      snapshots: Array<{ snapshotId: string; reason: string }>;
+    }
+  ).snapshots.find((snapshot) => snapshot.reason === "block.remove");
+  assert.ok(removeSnapshot);
+
+  const beforeRestore = runCli([
+    "campaign",
+    "inspect",
+    "--root",
+    root,
+    "launch-pack",
+    "--json",
+  ]);
+  const restoreWithoutYes = runCli([
+    "snapshot",
+    "restore",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    removeSnapshot.snapshotId,
+    "--json",
+  ]);
+  assert.equal(restoreWithoutYes.status, 6);
+
+  const restored = runCli([
+    "snapshot",
+    "restore",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    removeSnapshot.snapshotId,
+    "--yes",
+    "--expect-revision",
+    String(beforeRestore.json.revisionAfter),
+    "--json",
+  ]);
+  assert.equal(restored.status, 0);
+  const afterRestore = runCli([
+    "campaign",
+    "inspect",
+    "--root",
+    root,
+    "launch-pack",
+    "--json",
+  ]);
+  assert.deepEqual(
+    ((afterRestore.json.data as { campaign: { canvasState: { nodes: Array<{ id: string }> } } }).campaign.canvasState.nodes)
+      .map((node) => node.id),
+    ["image_hero"],
+  );
+
+  const migration = runCli([
+    "migrate",
+    "--root",
+    root,
+    "--campaign",
+    "launch-pack",
+    "--json",
+  ]);
+  assert.equal(migration.status, 0);
+  assert.equal((migration.json.data as { migration: { applied: boolean } }).migration.applied, false);
+});
+
 function runCli(args: string[]): CliResult {
   const result = runCliRaw(args);
   const trimmedStdout = result.stdout.trim();

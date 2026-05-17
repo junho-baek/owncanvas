@@ -15,6 +15,7 @@ import {
   reviseFileBackedCampaignDocument,
   type FileBackedCampaignDocument,
 } from "./campaign-document.ts";
+import { createCampaignSnapshot } from "./snapshots.ts";
 import { parseJsonObject, stableStringify } from "./stable-json.ts";
 
 export const OWNCANVAS_WORKSPACE_SCHEMA_VERSION = "owncanvas.cli-workspace.v1";
@@ -55,6 +56,7 @@ export type OwnCanvasCliRepositoryErrorCode =
   | "workspace_not_found"
   | "campaign_not_found"
   | "campaign_already_exists"
+  | "revision_conflict"
   | "invalid_json"
   | "unsupported_schema_version"
   | "file_io_error";
@@ -100,6 +102,8 @@ export type UpdateCampaignInput = CampaignInput & {
   command: string;
   now?: () => string;
   actor?: string;
+  expectRevision?: string;
+  snapshotBeforeWrite?: boolean;
   update: (
     document: FileBackedCampaignDocument,
   ) => FileBackedCampaignDocument | Promise<FileBackedCampaignDocument>;
@@ -288,10 +292,21 @@ export async function updateCampaignInWorkspace({
   command,
   now,
   actor,
+  expectRevision,
+  snapshotBeforeWrite = true,
   update,
 }: UpdateCampaignInput) {
   const inspected = await inspectCampaignInWorkspace({ root, id });
   const revisionBefore = inspected.document.revision.hash;
+
+  if (expectRevision !== undefined && expectRevision !== revisionBefore) {
+    throw new OwnCanvasCliRepositoryError(
+      "revision_conflict",
+      `Campaign "${id}" revision mismatch. Expected ${expectRevision}, found ${revisionBefore}.`,
+      3,
+    );
+  }
+
   const updatedDocument = await update(cloneCampaignDocument(inspected.document));
   assertSupportedCampaignDocument(updatedDocument);
 
@@ -303,6 +318,16 @@ export async function updateCampaignInWorkspace({
       revisionAfter: revisionBefore,
       document: inspected.document,
     };
+  }
+
+  if (snapshotBeforeWrite) {
+    await createCampaignSnapshot({
+      campaignDirectoryPath: inspected.paths.campaignDirectoryPath,
+      campaignId: id,
+      document: inspected.document,
+      reason: command,
+      now,
+    });
   }
 
   const revisedDocument = reviseFileBackedCampaignDocument(updatedDocument, {

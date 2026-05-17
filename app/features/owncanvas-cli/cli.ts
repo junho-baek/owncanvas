@@ -35,6 +35,11 @@ import {
   type OwnCanvasCliValidationDiagnostic,
 } from "./model/validation.ts";
 import {
+  createCampaignSnapshot,
+  listCampaignSnapshots,
+  restoreCampaignSnapshot,
+} from "./model/snapshots.ts";
+import {
   createProviderRunId,
   loadProviderRunEnvironment,
   OwnCanvasProviderRunError,
@@ -98,6 +103,7 @@ type ParsedCliArgs = {
     provider?: string;
     envFile?: string;
     maxCostUsd?: string;
+    expectRevision?: string;
     canvas: boolean;
     from?: string;
     to?: string;
@@ -107,6 +113,7 @@ type ParsedCliArgs = {
     strict: boolean;
     dryRun: boolean;
     allowCost: boolean;
+    yes: boolean;
     ifNotExists: boolean;
     ifExists: boolean;
     json: boolean;
@@ -336,6 +343,7 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
 
   if (commandGroup === "block" && commandName === "remove") {
     const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    requireDestructiveConfirmation(parsed, "block remove");
     const command: OwnCanvasAuthoringCommand = {
       type: "block.remove",
       id: requireCampaignScopedTargetId(parsed),
@@ -371,6 +379,7 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
 
   if (commandGroup === "edge" && commandName === "disconnect") {
     const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    requireDestructiveConfirmation(parsed, "edge disconnect");
     const command: OwnCanvasAuthoringCommand = {
       type: "edge.disconnect",
       ...(options.id === undefined ? {} : { id: options.id }),
@@ -411,6 +420,7 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
     const commands = await readAuthoringPlan(
       requireOption(options.plan, "--plan", parsed),
     );
+    requirePlanDestructiveConfirmation(parsed, commands);
 
     return executeAuthoringCommands(parsed, campaignId, commands, "apply");
   }
@@ -467,6 +477,99 @@ async function executeCommand(parsed: ParsedCliArgs): Promise<OwnCanvasCliResult
         againstPath,
         entries,
         human: formatDiffEntriesForHumans(entries),
+      },
+    });
+  }
+
+  if (commandGroup === "snapshot" && commandName === "list") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const inspected = await inspectCampaignInWorkspace({
+      root: options.root,
+      id: campaignId,
+    });
+    const snapshots = await listCampaignSnapshots({
+      campaignDirectoryPath: inspected.paths.campaignDirectoryPath,
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "snapshot list",
+      workspacePath: inspected.workspacePath,
+      campaignId,
+      revisionAfter: inspected.document.revision.hash,
+      changed: false,
+      data: { snapshots },
+    });
+  }
+
+  if (commandGroup === "snapshot" && commandName === "restore") {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const snapshotId = requirePosition(parsed, 0, "snapshot id");
+
+    if (!options.yes) {
+      throw new UsageError("snapshot restore requires --yes.");
+    }
+
+    const inspected = await inspectCampaignInWorkspace({
+      root: options.root,
+      id: campaignId,
+    });
+
+    if (
+      options.expectRevision !== undefined &&
+      options.expectRevision !== inspected.document.revision.hash
+    ) {
+      throw new OwnCanvasCliRepositoryError(
+        "revision_conflict",
+        `Campaign "${campaignId}" revision mismatch. Expected ${options.expectRevision}, found ${inspected.document.revision.hash}.`,
+        3,
+      );
+    }
+
+    await createCampaignSnapshot({
+      campaignDirectoryPath: inspected.paths.campaignDirectoryPath,
+      campaignId,
+      document: inspected.document,
+      reason: "snapshot.restore",
+    });
+    const snapshot = await restoreCampaignSnapshot({
+      campaignDirectoryPath: inspected.paths.campaignDirectoryPath,
+      campaignJsonPath: inspected.paths.campaignJsonPath,
+      snapshotId,
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "snapshot restore",
+      workspacePath: inspected.workspacePath,
+      campaignId,
+      revisionBefore: inspected.document.revision.hash,
+      revisionAfter: snapshot.document.revision.hash,
+      changed: true,
+      data: { snapshot },
+    });
+  }
+
+  if (commandGroup === "migrate" && commandName === null) {
+    const campaignId = requireOption(options.campaign, "--campaign", parsed);
+    const inspected = await inspectCampaignInWorkspace({
+      root: options.root,
+      id: campaignId,
+    });
+
+    return createEnvelope({
+      ok: true,
+      command: "migrate",
+      workspacePath: inspected.workspacePath,
+      campaignId,
+      revisionAfter: inspected.document.revision.hash,
+      changed: false,
+      data: {
+        migration: {
+          schemaVersion: inspected.document.schemaVersion,
+          applied: false,
+          message: "Campaign schema is already owncanvas.campaign.v1.",
+        },
       },
     });
   }
@@ -715,6 +818,7 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
     strict: false,
     dryRun: false,
     allowCost: false,
+    yes: false,
     json: false,
   };
 
@@ -758,6 +862,11 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
 
     if (token === "--allow-cost") {
       options.allowCost = true;
+      continue;
+    }
+
+    if (token === "--yes") {
+      options.yes = true;
       continue;
     }
 
@@ -814,6 +923,8 @@ function parseCliArgs(argv: string[]): ParsedCliArgs {
         options.envFile = value;
       } else if (token === "--max-cost-usd") {
         options.maxCostUsd = value;
+      } else if (token === "--expect-revision") {
+        options.expectRevision = value;
       } else if (token === "--from") {
         options.from = value;
       } else if (token === "--to") {
@@ -951,6 +1062,7 @@ async function executeAuthoringCommand(
     root: parsed.options.root,
     id: campaignId,
     command: command.type,
+    expectRevision: parsed.options.expectRevision,
     update: (document) => {
       authoringResult = applyAuthoringCommand(document, command);
       return authoringResult.document;
@@ -1019,6 +1131,7 @@ async function executeAuthoringCommands(
     root: parsed.options.root,
     id: campaignId,
     command: "apply",
+    expectRevision: parsed.options.expectRevision,
     update: (document) => {
       authoringResult = applyAuthoringCommands(document, commands);
       return authoringResult.document;
@@ -1118,6 +1231,31 @@ function requireSupportedBlockKind(value: string) {
   throw new UsageError("--kind must be one of text, image, or video.");
 }
 
+function requireDestructiveConfirmation(parsed: ParsedCliArgs, label: string) {
+  if (parsed.options.ifExists) {
+    return;
+  }
+
+  if (!parsed.options.yes) {
+    throw new UsageError(`${label} requires --yes.`);
+  }
+}
+
+function requirePlanDestructiveConfirmation(
+  parsed: ParsedCliArgs,
+  commands: OwnCanvasAuthoringCommand[],
+) {
+  const hasDestructiveCommand = commands.some(
+    (command) =>
+      (command.type === "block.remove" || command.type === "edge.disconnect") &&
+      !("ifExists" in command && command.ifExists === true),
+  );
+
+  if (hasDestructiveCommand && !parsed.options.yes) {
+    throw new UsageError("apply includes destructive commands and requires --yes.");
+  }
+}
+
 async function readAuthoringPlan(planPath: string): Promise<OwnCanvasAuthoringCommand[]> {
   const parsed = JSON.parse(await readFile(planPath, "utf8")) as unknown;
   const commands = Array.isArray(parsed)
@@ -1158,6 +1296,7 @@ function isValueFlag(token: string) {
     "--provider",
     "--env-file",
     "--max-cost-usd",
+    "--expect-revision",
     "--from",
     "--to",
     "--selection",
