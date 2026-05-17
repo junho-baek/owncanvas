@@ -2741,3 +2741,4 @@
 - React Router v7 `ssr: true` route가 브라우저 `window.localStorage`를 직접 갱신하지 못하는 점을 반영해, `CreativeCanvasScreen`이 route response 수신 후 Campaign/Creative Output asset을 local-first Campaign state에 먼저 저장하고 persisted response로 Image Block preview refs를 적용하도록 했다.
 - 실패한 duplicated Image Block retry는 기존 node id 하나만 `fanOutCount: 1` batch로 재시도하고, source Image Block rerun은 기존 seed처럼 새 xN visual batch를 append하도록 분리했다. 새 fan-out output nodes는 duplicated node 자체가 결과물이므로 `batchCount: 1`로 초기화한다.
 - 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, full TS suite 532/532 pass, `npm run typecheck`, `npm run build`, `git diff --check`.
+- GitHub triage: 구현 완료된 #20, #21, #22, #23을 close했다. 실제 브라우저 수동 demo artifact가 필요한 #24와 parent epic #19는 open 유지하고 남은 체크리스트를 comment로 남겼다.

@@ -219,7 +219,7 @@ Append a Korean outcome section covering:
 - source rerun append behavior
 - verification commands and results
 
-- [ ] **Step 3: Push and triage GitHub**
+- [x] **Step 3: Push and triage GitHub**
 
 Push `feature/go-generation-fanout-slice`. Then inspect GitHub issues `#19`-`#24`, close only fully complete issues, and comment remaining gaps if any.
 
