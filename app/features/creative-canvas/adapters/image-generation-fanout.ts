@@ -4,6 +4,7 @@ import {
 } from "../model/generation-batch.ts";
 import {
   createImageGenerationNodeProperties,
+  createImageGenerationNodeProviderRequest,
   isImageGenerationNodeProperties,
   type ImageGenerationNodeProperties,
 } from "../model/image-generation-node.ts";
@@ -31,6 +32,10 @@ export function createImageGenerationFanOutPlan(input: {
   }
 
   const count = properties.batchCount;
+  const providerRequest = createImageGenerationNodeProviderRequest({
+    properties,
+    prompt: properties.prompt,
+  });
   const batchId = createStableBatchId({
     sourceNodeId: input.sourceNode.id,
     isoTimestamp: input.now(),
@@ -58,7 +63,9 @@ export function createImageGenerationFanOutPlan(input: {
       model: properties.modelSlug,
       aspectRatio: properties.aspectRatio,
       nodeIds: createdNodes.map((node) => node.id),
-      parameters: {},
+      parameters: {
+        replicate: providerRequest.replicate,
+      },
     }),
   };
 }

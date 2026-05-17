@@ -1546,6 +1546,11 @@ test("Image Block run buttons call the fan-out run handler", () => {
   assert.match(creativeCanvasScreen, /applyImageGenerationBatchFailure/);
   assert.match(creativeCanvasScreen, /GenerationServiceResultMissing/);
   assert.match(creativeCanvasScreen, /applyImageGenerationJobResult/);
+  assert.match(
+    creativeCanvasScreen,
+    /generatedAssetIds:\s*\[result\.persistedCreativeOutputAssetId\]/,
+  );
+  assert.match(creativeCanvasScreen, /GenerationPersistenceMissing/);
   assert.match(creativeCanvasScreen, /succeedImageGenerationNodeV2Transition/);
   assert.match(creativeCanvasScreen, /failImageGenerationNodeV2Transition/);
   assert.match(creativeCanvasScreen, /try \{[\s\S]*await fetch/);
@@ -1574,5 +1579,37 @@ test("Image Block run buttons call the fan-out run handler", () => {
   assert.match(
     imageNodeSource,
     /aria-label="Generate image"[\s\S]*onClick=\{onRunImageGeneration\}/,
+  );
+});
+
+test("duplicated Image Blocks render selected persisted Creative Output previews", () => {
+  const imageNodeSource = getFunctionSource(
+    creativeCanvasScreen,
+    "function FreepikReferenceImageNode",
+  );
+
+  assert.match(
+    creativeCanvasScreen,
+    /const applyImageGenerationBatchResults = useCallback\([\s\S]*const resultsByNodeId = new Map\([\s\S]*batchResponse\.results\.map\(\(result\) => \[result\.nodeId, result\]\)[\s\S]*const result = resultsByNodeId\.get\(node\.id\)/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /generatedAssetIds:\s*\[result\.persistedCreativeOutputAssetId\]/,
+  );
+  assert.match(
+    imageNodeSource,
+    /const selectedGeneratedAsset =[\s\S]*campaignImageAssets\.find\([\s\S]*asset\.id === details\.uiState\.selectedResultAssetId[\s\S]*asset\.status !== "archived"[\s\S]*\) \?\? null/,
+  );
+  assert.match(
+    imageNodeSource,
+    /selectedGeneratedAsset\?\.outputLocations\?\.primaryUri\.trim\(\) \|\|[\s\S]*selectedGeneratedAsset\?\.uri\.trim\(\)/,
+  );
+  assert.match(
+    imageNodeSource,
+    /<figure[\s\S]*className="space-generated-image-preview"[\s\S]*data-generated-asset-id=\{selectedGeneratedAssetPreview\.id\}[\s\S]*<img[\s\S]*src=\{selectedGeneratedAssetPreview\.uri\}/,
+  );
+  assert.match(
+    creativeCanvasScreen,
+    /campaignImageAssets=\{campaignImageAssets\}/,
   );
 });

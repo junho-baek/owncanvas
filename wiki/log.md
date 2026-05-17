@@ -2,6 +2,106 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-17] provider-image-output-asset-url-persistence-test | Sub-AC 3.4.1
+
+- Campaign Asset/Creative Output persistence model에 focused provider image generation regression을 추가했다.
+- 새 테스트는 Replicate-compatible provider result URL이 `saveCampaignAssetGenerationExecutionResult()` 이후 persisted Creative Output asset의 `uri`, `outputLocations.primaryUri`, `generatedMetadata.outputUri`, workflow output `uri`에 보존되는지 검증한다.
+- Provider request id도 asset generated metadata와 workflow output에 함께 남는 계약을 확인했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/creative-canvas.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `npm run typecheck`.
+
+## [2026-05-17] duplicated-fanout-output-render-coverage | Sub-AC 3.4.2
+
+- duplicated Image Block x3 completion contract test를 추가해 각 duplicated node result가 deterministic persisted Creative Output asset id와 provider URL을 유지하고 request/job/node mapping 검증을 통과하는지 확인했다.
+- Creative Canvas screen authoring regression을 추가해 batch results가 node id 기준으로 resolve되고, `persistedCreativeOutputAssetId`가 Image Block `latestResultRefs.generatedAssetIds`로 바인딩되며, selected persisted Creative Output이 `campaignImageAssets`에서 찾아져 preview `<img>`의 source로 렌더링되는 계약을 고정했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/generation-batch.test.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`, `git diff --check`.
+
+## [2026-05-17] mixed-fanout-failure-retry-output-isolation | Sub-AC 3.3.4
+
+- React Router generation persistence route에 mixed x3 fan-out regression을 추가했다.
+- 새 테스트는 `node_1` 성공, `node_2` 실패, `node_3` 성공 응답에서 성공 Image Block만 deterministic Creative Output asset id를 받고, 실패 Image Block에는 `persistedCreativeOutputAssetId`/`assetIds`/`outputLocations`가 생기지 않는지 검증한다.
+- 이어서 실패한 `node_2`만 같은 job id로 retry 성공시키며, `node_1`/`node_3`의 기존 persisted output 참조와 provider URL이 유지되고 retry node만 새 `asset_node_2_creative_output`을 받는 계약을 고정했다.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-17] persisted-creative-output-reference-ack | Sub-AC 3.3.1
+
+- React Router generation route가 Go service 응답의 provider success를 Campaign Asset/Creative Output으로 실제 저장한 뒤에만 `persistedCreativeOutputAssetId`를 API batch result에 붙이도록 했다.
+- Go service나 fake service가 `persistedCreativeOutputAssetId`를 보내도 route boundary에서 제거하고, persisted Campaign record의 `assets[]`에 존재하는 completed job asset id만 다시 첨부한다.
+- Creative Canvas UI는 successful provider result라도 persistence acknowledgement가 없으면 `latestResultRefs.generatedAssetIds`를 붙이지 않고 `GenerationPersistenceMissing` 실패 상태로 전환한다.
+- 검증: `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-17] replicate-provider-sibling-failure-isolation-test | Sub-AC 2.5
+
+- Go generation service에 Replicate-compatible provider call failure isolation regression을 추가했다.
+- 새 테스트는 x3 batch에서 한 prediction만 HTTP 500 `GenerationProviderUnavailable`로 실패해도 두 sibling Image Block job이 각각 성공 상태, provider request id, provider URL, Creative Output metadata를 유지하는지 검증한다.
+- 실패 job은 succeeded sibling 결과를 오염시키지 않고, success-only provider fields 없이 retryable typed error로 반환되는 계약을 고정했다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `git diff --check`.
+
+## [2026-05-17] duplicated-image-block-creative-output-reference | Sub-AC 3.2
+
+- duplicated Image Block completion handling now stores the deterministic persisted Creative Output/Campaign Asset id in each successful node's `latestResultRefs.generatedAssetIds`.
+- `applyImageGenerationJobResult()` uses the shared `createGeneratedCreativeOutputAssetId(result.nodeId)` helper, so the UI-selected generated asset reference matches the asset id persisted by the React Router generation route.
+- The generation route now uses the same helper when building `CampaignAssetGenerationResultMetadata.assetId`, avoiding drift between visible Image Block state and `campaign.assets[]`.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/model/generation-batch.test.ts app/routes/campaign-generation-api.test.ts app/features/creative-canvas/components/creative-canvas-screen-authoring-controls.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-17] go-generation-creative-output-persistence-path | Sub-AC 3.1.1
+
+- 기존 Campaign Asset/Creative Output persistence model을 추적해 Go-backed image generation 결과의 저장 경로를 확정했다.
+- Provider URL은 새 storage가 아니라 `CampaignAssetGenerationResultMetadata.uri`에서 `campaign.assets[].uri`, `campaign.assets[].outputLocations.primaryUri`, `campaign.assets[].generatedMetadata.outputUri`로 이어지는 기존 Campaign record에 저장해야 한다.
+- 실행 상태와 reload 복원 정보는 `campaign.campaignSpec.assetGenerationJobs[].resultMetadata[]`, `campaign.campaignSpec.assetGenerationExecutions[]`, `campaign.campaignSpec.assetGenerationWorkflowState`, `canvasState/campaignSpec.nodes[].properties.assetGeneration`에 함께 반영하는 기존 `saveCampaignAssetGenerationExecutionResult()`/`saveCampaignImageAssetGenerationExecutionResult()` 경로를 사용한다.
+- 현재 `POST /api/campaigns/:campaignId/generation/batches`는 Go service bridge만 수행하므로, 다음 구현 단계에서는 `GenerationBatchResponse`를 `CampaignAssetGenerationExecutionResult`로 변환해 같은 Campaign record에 저장해야 한다.
+- Durable note: [Go 생성 Creative Output 저장 경로 | Go Generation Creative Output Persistence Path](analyses/go-generation-creative-output-persistence-path.md).
+
+## [2026-05-17] go-generation-provider-url-persistence-coverage | Sub-AC 3.1.3
+
+- React Router generation route에 x3 Go-backed success response 회귀 테스트를 추가했다.
+- 테스트는 bridge request body가 그대로 Go service로 전달되고 response `providerUrl` 배열이 그대로 API response에 남는지 확인한다.
+- 각 duplicated Image Block별 provider URL이 `campaign.assets[].uri`, `campaign.assets[].outputLocations.primaryUri`, `campaign.campaignSpec.assetGenerationExecutions[].outputs[].uri`, `canvasState.nodes[].properties.assetGeneration.outputLocations[].primaryUri`에 저장되는지 검증한다.
+- 기존 x10 cap/fan-out adapter behavior는 변경하지 않고 `image-generation-fanout.test.ts`, `generation-batch.test.ts`, `campaign-generation-api.test.ts`로 재검증했다.
+- 검증: `node --experimental-strip-types --test app/features/creative-canvas/adapters/image-generation-fanout.test.ts app/features/creative-canvas/model/generation-batch.test.ts app/routes/campaign-generation-api.test.ts`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `git diff --check`.
+
+## [2026-05-17] generation-typed-execution-failure-categories | Sub-AC 1.4.1
+
+- Go generation service에 `GenerationErrorCategory`와 `ExecutionError`를 추가해 provider configuration, provider rejection, invalid provider response, transport error, generic provider execution failure를 typed category로 구분하도록 했다.
+- Replicate provider adapter와 routing/missing-credential provider가 plain error 대신 typed execution error를 반환하도록 바꿨고, service batch response의 per-job `error.category`에 매핑했다.
+- React Router generation batch contract는 `provider_configuration`, `provider_rejected`, `provider_response_invalid`, `transport_error`, `provider_execution` category를 보존하고 알 수 없는 category를 거부한다. Image Block failure details에도 category를 전달한다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `node --experimental-strip-types --test app/features/creative-canvas/model/generation-batch.test.ts app/routes/campaign-generation-api.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-17] provider-success-metadata-result-mapping | Sub-AC 1.3
+
+- Go generation service의 typed `GenerationResult`에 optional `thumbnailUri`, `sizeBytes` 필드를 추가해 Replicate-compatible provider success metadata가 service response boundary에서 유실되지 않도록 했다.
+- Replicate adapter가 이미 정규화한 Creative Output metadata의 thumbnail URL과 size bytes를 `GenerationResult`로 매핑하도록 연결했다.
+- React Router generation batch 타입/validator가 optional `thumbnailUri`, `sizeBytes`를 받아 보존하도록 갱신했고, invalid thumbnail URL과 음수 size를 거부하는 회귀 테스트를 추가했다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `node --experimental-strip-types --test app/features/creative-canvas/model/generation-batch.test.ts app/routes/campaign-generation-api.test.ts`.
+
+## [2026-05-17] go-generation-service-env-docs | Sub-AC 1.2.2
+
+- README의 Go-backed Image Block generation service 설정에 환경 변수 표를 추가했다.
+- 실제 Replicate-compatible provider 실행 secret은 Go service process 환경의 `OWNCANVAS_REPLICATE_API_TOKEN`으로 문서화했고, 기존 `REPLICATE_API_TOKEN` 값은 실행 시 이 이름으로 export/prefix해서 쓰도록 명시했다.
+- 선택 설정으로 `OWNCANVAS_GENERATION_ADDR`, `OWNCANVAS_REPLICATE_BASE_URL`, `OWNCANVAS_REPLICATE_WAIT_SECONDS`, React Router bridge용 `OWNCANVAS_GENERATION_SERVICE_URL`의 역할과 기본값을 정리했다.
+- Secret value는 Campaign JSON, browser state, committed file에 두지 않는다는 boundary를 문서에 명시했다.
+
+## [2026-05-17] go-replicate-provider-adapter | Sub-AC 1.1.1
+
+- Go generation service에 `RoutingProvider`와 `ReplicateProvider`를 추가해 `provider: "replicate"` Image Block jobs를 Replicate HTTP prediction request로 실행할 수 있게 했다.
+- Replicate secret은 Go service process 환경의 `OWNCANVAS_REPLICATE_API_TOKEN`에서만 읽고, 토큰이 없으면 해당 node job만 missing-credential provider error로 실패하도록 했다. 기존 `mock` provider는 routing provider 아래에서 계속 사용 가능하다.
+- Replicate request는 `POST /v1/models/{owner}/{model}/predictions`, `Authorization: Bearer ...`, `Prefer: wait=N`, `{"input": ...}` envelope를 사용하며, prompt/aspect ratio와 `parameters` 또는 nested `replicate.input`을 provider input으로 합친다.
+- Replicate successful output URL은 `providerUrl`, prediction id는 `providerRequestId`, MIME type과 aspect-ratio 기반 best-effort dimensions는 generation result로 반환한다.
+- README에 generation service 실행 방법과 real Replicate smoke `curl` command를 추가했다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`.
+
+## [2026-05-17] creative-canvas-replicate-payload-mapping | Sub-AC 1.1.2
+
+- Image Block fan-out batch creation이 더 이상 빈 `parameters`를 보내지 않고, 기존 `createImageGenerationNodeProviderRequest()` 결과의 `replicate` envelope를 `GenerationSpec`과 각 `GenerationJob`에 저장하도록 연결했다.
+- Replicate payload는 Creative Canvas 입력의 prompt, mapped/native aspect ratio, reference image field, frame-derived provider size 같은 provider input을 `parameters.replicate.input` 아래에 보존한다. Go adapter는 이 nested input만 provider request body의 `input`으로 사용하고 credential/model/aspect-ratio metadata는 provider input으로 누출하지 않는 계약을 테스트로 고정했다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `npm ci --ignore-scripts`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `node --experimental-strip-types --test app/features/creative-canvas/adapters/image-generation-fanout.test.ts app/features/creative-canvas/model/generation-batch.test.ts app/features/creative-canvas/model/image-generation-node.test.ts app/routes/campaign-generation-api.test.ts`, `npm run typecheck`, `npm run build`, `git diff --check`.
+
+## [2026-05-17] replicate-creative-output-response-parser | Sub-AC 1.1.3
+
+- Replicate prediction response parsing을 단순 첫 URL 추출에서 내부 `creativeOutputResult` 모델로 분리했다. Go adapter는 string output, URL 배열, object output, nested image/file 배열을 Creative Output URI, MIME type, dimensions로 정규화한 뒤 기존 `GenerationResult` 계약의 `providerUrl`, `mimeType`, `width`, `height`에 매핑한다.
+- Provider가 `mime_type`/`content_type`, `width`, `height`, size metadata를 주면 우선 사용하고, 누락된 경우 기존처럼 output URL extension과 aspect ratio 기반 best-effort dimensions를 채운다.
+- 성공 상태인데 유효한 Creative Output URL이 없는 Replicate 응답은 해당 node job의 provider error로 실패하게 유지해 sibling job 성공과 terminal lifecycle을 방해하지 않도록 했다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
 ## [2026-05-16] non-image-generation-node-shell | UI unification
 
 - Seed `seed_bbc7409474c7`를 GitHub 이슈 `#14`-`#18`로 발행한 뒤, Image Block은 기준 UI로 유지하고 비이미지 생성 노드만 같은 shell 문법으로 정리했다.
@@ -2528,3 +2628,96 @@
 - 추가 최종 review blocker로 stale route fixture와 service response mismatch 문제가 발견됐다. route fixture에 generation batches API를 반영했고, service response는 요청 batch의 `batchId`, result count, `jobId`, `nodeId`, terminal status와 정확히 일치할 때만 통과하도록 강화했다.
 - UI 쪽도 expected fan-out node id를 기준으로 결과를 적용하고, 누락 결과가 있으면 해당 Image Block을 `GenerationServiceResultMissing` failed 상태로 전환하도록 이중 방어를 추가했다. 검증: full TS suite 517/517 pass, `go test ./...`, `npm run typecheck`, `npm run build`, `git diff --check`, browser success smoke 200 + 원본 1/succeeded 3.
 - Branch `feature/go-generation-fanout-slice`를 `origin`에 push했다. GitHub open issue는 `#19`-`#24`이며, 이번 slice는 mock Go service/React Router bridge/xN fan-out/terminal lifecycle guard까지 완료했지만 `#20` real Replicate adapter, `#23` Creative Output persistence, `#24` reload/retry demo가 남아 있어 issue는 닫지 않았다.
+
+## [2026-05-17] go-generation-provider-success-mapping-fixtures | Sub-AC 1.1.4
+
+- Replicate-compatible provider adapter의 성공 응답 mapping을 fixture table로 보강했다. string output, explicit metadata object output, nested files output을 모두 `GenerationResult`의 `ProviderURL`, `MimeType`, dimensions, `GeneratedAt`, terminal `succeeded` state로 매핑하는 계약을 검증한다.
+- 기존 mock/test provider와 React Router bridge, xN fan-out behavior는 변경하지 않았다. provider secret 값은 테스트 fixture에만 가짜 token을 쓰고 환경 변수 값 노출은 추가하지 않았다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'TestReplicateProvider.*(CreatesPrediction|UsesNested|UsesCreative|Maps)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...`.
+
+## [2026-05-17] go-replicate-provider-env-runtime | Sub-AC 1.2.1
+
+- Go generation service runtime path가 `NewProviderFromEnvironment()`를 통해 `OWNCANVAS_REPLICATE_API_TOKEN`을 읽고, trimmed token/base URL/wait seconds 값을 `ReplicateProvider` adapter configuration에 전달하는 계약을 focused test로 고정했다.
+- 토큰이 없는 환경에서는 `provider: "replicate"` job만 `OWNCANVAS_REPLICATE_API_TOKEN` missing-credential error로 실패하고, 기존 `mock` provider는 계속 사용할 수 있음을 검증했다.
+- Sandbox에서 `httptest` listener 생성이 `operation not permitted`로 막혀 network smoke 대신 in-package provider wiring test로 검증했다. 실제 provider smoke는 README의 `OWNCANVAS_REPLICATE_API_TOKEN="$REPLICATE_API_TOKEN" go run ./cmd/owncanvas-generation` 및 `curl /v1/generation/batches` 경로를 사용한다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'Test(NewProviderFromEnvironment|ReplicateProvider|RoutingProvider)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
+## [2026-05-17] go-replicate-provider-credential-verification | Sub-AC 1.2.3
+
+- Missing Replicate credential behavior를 service-level regression으로 보강했다. `NewProviderFromEnvironment()`가 token 없이 만든 routing provider를 batch 실행에 사용해도 `mock` sibling job은 `succeeded`로 끝나고, `replicate` job만 `provider_error`/`OWNCANVAS_REPLICATE_API_TOKEN` 메시지를 가진 terminal `failed` result로 반환됨을 검증한다.
+- 기존 configured credential loading test는 `OWNCANVAS_REPLICATE_API_TOKEN`, `OWNCANVAS_REPLICATE_BASE_URL`, `OWNCANVAS_REPLICATE_WAIT_SECONDS`가 trimmed/configured provider field로 반영되는 계약을 계속 담당한다. provider secret 값 노출이나 React Router bridge/fan-out behavior 변경은 추가하지 않았다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'Test(NewProviderFromEnvironment|ExecuteBatchFailsReplicateJobSafelyWhenCredentialsAreMissing)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
+## [2026-05-17] go-replicate-provider-error-mapping | Sub-AC 1.4.2
+
+- Replicate-compatible provider adapter의 non-2xx API 응답을 `ExecutionError` typed failure model로 정규화했다. `401/403`은 `GenerationProviderAuthenticationFailed`/`provider_configuration`, `429`는 retryable `GenerationProviderRateLimited`, `5xx`는 retryable `GenerationProviderUnavailable`, 그 외 provider rejection은 `GenerationProviderRejectedRequest`로 매핑한다.
+- JSON error body의 `detail`, `error`, `message`, `msg`, `title` 값을 우선 추출해 Creative Output 실행 실패 메시지를 안정화하고, malformed body는 trim된 fallback 메시지로 제한했다. HTTP request 실행 실패와 response read 실패는 `transport_error` category의 retryable typed failure로 유지했다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'TestReplicateProvider.*(Transport|ProviderAPI|Rejected|Failure)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
+## [2026-05-17] generation-provider-secret-redaction | Sub-AC 1.4.3
+
+- Go generation runtime에 secret redaction helper를 추가해 `Authorization`, `Bearer`, `token`, `secret`, `api key` 형태의 provider error 문자열과 `OWNCANVAS_REPLICATE_API_TOKEN` 값을 `[redacted]`로 치환하도록 했다.
+- Replicate adapter의 transport error, provider API error body, terminal prediction failure message가 configured token을 그대로 반환하지 않도록 provider-local redaction을 적용했다.
+- Service-level generic provider error normalization도 env token/pattern redaction을 거치게 했고, React Router generation response normalization에도 방어적 per-job error message redaction을 추가했다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-17] generation-provider-error-redaction-tests | Sub-AC 1.4.4
+
+- Go generation runtime에 typed provider failure mapping과 secret-safe log output을 고정하는 focused regression을 추가했다.
+- `ExecutionError`가 `GenerationError`로 변환될 때 authentication, rate limit, transport category/retryable 값이 유지되고, `OWNCANVAS_REPLICATE_API_TOKEN` 값과 secret-shaped 문자열이 per-job error message에 남지 않는지 검증한다.
+- `log.Logger`가 `ExecutionError`를 출력하는 경로도 token/api key/Authorization 값을 `[redacted]`로 치환하는지 확인해 운영 로그에 provider secret이 노출되지 않도록 했다.
+- 검증: `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'Test(GenerationErrorFromExecutionErrorMapsTypedFailuresAndRedactsSecrets|ExecutionErrorOutputIsSafeForLogs|ReplicateProvider.*Error|ExecuteBatch.*Error|ExecuteBatchRedacts)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`.
+
+## [2026-05-17] generation-request-required-field-validation | Sub-AC 2.1.1
+
+- Go generation service에 Image Block generation request 필수 필드 검증을 추가했다. `batchId`, `campaignId`, `sourceNodeId`, `fanOutCount`, job별 `jobId`/`nodeId`/`prompt`/`provider`/`model`/`aspectRatio`, optional `spec`의 실행 필드가 비어 있으면 provider 실행 전에 `invalid_batch`로 거절한다.
+- Service-level table test와 HTTP endpoint regression을 추가해 누락 필드가 provider adapter까지 전달되지 않고 명확한 오류 메시지로 반환되는 계약을 고정했다.
+- 기존 concurrency, partial failure, typed provider error, secret redaction fixture는 full generation request shape로 보정했다. React Router bridge와 xN fan-out behavior는 변경하지 않았다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'TestExecuteBatch(RejectsMissingRequiredRequestFields|RejectsFanOutAboveHardCap|RunsConcurrently|Isolates|FailsReplicate|PreservesTyped|Redacts)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'Test(ServerRejectsRequestsMissingRequiredGenerationFields|ExecuteBatchRejectsMissingRequiredRequestFields)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
+## [2026-05-17] generation-malformed-request-validation-tests | Sub-AC 2.1.2
+
+- Go generation service의 malformed request validation coverage를 보강했다. `fanOutCount` 0/negative, missing/empty/extra `jobs`, blank second job index reporting이 provider 실행 전에 validation error로 끝나는지 검증한다.
+- HTTP endpoint regression을 추가해 wrong JSON type(`fanOutCount` string, `jobs` object, `spec` array)은 `invalid_json`으로, JSON decode는 되지만 semantic shape가 잘못된 `jobs: null`, `fanOutCount: 0`, empty job object는 `invalid_batch`로 반환되는 계약을 고정했다.
+- malformed request 경로에서는 provider adapter가 호출되지 않도록 test provider가 즉시 실패하게 했다. React Router bridge와 xN fan-out behavior는 변경하지 않았다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'Test(ExecuteBatchRejectsMalformedRequestInputs|ServerRejectsMalformedGenerationRequestInputs)'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `git diff --check`.
+
+## [2026-05-17] generation-provider-boundary-fanout-cap-tests | Sub-AC 2.2
+
+- Go generation service의 x10 fan-out cap을 provider request boundary에서 검증하는 regression을 추가했다. `fanOutCount: 11`과 11개 job을 가진 요청은 `fanOutCount must be between 1 and 10`으로 거절되고 provider adapter가 한 번도 호출되지 않는다.
+- `fanOutCount: 10`은 유효한 최대 batch로 provider boundary까지 정확히 10개 generation job이 전달되고, `MaxConcurrency`가 더 크게 설정되어도 service가 cap 안에서 결과 10개를 보존하는지 검증한다.
+- 기존 React Router bridge, xN Image Block fan-out behavior, Replicate/mock provider runtime은 변경하지 않았다.
+
+## [2026-05-17] go-generation-creative-output-server-persistence | Sub-AC 3.1.2
+
+- React Router generation bridge가 Go-backed terminal batch response를 반환하기 전에 기존 Campaign persistence model에 저장하도록 연결했다. `GenerationJobResult.providerUrl`은 `CampaignAssetGenerationResultMetadata.uri`와 generated `CampaignAsset.uri`/`outputLocations.primaryUri`로 반영된다.
+- 성공 job은 deterministic Creative Output asset id(`asset_<nodeId>_creative_output`)로 저장하고, provider request id, mime type, dimensions, thumbnail, size, generatedAt, prompt hash를 기존 result metadata와 `generatedMetadata`에 남긴다.
+- route는 request의 job-to-node mapping을 사용해 persisted canvas/spec node에 `assetGenerationJobId`를 연결하고, 기존 `applyCampaignAssetGenerationExecutionResult()` 경로가 node `assetGeneration.outputLocations`까지 집계하도록 했다. 실패 job은 asset을 만들지 않고 typed failure details/execution record만 저장한다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts`, `npm run typecheck`, `git diff --check`.
+
+## [2026-05-17] generation-missing-provider-secret-unit-test | Sub-AC 2.3
+
+- Replicate adapter boundary에 missing provider secret regression을 추가했다. `APIToken`이 blank일 때 `ReplicateProvider.Generate()`는 `GenerationProviderMissingCredential` / `provider_configuration` / non-retryable error를 즉시 반환하고, configured HTTP transport를 호출하지 않는다.
+- 기존 environment routing/service-level missing credential tests와 함께, 실제 provider token이 없을 때도 mock sibling execution은 유지되고 Replicate job만 명확한 terminal failure로 끝나는 계약을 보강했다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./internal/generation -run 'TestReplicateProviderFailsClearlyWithoutTokenBeforeProviderExecution|TestNewProviderFromEnvironmentKeepsMockAndFailsReplicateWithoutToken|TestExecuteBatchFailsReplicateJobSafelyWhenCredentialsAreMissing'`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
+## [2026-05-17] provider-success-creative-output-result-unit-test | Sub-AC 2.4
+
+- Replicate-compatible provider success response를 내부 `creativeOutputResult` 구조로 매핑하는 Go unit test를 추가했다.
+- 새 regression은 string URL output, explicit object metadata, nested files output을 각각 검증하며 Creative Output URI, MIME type, dimensions, thumbnail URI, size bytes가 보존되는지 확인한다.
+- 기존 HTTP provider success fixture와 함께 provider response parser 자체의 성공 mapping 계약을 고정했다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.
+
+## [2026-05-17] failed-image-block-output-reference-preservation | Sub-AC 3.3.2
+
+- 실패한 Image Block이 이전 성공 Creative Output 참조를 지우지 않도록 lifecycle transition을 보강했다. queued/running/failure 전환은 `latestResultRefs`를 복제해 유지하고, 실패 상태는 `failureDetails`를 기록하면서 기존 selected output과 output connection readiness를 복원한다.
+- React Router generation persistence path에서 같은 job의 retry가 실패해도 기존 `resultMetadata`를 빈 배열로 대체하지 않도록 했다. 실패 execution record와 canvas `assetGeneration` 상태는 failed로 남되, 이전 성공 asset id/result id/output location은 계속 보존된다.
+- focused regression으로 성공 저장 후 같은 Image Block retry 실패 시 Campaign asset, job result metadata, failed execution output, canvas output references가 유지되는지 검증했다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/features/creative-canvas/model/image-generation-node.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, `git diff --check`.
+
+## [2026-05-17] retry-job-ownership-idempotency | Sub-AC 3.3.3
+
+- React Router generation persistence path에 job ownership guard를 추가했다. 기존 Campaign에 저장된 `assetGenerationJobId`나 job output target이 다른 Image Block을 가리키는 경우, 같은 `jobId`를 다른 `nodeId`로 재사용하는 retry/failure 요청은 provider 실행 전에 `generation.invalid_batch`로 거절된다.
+- execution result 생성도 기존 job의 output target/result metadata가 현재 `nodeId`의 deterministic Creative Output asset id와 일치할 때만 이전 lifecycle/result metadata를 재사용하도록 보강했다. 이로써 실패한 fan-out/retry 시도가 sibling Image Block의 성공 Creative Output asset을 상속하거나 덮어쓰지 않는다.
+- focused regression으로 `node_1` 성공 저장 후 `node_2`가 `node_1`의 job id를 재사용하는 retry를 시도해도 provider가 호출되지 않고, `asset_node_1_creative_output`과 `node_1` canvas link가 유지되며 `node_2`에는 잘못된 job link가 생기지 않음을 검증했다.
+- 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts`, `node --experimental-strip-types --test app/routes/campaign-generation-api.test.ts app/features/creative-canvas/model/generation-batch.test.ts app/features/creative-canvas/model/image-generation-node.test.ts`, `npm run typecheck`, `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`.

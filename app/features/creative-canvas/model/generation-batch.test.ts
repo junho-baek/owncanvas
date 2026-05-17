@@ -2,12 +2,24 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  createGeneratedCreativeOutputAssetId,
   createGenerationBatchRequest,
   isGenerationBatchRequest,
   isGenerationBatchResponse,
   isGenerationBatchResponseForRequest,
   normalizeGenerationBatchResponse,
 } from "./generation-batch.ts";
+
+test("createGeneratedCreativeOutputAssetId maps duplicated Image Blocks to campaign asset ids", () => {
+  assert.equal(
+    createGeneratedCreativeOutputAssetId("image_source_batch_20260517000000000_2"),
+    "asset_image_source_batch_20260517000000000_2_creative_output",
+  );
+  assert.equal(
+    createGeneratedCreativeOutputAssetId("image source/batch#1"),
+    "asset_image_source_batch_1_creative_output",
+  );
+});
 
 test("createGenerationBatchRequest caps fan-out at x10 and preserves node job mapping", () => {
   const parameters = { size: "1024x1792" };
@@ -97,6 +109,9 @@ test("normalizeGenerationBatchResponse keeps partial failures", () => {
         mimeType: "image/png",
         width: 1024,
         height: 1024,
+        thumbnailUri: "https://provider.example.test/1-thumb.png",
+        sizeBytes: 4096,
+        persistedCreativeOutputAssetId: "asset_node_1_creative_output",
         generatedAt: "2026-05-17T00:00:00Z",
       },
       {
@@ -111,6 +126,7 @@ test("normalizeGenerationBatchResponse keeps partial failures", () => {
         generatedAt: "2026-05-17T00:00:01Z",
         error: {
           name: "provider_error",
+          category: "provider_rejected",
           message: "provider rejected prompt",
           retryable: true,
         },
@@ -119,8 +135,83 @@ test("normalizeGenerationBatchResponse keeps partial failures", () => {
   });
 
   assert.equal(result.results[0]?.status, "succeeded");
+  assert.equal(
+    result.results[0]?.thumbnailUri,
+    "https://provider.example.test/1-thumb.png",
+  );
+  assert.equal(result.results[0]?.sizeBytes, 4096);
+  assert.equal(
+    result.results[0]?.persistedCreativeOutputAssetId,
+    "asset_node_1_creative_output",
+  );
   assert.equal(result.results[1]?.status, "failed");
+  assert.equal(result.results[1]?.error?.category, "provider_rejected");
   assert.equal(result.results[1]?.error?.message, "provider rejected prompt");
+});
+
+test("duplicated Image Block results keep persisted Creative Output asset bindings", () => {
+  const request = createGenerationBatchRequest({
+    batchId: "image_source_batch_20260517000000000",
+    campaignId: "campaign_contract",
+    sourceNodeId: "image_source",
+    prompt: "same prompt",
+    provider: "mock",
+    model: "mock-image",
+    aspectRatio: "9:16",
+    nodeIds: [
+      "image_source_batch_20260517000000000_1",
+      "image_source_batch_20260517000000000_2",
+      "image_source_batch_20260517000000000_3",
+    ],
+    parameters: {},
+  });
+  const response = normalizeGenerationBatchResponse({
+    batchId: request.batchId,
+    results: request.jobs.map((job, index) => ({
+      jobId: job.jobId,
+      nodeId: job.nodeId,
+      status: "succeeded",
+      providerRequestId: `replicate_prediction_${index + 1}`,
+      providerUrl: `https://replicate.delivery/pbxt/generated-${index + 1}.png`,
+      mimeType: "image/png",
+      width: 1024,
+      height: 1792,
+      persistedCreativeOutputAssetId: createGeneratedCreativeOutputAssetId(
+        job.nodeId,
+      ),
+      generatedAt: `2026-05-17T04:00:0${index + 1}.000Z`,
+    })),
+  });
+
+  assert.equal(isGenerationBatchResponse(response), true);
+  assert.equal(isGenerationBatchResponseForRequest(response, request), true);
+  assert.deepEqual(
+    response.results.map((result) => ({
+      nodeId: result.nodeId,
+      providerUrl: result.providerUrl,
+      persistedCreativeOutputAssetId: result.persistedCreativeOutputAssetId,
+    })),
+    [
+      {
+        nodeId: "image_source_batch_20260517000000000_1",
+        providerUrl: "https://replicate.delivery/pbxt/generated-1.png",
+        persistedCreativeOutputAssetId:
+          "asset_image_source_batch_20260517000000000_1_creative_output",
+      },
+      {
+        nodeId: "image_source_batch_20260517000000000_2",
+        providerUrl: "https://replicate.delivery/pbxt/generated-2.png",
+        persistedCreativeOutputAssetId:
+          "asset_image_source_batch_20260517000000000_2_creative_output",
+      },
+      {
+        nodeId: "image_source_batch_20260517000000000_3",
+        providerUrl: "https://replicate.delivery/pbxt/generated-3.png",
+        persistedCreativeOutputAssetId:
+          "asset_image_source_batch_20260517000000000_3_creative_output",
+      },
+    ],
+  );
 });
 
 test("isGenerationBatchRequest rejects malformed fan-out and jobs contract", () => {
@@ -166,6 +257,52 @@ test("isGenerationBatchResponse rejects malformed result contract", () => {
           width: 1024,
           height: 1024,
           generatedAt: "2026-05-17T00:00:00Z",
+        },
+      ],
+    }),
+    false,
+  );
+  assert.equal(
+    isGenerationBatchResponse({
+      batchId: "batch_bad_metadata",
+      results: [
+        {
+          jobId: "job_1",
+          nodeId: "node_1",
+          status: "succeeded",
+          providerRequestId: "request_1",
+          providerUrl: "https://provider.example.test/1.png",
+          mimeType: "image/png",
+          width: 1024,
+          height: 1024,
+          thumbnailUri: "not-a-url",
+          sizeBytes: -1,
+          generatedAt: "2026-05-17T00:00:00Z",
+        },
+      ],
+    }),
+    false,
+  );
+  assert.equal(
+    isGenerationBatchResponse({
+      batchId: "batch_bad_failure_category",
+      results: [
+        {
+          jobId: "job_1",
+          nodeId: "node_1",
+          status: "failed",
+          providerRequestId: "",
+          providerUrl: "",
+          mimeType: "",
+          width: 0,
+          height: 0,
+          generatedAt: "2026-05-17T00:00:00Z",
+          error: {
+            name: "provider_error",
+            category: "unknown_failure_category",
+            message: "provider rejected prompt",
+            retryable: true,
+          },
         },
       ],
     }),

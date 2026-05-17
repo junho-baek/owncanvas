@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -12,6 +13,38 @@ const MaxFanOutCount = 10
 
 type Provider interface {
 	Generate(context.Context, GenerationJob) (GenerationResult, error)
+}
+
+type ExecutionError struct {
+	Name      string
+	Category  GenerationErrorCategory
+	Message   string
+	Retryable bool
+	Err       error
+}
+
+func NewExecutionError(name string, category GenerationErrorCategory, message string, retryable bool, err error) ExecutionError {
+	return ExecutionError{
+		Name:      name,
+		Category:  category,
+		Message:   redactGenerationSecrets(message),
+		Retryable: retryable,
+		Err:       err,
+	}
+}
+
+func (err ExecutionError) Error() string {
+	if err.Message != "" {
+		return err.Message
+	}
+	if err.Err != nil {
+		return redactGenerationSecrets(err.Err.Error())
+	}
+	return "generation execution failed"
+}
+
+func (err ExecutionError) Unwrap() error {
+	return err.Err
 }
 
 type ServiceOptions struct {
@@ -39,11 +72,8 @@ func NewService(provider Provider, options ServiceOptions) *Service {
 }
 
 func (s *Service) ExecuteBatch(ctx context.Context, batch GenerationBatch) (GenerationBatchResponse, error) {
-	if batch.FanOutCount < 1 || batch.FanOutCount > MaxFanOutCount {
-		return GenerationBatchResponse{}, errors.New("fanOutCount must be between 1 and 10")
-	}
-	if len(batch.Jobs) != batch.FanOutCount {
-		return GenerationBatchResponse{}, fmt.Errorf("jobs length %d must match fanOutCount %d", len(batch.Jobs), batch.FanOutCount)
+	if err := validateGenerationBatch(batch); err != nil {
+		return GenerationBatchResponse{}, err
 	}
 	if s.provider == nil {
 		return GenerationBatchResponse{}, errors.New("generation provider is required")
@@ -70,16 +100,13 @@ func (s *Service) ExecuteBatch(ctx context.Context, batch GenerationBatch) (Gene
 				job := batch.Jobs[index]
 				result, err := s.provider.Generate(ctx, job)
 				if err != nil {
+					generationError := generationErrorFromExecutionError(err)
 					response.Results[index] = GenerationResult{
 						JobID:       job.JobID,
 						NodeID:      job.NodeID,
 						Status:      JobStatusFailed,
 						GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-						Error: &GenerationError{
-							Name:      "provider_error",
-							Message:   err.Error(),
-							Retryable: true,
-						},
+						Error:       &generationError,
 					}
 					continue
 				}
@@ -112,4 +139,112 @@ func (s *Service) ExecuteBatch(ctx context.Context, batch GenerationBatch) (Gene
 	wg.Wait()
 
 	return response, nil
+}
+
+func validateGenerationBatch(batch GenerationBatch) error {
+	if strings.TrimSpace(batch.BatchID) == "" {
+		return errors.New("batchId is required")
+	}
+	if strings.TrimSpace(batch.CampaignID) == "" {
+		return errors.New("campaignId is required")
+	}
+	if strings.TrimSpace(batch.SourceNodeID) == "" {
+		return errors.New("sourceNodeId is required")
+	}
+	if batch.FanOutCount < 1 || batch.FanOutCount > MaxFanOutCount {
+		return errors.New("fanOutCount must be between 1 and 10")
+	}
+	if len(batch.Jobs) != batch.FanOutCount {
+		return fmt.Errorf("jobs length %d must match fanOutCount %d", len(batch.Jobs), batch.FanOutCount)
+	}
+	if batch.Spec != nil {
+		if err := validateGenerationSpec(*batch.Spec); err != nil {
+			return err
+		}
+	}
+	for index, job := range batch.Jobs {
+		if err := validateGenerationJob(index, job); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateGenerationSpec(spec GenerationSpec) error {
+	if strings.TrimSpace(spec.SpecID) == "" {
+		return errors.New("spec.specId is required")
+	}
+	if strings.TrimSpace(spec.CampaignID) == "" {
+		return errors.New("spec.campaignId is required")
+	}
+	if strings.TrimSpace(spec.SourceNodeID) == "" {
+		return errors.New("spec.sourceNodeId is required")
+	}
+	if strings.TrimSpace(spec.Prompt) == "" {
+		return errors.New("spec.prompt is required")
+	}
+	if strings.TrimSpace(spec.Provider) == "" {
+		return errors.New("spec.provider is required")
+	}
+	if strings.TrimSpace(spec.Model) == "" {
+		return errors.New("spec.model is required")
+	}
+	if strings.TrimSpace(spec.AspectRatio) == "" {
+		return errors.New("spec.aspectRatio is required")
+	}
+	return nil
+}
+
+func validateGenerationJob(index int, job GenerationJob) error {
+	prefix := fmt.Sprintf("jobs[%d]", index)
+	if strings.TrimSpace(job.JobID) == "" {
+		return fmt.Errorf("%s.jobId is required", prefix)
+	}
+	if strings.TrimSpace(job.NodeID) == "" {
+		return fmt.Errorf("%s.nodeId is required", prefix)
+	}
+	if strings.TrimSpace(job.Prompt) == "" {
+		return fmt.Errorf("%s.prompt is required", prefix)
+	}
+	if strings.TrimSpace(job.Provider) == "" {
+		return fmt.Errorf("%s.provider is required", prefix)
+	}
+	if strings.TrimSpace(job.Model) == "" {
+		return fmt.Errorf("%s.model is required", prefix)
+	}
+	if strings.TrimSpace(job.AspectRatio) == "" {
+		return fmt.Errorf("%s.aspectRatio is required", prefix)
+	}
+	return nil
+}
+
+func generationErrorFromExecutionError(err error) GenerationError {
+	var executionError ExecutionError
+	if errors.As(err, &executionError) {
+		name := executionError.Name
+		if name == "" {
+			name = "provider_error"
+		}
+		category := executionError.Category
+		if category == "" {
+			category = GenerationErrorCategoryProviderExecution
+		}
+		message := executionError.Message
+		if message == "" {
+			message = redactGenerationSecrets(err.Error())
+		}
+		return GenerationError{
+			Name:      name,
+			Category:  category,
+			Message:   message,
+			Retryable: executionError.Retryable,
+		}
+	}
+
+	return GenerationError{
+		Name:      "provider_error",
+		Category:  GenerationErrorCategoryProviderExecution,
+		Message:   redactGenerationSecrets(err.Error()),
+		Retryable: true,
+	}
 }

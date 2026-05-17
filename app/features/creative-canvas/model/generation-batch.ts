@@ -2,6 +2,13 @@ export const GENERATION_BATCH_MAX_FAN_OUT = 10;
 
 export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
+export type GenerationJobFailureCategory =
+  | "provider_configuration"
+  | "provider_rejected"
+  | "provider_response_invalid"
+  | "transport_error"
+  | "provider_execution";
+
 export type GenerationSpec = {
   specId: string;
   campaignId: string;
@@ -34,6 +41,7 @@ export type GenerationBatchRequest = {
 
 export type GenerationJobError = {
   name: string;
+  category?: GenerationJobFailureCategory;
   message: string;
   retryable: boolean;
 };
@@ -47,6 +55,9 @@ export type GenerationJobResult = {
   mimeType: string;
   width: number;
   height: number;
+  thumbnailUri?: string;
+  sizeBytes?: number | null;
+  persistedCreativeOutputAssetId?: string;
   generatedAt: string;
   error?: GenerationJobError;
 };
@@ -62,6 +73,15 @@ const generationJobStatuses: readonly GenerationJobStatus[] = [
   "succeeded",
   "failed",
 ];
+
+const generationJobFailureCategories: readonly GenerationJobFailureCategory[] =
+  [
+    "provider_configuration",
+    "provider_rejected",
+    "provider_response_invalid",
+    "transport_error",
+    "provider_execution",
+  ];
 
 export function createGenerationBatchRequest(input: {
   batchId: string;
@@ -116,9 +136,36 @@ export function normalizeGenerationBatchResponse(
     batchId: response.batchId,
     results: response.results.map((result) => ({
       ...result,
-      error: result.error === undefined ? undefined : { ...result.error },
+      error:
+        result.error === undefined
+          ? undefined
+          : {
+              ...result.error,
+              message: redactGenerationErrorMessage(result.error.message),
+            },
     })),
   };
+}
+
+export function createGeneratedCreativeOutputAssetId(nodeId: string): string {
+  return `asset_${sanitizeGenerationIdentifierPart(nodeId)}_creative_output`;
+}
+
+function sanitizeGenerationIdentifierPart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_]+/g, "_");
+}
+
+function redactGenerationErrorMessage(message: string): string {
+  return message
+    .replace(
+      /\b(authorization\s*[:=]\s*)(?:Bearer\s+)?[A-Za-z0-9._~+/=-]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(
+      /\b(api[_ -]?key|api[_ -]?token|access[_ -]?token|token|secret)\s*[:=]\s*["']?[^"',\s}\]]+["']?/gi,
+      "$1: [redacted]",
+    );
 }
 
 export function isGenerationBatchRequest(
@@ -241,6 +288,12 @@ function isGenerationJobResult(value: unknown): value is GenerationJobResult {
     isString(value.mimeType) &&
     isFiniteNumber(value.width) &&
     isFiniteNumber(value.height) &&
+    (value.thumbnailUri === undefined || isHttpUrl(value.thumbnailUri)) &&
+    (value.sizeBytes === undefined ||
+      value.sizeBytes === null ||
+      isNonNegativeFiniteNumber(value.sizeBytes)) &&
+    (value.persistedCreativeOutputAssetId === undefined ||
+      isNonEmptyString(value.persistedCreativeOutputAssetId)) &&
     isNonEmptyString(value.generatedAt) &&
     (value.error === undefined || isGenerationJobError(value.error))
   );
@@ -250,8 +303,21 @@ function isGenerationJobError(value: unknown): value is GenerationJobError {
   return (
     isRecord(value) &&
     isNonEmptyString(value.name) &&
+    (value.category === undefined ||
+      isGenerationJobFailureCategory(value.category)) &&
     isNonEmptyString(value.message) &&
     typeof value.retryable === "boolean"
+  );
+}
+
+function isGenerationJobFailureCategory(
+  value: unknown,
+): value is GenerationJobFailureCategory {
+  return (
+    typeof value === "string" &&
+    generationJobFailureCategories.includes(
+      value as GenerationJobFailureCategory,
+    )
   );
 }
 
@@ -285,4 +351,21 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0;
+}
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }

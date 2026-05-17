@@ -5,6 +5,7 @@ import {
   createImageGenerationFrame,
   createImageGenerationNodeProperties,
   isImageGenerationNodeProperties,
+  resizeImageGenerationNodeFrameTransition,
   type ImageGenerationNodeProperties,
 } from "../model/image-generation-node.ts";
 import { createImageGenerationFanOutPlan } from "./image-generation-fanout.ts";
@@ -99,6 +100,24 @@ test("createImageGenerationFanOutPlan creates same-type queued image nodes and a
   assert.equal(plan.batch.spec.provider, "replicate");
   assert.equal(plan.batch.spec.model, "google/nano-banana");
   assert.equal(plan.batch.spec.aspectRatio, "1:1");
+  assert.deepEqual(plan.batch.spec.parameters, {
+    replicate: {
+      providerId: "replicate",
+      model: "google/nano-banana",
+      credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+      inputEnvelopeField: "input",
+      input: {
+        prompt: "same prompt",
+        aspect_ratio: "1:1",
+      },
+      aspectRatio: {
+        requested: "1:1",
+        providerValue: "1:1",
+        mapped: false,
+      },
+    },
+  });
+  assert.deepEqual(plan.batch.jobs[0]?.parameters, plan.batch.spec.parameters);
 
   for (const node of plan.createdNodes) {
     assert.equal(node.data.kind, "image");
@@ -228,6 +247,60 @@ test("createImageGenerationFanOutPlan avoids a direct batch-id collision", () =>
   assert.deepEqual(
     plan.createdNodes.map((node) => node.id),
     ["image_source_batch_20260517000000000_run_2_1"],
+  );
+});
+
+test("createImageGenerationFanOutPlan maps Creative Canvas Image Block inputs into a Replicate payload", () => {
+  const source = imageNode({ id: "image_source", x: 100, y: 200, batchCount: 2 });
+  const sourceProperties = resizeImageGenerationNodeFrameTransition(
+    createImageGenerationNodeProperties({
+      ...source.data.properties,
+      providerId: "replicate",
+      modelSlug: "bytedance/seedream-3",
+      prompt: "Tall product shot on a coral studio sweep",
+      batchCount: 2,
+      aspectRatio: "9:16",
+      referenceImages: [],
+    }),
+    { width: 384, height: 640 },
+  );
+  const seedreamSource: CreativeFlowNode = {
+    ...source,
+    data: {
+      ...source.data,
+      properties: sourceProperties,
+    },
+  };
+
+  const plan = createImageGenerationFanOutPlan({
+    campaignId: "campaign_fanout",
+    sourceNode: seedreamSource,
+    existingNodes: [seedreamSource],
+    now: () => "2026-05-17T00:00:00.000Z",
+  });
+
+  assert.equal(plan.batch.spec.model, "bytedance/seedream-3");
+  assert.deepEqual(plan.batch.spec.parameters, {
+    replicate: {
+      providerId: "replicate",
+      model: "bytedance/seedream-3",
+      credentialEnvName: "OWNCANVAS_REPLICATE_API_TOKEN",
+      inputEnvelopeField: "input",
+      input: {
+        prompt: "Tall product shot on a coral studio sweep",
+        aspect_ratio: "9:16",
+        size: "384x640",
+      },
+      aspectRatio: {
+        requested: "9:16",
+        providerValue: "9:16",
+        mapped: false,
+      },
+    },
+  });
+  assert.deepEqual(
+    plan.batch.jobs.map((job) => job.parameters),
+    [plan.batch.spec.parameters, plan.batch.spec.parameters],
   );
 });
 

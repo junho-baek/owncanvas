@@ -23,3 +23,4 @@ OwnCanvas 위키의 내용 중심 색인이다. 작업자는 먼저 이 파일�
 ## Analyses
 
 - [GPT Image 비율 호환성 규칙 | GPT Image Ratio Compatibility Rules](analyses/image-generation-gpt-ratio-compatibility-rules.md): GPT Image-like provider/model의 비율 제약과 OwnCanvas canonical mapping/warning 규칙.
+- [Go 생성 Creative Output 저장 경로 | Go Generation Creative Output Persistence Path](analyses/go-generation-creative-output-persistence-path.md): Go-backed Image Block 결과를 기존 Campaign Asset/Creative Output persistence model에 저장하는 record/API path.

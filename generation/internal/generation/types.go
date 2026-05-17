@@ -9,6 +9,16 @@ const (
 	JobStatusFailed    JobStatus = "failed"
 )
 
+type GenerationErrorCategory string
+
+const (
+	GenerationErrorCategoryProviderConfiguration GenerationErrorCategory = "provider_configuration"
+	GenerationErrorCategoryProviderRejected      GenerationErrorCategory = "provider_rejected"
+	GenerationErrorCategoryProviderResponse      GenerationErrorCategory = "provider_response_invalid"
+	GenerationErrorCategoryTransport             GenerationErrorCategory = "transport_error"
+	GenerationErrorCategoryProviderExecution     GenerationErrorCategory = "provider_execution"
+)
+
 type GenerationSpec struct {
 	SpecID       string                 `json:"specId"`
 	CampaignID   string                 `json:"campaignId"`
@@ -40,9 +50,10 @@ type GenerationJob struct {
 }
 
 type GenerationError struct {
-	Name      string `json:"name"`
-	Message   string `json:"message"`
-	Retryable bool   `json:"retryable"`
+	Name      string                  `json:"name"`
+	Category  GenerationErrorCategory `json:"category,omitempty"`
+	Message   string                  `json:"message"`
+	Retryable bool                    `json:"retryable"`
 }
 
 type GenerationResult struct {
@@ -54,6 +65,8 @@ type GenerationResult struct {
 	MimeType          string           `json:"mimeType"`
 	Width             int              `json:"width"`
 	Height            int              `json:"height"`
+	ThumbnailURI      string           `json:"thumbnailUri,omitempty"`
+	SizeBytes         *int64           `json:"sizeBytes,omitempty"`
 	GeneratedAt       string           `json:"generatedAt"`
 	Error             *GenerationError `json:"error,omitempty"`
 }

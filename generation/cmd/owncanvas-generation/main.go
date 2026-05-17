@@ -15,7 +15,7 @@ func main() {
 	}
 
 	server := generation.NewServer(
-		generation.NewService(generation.MockProvider{}, generation.ServiceOptions{
+		generation.NewService(generation.NewProviderFromEnvironment(), generation.ServiceOptions{
 			MaxConcurrency: 3,
 		}),
 	)

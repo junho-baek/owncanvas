@@ -2747,6 +2747,147 @@ test("parallel asset generation stores completion outputs on each job execution 
   );
 });
 
+test("provider image generation persists result URLs on Creative Output asset records", async () => {
+  const storage = new MemoryStorage();
+  const imageJob = createCampaignAssetGenerationJob({
+    id: "job_provider_image_output",
+    mediaType: "image",
+    providerPluginId: "replicate",
+    capabilityId: "generate.image",
+    requiredInputs: [
+      {
+        key: "prompt",
+        label: "Prompt",
+        source: "node:image_provider_block.outputs.prompt",
+        dataType: "text",
+      },
+    ],
+    imageInputs: {
+      prompt: "coral product shot",
+      negativePrompt: "",
+      referenceAssetIds: [],
+      productAssetIds: [],
+      count: 1,
+      aspectRatio: "1:1",
+      size: { width: 1024, height: 1024 },
+      style: "",
+      seed: null,
+      providerParameters: {},
+    },
+    outputTargets: [{ assetId: "asset_provider_image_output", field: "uri" }],
+    status: "queued",
+  });
+  const imageBlock = {
+    ...createCampaignBlock("image", 0),
+    id: "image_provider_block",
+    properties: {
+      assetGenerationJobId: imageJob.id,
+    },
+  };
+  const campaign = createBlankCampaignRecord(storage, {
+    id: "campaign_provider_image_output",
+    now: () => "2026-05-17T04:00:00.000Z",
+  });
+  const campaignWithWorkflow = updatePersistedCampaignRecord(
+    storage,
+    {
+      ...campaign,
+      canvasState: {
+        nodes: [imageBlock],
+        edges: [],
+      },
+      campaignSpec: {
+        ...campaign.campaignSpec,
+        nodes: [imageBlock],
+        edges: [],
+        assetGenerationJobs: [imageJob],
+      },
+    },
+    { now: () => "2026-05-17T04:00:01.000Z" },
+  );
+
+  const executionResult = await executeCampaignAssetGenerationJobs(
+    loadCampaignAssetGenerationWorkflow(campaignWithWorkflow),
+    async (job) => [
+      {
+        id: "result_provider_image_output",
+        assetId: job.outputTargets[0].assetId,
+        uri: "https://replicate.delivery/pbxt/provider-output.png",
+        mimeType: "image/png",
+        width: 1024,
+        height: 1024,
+        thumbnailUri:
+          "https://replicate.delivery/pbxt/provider-output-thumb.png",
+        sizeBytes: 4096,
+        model: "google/nano-banana",
+        seed: null,
+        promptHash: "prompt_provider_image_output",
+        providerRequestId: "replicate_prediction_provider_output",
+        generatedAt: "2026-05-17T04:00:05.000Z",
+        durationMs: 1200,
+        costUsd: null,
+        finishReason: "completed",
+      },
+    ],
+    {
+      actor: "agent",
+      maxConcurrency: 1,
+      now: () => "2026-05-17T04:00:02.000Z",
+    },
+  );
+
+  const persistedCampaign = saveCampaignAssetGenerationExecutionResult(
+    storage,
+    "campaign_provider_image_output",
+    executionResult,
+    {
+      now: () => "2026-05-17T04:00:10.000Z",
+      rightsOwner: "OwnCanvas generated output",
+      rightsLicense: "campaign-use",
+    },
+  );
+  const persistedAsset = persistedCampaign.assets.find(
+    (asset) => asset.id === "asset_provider_image_output",
+  );
+
+  assert.equal(
+    persistedAsset?.uri,
+    "https://replicate.delivery/pbxt/provider-output.png",
+  );
+  assert.deepEqual(persistedAsset?.outputLocations, {
+    primaryUri: "https://replicate.delivery/pbxt/provider-output.png",
+    thumbnailUri: "https://replicate.delivery/pbxt/provider-output-thumb.png",
+  });
+  assert.equal(
+    persistedAsset?.generatedMetadata?.outputUri,
+    "https://replicate.delivery/pbxt/provider-output.png",
+  );
+  assert.equal(
+    persistedAsset?.generatedMetadata?.providerRequestId,
+    "replicate_prediction_provider_output",
+  );
+  assert.deepEqual(
+    persistedCampaign.campaignSpec.assetGenerationWorkflowState?.outputs.map(
+      (output) => ({
+        assetId: output.assetId,
+        uri: output.uri,
+        providerRequestId: output.providerRequestId,
+      }),
+    ),
+    [
+      {
+        assetId: "asset_provider_image_output",
+        uri: "https://replicate.delivery/pbxt/provider-output.png",
+        providerRequestId: "replicate_prediction_provider_output",
+      },
+    ],
+  );
+  assert.deepEqual(
+    getPersistedCampaignRecord(storage, "campaign_provider_image_output")?.assets,
+    persistedCampaign.assets,
+  );
+});
+
 test("persisted parallel generation updates workflow nodes with generated asset references and completion status", async () => {
   const storage = new MemoryStorage();
   const imageJob = createCampaignAssetGenerationJob({

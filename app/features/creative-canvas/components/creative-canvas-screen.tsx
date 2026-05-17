@@ -366,17 +366,32 @@ function applyImageGenerationJobResult(
   properties: ImageGenerationNodeProperties,
   result: GenerationJobResult,
 ): ImageGenerationNodeProperties {
-  if (result.status === "succeeded") {
+  if (
+    result.status === "succeeded" &&
+    result.persistedCreativeOutputAssetId !== undefined
+  ) {
     return succeedImageGenerationNodeV2Transition(properties, {
-      generatedAssetIds: [],
+      generatedAssetIds: [result.persistedCreativeOutputAssetId],
       metadataRunId: result.providerRequestId || null,
       costUsageRunId: null,
+    });
+  }
+
+  if (result.status === "succeeded") {
+    return failImageGenerationNodeV2Transition(properties, {
+      name: "GenerationPersistenceMissing",
+      message: "Generated Creative Output was not persisted.",
+      providerId: properties.providerId,
+      modelSlug: properties.modelSlug,
+      providerRequestId: result.providerRequestId || null,
+      retryable: true,
     });
   }
 
   if (result.status === "failed") {
     return failImageGenerationNodeV2Transition(properties, {
       name: result.error?.name ?? "provider_error",
+      category: result.error?.category,
       message: result.error?.message ?? "Generation failed.",
       providerId: properties.providerId,
       modelSlug: properties.modelSlug,

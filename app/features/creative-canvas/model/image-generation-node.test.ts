@@ -442,9 +442,9 @@ test("image generation v2 status transitions cover idle queued running succeeded
   assert.equal(queuedProperties.uiState.selectedResultAssetId, null);
   assert.equal(queuedProperties.uiState.outputConnectionReady, false);
   assert.deepEqual(queuedProperties.latestResultRefs, {
-    generatedAssetIds: [],
-    metadataRunId: null,
-    costUsageRunId: null,
+    generatedAssetIds: ["asset_stale_output"],
+    metadataRunId: "run_stale_metadata",
+    costUsageRunId: "run_stale_cost",
   });
 
   const runningProperties = runImageGenerationNodeV2Transition(queuedProperties);
@@ -492,11 +492,15 @@ test("image generation v2 status transitions cover idle queued running succeeded
     failedProperties.uiState.errorReason,
     "Provider rejected unsafe reference image",
   );
-  assert.equal(failedProperties.uiState.outputConnectionReady, false);
+  assert.equal(failedProperties.uiState.outputConnectionReady, true);
+  assert.equal(
+    failedProperties.uiState.selectedResultAssetId,
+    "asset_stale_output",
+  );
   assert.deepEqual(failedProperties.latestResultRefs, {
-    generatedAssetIds: [],
-    metadataRunId: null,
-    costUsageRunId: null,
+    generatedAssetIds: ["asset_stale_output"],
+    metadataRunId: "run_stale_metadata",
+    costUsageRunId: "run_stale_cost",
   });
 
   const canceledProperties = cancelImageGenerationNodeV2Transition(
@@ -569,9 +573,9 @@ test("image generation start transition marks status model active in progress", 
   assert.equal(runningProperties.uiState.selectedResultAssetId, null);
   assert.equal(runningProperties.uiState.outputConnectionReady, false);
   assert.deepEqual(runningProperties.latestResultRefs, {
-    generatedAssetIds: [],
-    metadataRunId: null,
-    costUsageRunId: null,
+    generatedAssetIds: ["asset_previous_output"],
+    metadataRunId: "run_previous_metadata",
+    costUsageRunId: "run_previous_cost",
   });
   assert.deepEqual(
     {
@@ -672,7 +676,7 @@ test("image generation success transition marks status model completed with outp
 test("image generation failure transition marks status model error with failure details", () => {
   const runningProperties = createImageGenerationNodeProperties({
     latestResultRefs: {
-      generatedAssetIds: ["asset_should_not_be_connectable"],
+      generatedAssetIds: ["asset_prior_successful_output"],
       metadataRunId: "run_stale_metadata",
       costUsageRunId: "run_stale_cost",
     },
@@ -699,9 +703,9 @@ test("image generation failure transition marks status model error with failure 
   });
 
   assert.deepEqual(failedProperties.latestResultRefs, {
-    generatedAssetIds: [],
-    metadataRunId: null,
-    costUsageRunId: null,
+    generatedAssetIds: ["asset_prior_successful_output"],
+    metadataRunId: "run_stale_metadata",
+    costUsageRunId: "run_stale_cost",
   });
   assert.equal(failedProperties.uiState.status, "error");
   assert.equal(failedProperties.uiState.progressPercent, null);
@@ -718,8 +722,11 @@ test("image generation failure transition marks status model error with failure 
     providerRequestId: "prediction_failed_1",
     retryable: false,
   });
-  assert.equal(failedProperties.uiState.outputConnectionReady, false);
-  assert.equal(failedProperties.uiState.selectedResultAssetId, null);
+  assert.equal(failedProperties.uiState.outputConnectionReady, true);
+  assert.equal(
+    failedProperties.uiState.selectedResultAssetId,
+    "asset_prior_successful_output",
+  );
   assert.deepEqual(
     {
       viewMode: failedProperties.uiState.viewMode,

@@ -810,6 +810,7 @@ export type ImageGenerationNodeUiState = {
 
 export type ImageGenerationNodeFailureDetails = {
   name: string;
+  category?: string;
   message: string;
   providerId: ImageGenerationProviderId | null;
   modelSlug: string | null;
@@ -3219,11 +3220,9 @@ export function startImageGenerationNodeTransition(
 ): ImageGenerationNodeProperties {
   return {
     ...properties,
-    latestResultRefs: {
-      generatedAssetIds: [],
-      metadataRunId: null,
-      costUsageRunId: null,
-    },
+    latestResultRefs: cloneImageGenerationNodeResultRefs(
+      properties.latestResultRefs,
+    ),
     uiState: createImageGenerationNodeUiState({
       ...properties.uiState,
       status: "running",
@@ -3268,11 +3267,9 @@ export function queueImageGenerationNodeV2Transition(
 ): ImageGenerationNodeProperties {
   return {
     ...properties,
-    latestResultRefs: {
-      generatedAssetIds: [],
-      metadataRunId: null,
-      costUsageRunId: null,
-    },
+    latestResultRefs: cloneImageGenerationNodeResultRefs(
+      properties.latestResultRefs,
+    ),
     uiState: createImageGenerationNodeUiState({
       ...properties.uiState,
       status: "queued",
@@ -3326,13 +3323,16 @@ export function failImageGenerationNodeTransition(
   properties: ImageGenerationNodeProperties,
   failureDetails: ImageGenerationNodeFailureDetails,
 ): ImageGenerationNodeProperties {
+  const selectedResultAssetId =
+    properties.uiState.selectedResultAssetId ??
+    properties.latestResultRefs.generatedAssetIds[0] ??
+    null;
+
   return {
     ...properties,
-    latestResultRefs: {
-      generatedAssetIds: [],
-      metadataRunId: null,
-      costUsageRunId: null,
-    },
+    latestResultRefs: cloneImageGenerationNodeResultRefs(
+      properties.latestResultRefs,
+    ),
     uiState: createImageGenerationNodeUiState({
       ...properties.uiState,
       status: "error",
@@ -3340,9 +3340,19 @@ export function failImageGenerationNodeTransition(
       statusMessage: "Generation failed",
       errorReason: failureDetails.message,
       failureDetails,
-      selectedResultAssetId: null,
-      outputConnectionReady: false,
+      selectedResultAssetId,
+      outputConnectionReady: selectedResultAssetId !== null,
     }),
+  };
+}
+
+function cloneImageGenerationNodeResultRefs(
+  latestResultRefs: ImageGenerationNodeResultRefs,
+): ImageGenerationNodeResultRefs {
+  return {
+    generatedAssetIds: [...latestResultRefs.generatedAssetIds],
+    metadataRunId: latestResultRefs.metadataRunId,
+    costUsageRunId: latestResultRefs.costUsageRunId,
   };
 }
 

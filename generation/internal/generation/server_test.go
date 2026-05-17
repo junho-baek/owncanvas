@@ -2,6 +2,7 @@ package generation
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -127,6 +128,110 @@ func TestServerRejectsTrailingJSONTokens(t *testing.T) {
 	assertJSONError(t, recorder.Body.Bytes(), "invalid_json", "request body must be valid JSON")
 }
 
+func TestServerRejectsMalformedGenerationRequestInputs(t *testing.T) {
+	server := NewServer(NewService(providerFunc(func(ctx context.Context, job GenerationJob) (GenerationResult, error) {
+		t.Fatalf("provider should not be called for malformed request: %#v", job)
+		return GenerationResult{}, nil
+	}), ServiceOptions{}))
+
+	tests := []struct {
+		name        string
+		body        string
+		wantCode    string
+		wantMessage string
+	}{
+		{
+			name: "fanOutCount has wrong JSON type",
+			body: `{
+				"batchId": "batch_malformed",
+				"campaignId": "campaign_malformed",
+				"sourceNodeId": "source_image",
+				"fanOutCount": "3",
+				"jobs": []
+			}`,
+			wantCode:    "invalid_json",
+			wantMessage: "request body must be valid JSON",
+		},
+		{
+			name: "jobs has wrong JSON type",
+			body: `{
+				"batchId": "batch_malformed",
+				"campaignId": "campaign_malformed",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 1,
+				"jobs": {"jobId":"job_1"}
+			}`,
+			wantCode:    "invalid_json",
+			wantMessage: "request body must be valid JSON",
+		},
+		{
+			name: "spec has wrong JSON type",
+			body: `{
+				"batchId": "batch_malformed",
+				"campaignId": "campaign_malformed",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 1,
+				"spec": [],
+				"jobs": [
+					{"jobId":"job_1","nodeId":"node_1","prompt":"same prompt","provider":"mock","model":"mock-image","aspectRatio":"9:16","parameters":{}}
+				]
+			}`,
+			wantCode:    "invalid_json",
+			wantMessage: "request body must be valid JSON",
+		},
+		{
+			name: "jobs is null",
+			body: `{
+				"batchId": "batch_malformed",
+				"campaignId": "campaign_malformed",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 1,
+				"jobs": null
+			}`,
+			wantCode:    "invalid_batch",
+			wantMessage: "jobs length 0 must match fanOutCount 1",
+		},
+		{
+			name: "fanOutCount is below range",
+			body: `{
+				"batchId": "batch_malformed",
+				"campaignId": "campaign_malformed",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 0,
+				"jobs": []
+			}`,
+			wantCode:    "invalid_batch",
+			wantMessage: "fanOutCount must be between 1 and 10",
+		},
+		{
+			name: "job is empty object",
+			body: `{
+				"batchId": "batch_malformed",
+				"campaignId": "campaign_malformed",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 1,
+				"jobs": [{}]
+			}`,
+			wantCode:    "invalid_batch",
+			wantMessage: "jobs[0].jobId is required",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/generation/batches", bytes.NewBufferString(test.body))
+			recorder := httptest.NewRecorder()
+
+			server.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d", recorder.Code)
+			}
+			assertJSONError(t, recorder.Body.Bytes(), test.wantCode, test.wantMessage)
+		})
+	}
+}
+
 func TestServerRejectsInvalidBatch(t *testing.T) {
 	server := NewServer(NewService(MockProvider{}, ServiceOptions{}))
 	body := []byte(`{
@@ -147,6 +252,78 @@ func TestServerRejectsInvalidBatch(t *testing.T) {
 		t.Fatalf("expected 400, got %d", recorder.Code)
 	}
 	assertJSONError(t, recorder.Body.Bytes(), "invalid_batch", "jobs length 1 must match fanOutCount 2")
+}
+
+func TestServerRejectsRequestsMissingRequiredGenerationFields(t *testing.T) {
+	server := NewServer(NewService(MockProvider{}, ServiceOptions{}))
+
+	tests := []struct {
+		name        string
+		body        string
+		wantMessage string
+	}{
+		{
+			name: "missing batchId",
+			body: `{
+				"campaignId": "campaign_missing_field",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 1,
+				"jobs": [
+					{"jobId":"job_1","nodeId":"node_1","prompt":"same prompt","provider":"mock","model":"mock-image","aspectRatio":"9:16","parameters":{}}
+				]
+			}`,
+			wantMessage: "batchId is required",
+		},
+		{
+			name: "missing job prompt",
+			body: `{
+				"batchId": "batch_missing_field",
+				"campaignId": "campaign_missing_field",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 1,
+				"jobs": [
+					{"jobId":"job_1","nodeId":"node_1","provider":"mock","model":"mock-image","aspectRatio":"9:16","parameters":{}}
+				]
+			}`,
+			wantMessage: "jobs[0].prompt is required",
+		},
+		{
+			name: "missing spec provider",
+			body: `{
+				"batchId": "batch_missing_field",
+				"campaignId": "campaign_missing_field",
+				"sourceNodeId": "source_image",
+				"fanOutCount": 1,
+				"spec": {
+					"specId": "spec_1",
+					"campaignId": "campaign_missing_field",
+					"sourceNodeId": "source_image",
+					"prompt": "same prompt",
+					"model": "mock-image",
+					"aspectRatio": "9:16",
+					"parameters": {}
+				},
+				"jobs": [
+					{"jobId":"job_1","nodeId":"node_1","prompt":"same prompt","provider":"mock","model":"mock-image","aspectRatio":"9:16","parameters":{}}
+				]
+			}`,
+			wantMessage: "spec.provider is required",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/generation/batches", bytes.NewBufferString(test.body))
+			recorder := httptest.NewRecorder()
+
+			server.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d", recorder.Code)
+			}
+			assertJSONError(t, recorder.Body.Bytes(), "invalid_batch", test.wantMessage)
+		})
+	}
 }
 
 func executeBatchRequest(t *testing.T, server *Server, body []byte) GenerationBatchResponse {
