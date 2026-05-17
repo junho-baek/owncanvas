@@ -1,0 +1,130 @@
+goal: Implement the first OwnCanvas Image Block slice for xN image fan-out with visible
+  reference edges and a provider-hidden model catalog adapter layer
+task_type: code
+brownfield_context:
+  project_type: greenfield
+  context_references: []
+  existing_patterns: []
+  existing_dependencies: []
+constraints:
+- x3 fan-out must create independent Image Block nodes
+- Each generated node must preserve visible React Flow edges from every connected
+  source/reference handle to its reference input handle
+- Each generated node must preserve catalog model metadata
+- Replicate must be hidden behind a service adapter and not shown as the user-facing
+  provider/model
+- User-facing model choices must come from catalog entries
+- Image Block UI must stay generation-first with prompt and references as primary
+  inputs
+- Do not expose every model capability in the base node UI
+- Advanced edit/inpaint controls are deferred
+- Minimal model metadata only for this slice
+- Do not silently drop incompatible references
+- Follow DESIGN.md and avoid UI fatigue
+acceptance_criteria:
+- Clicking x3 with valid references creates three independent Image Block output nodes
+- Each x3 output node has duplicated visible reference edges from each connected reference/source
+  handle to that output node's reference input handle
+- Each output node can be selected, retried, connected, or reused independently
+- A shared internal batch/run id may track sibling outputs without grouping them in
+  the canvas model
+- User-facing model picker shows catalog model entries rather than Replicate as the
+  model/provider
+- Catalog metadata supports generation routing, display labels, duplicated-node metadata
+  preservation, and reference-count validation
+- If a node has 2 connected references and the selected model supports 0 or 1 references,
+  clicking x3 creates no fan-out nodes or edges
+- Incompatible execution shows an inline compatibility error tied to the model/reference
+  mismatch
+- Model picker prevents or clearly disables incompatible models when current reference
+  count exceeds supported reference count
+ontology_schema:
+  name: ImageGenerationFanoutCatalog
+  description: Domain model for OwnCanvas Image Block fan-out outputs, visible reference-edge
+    duplication, service-adapted model catalog choices, and first-slice reference
+    compatibility validation
+  fields:
+  - name: imageBlockId
+    type: string
+    description: Identifier for the source or generated Image Block
+    required: true
+  - name: fanoutCount
+    type: number
+    description: Number of requested outputs such as 3 for x3
+    required: true
+  - name: generatedNodeIds
+    type: array
+    description: Independent Image Block node ids created by fan-out
+    required: true
+  - name: referenceConnections
+    type: array
+    description: Connected source/reference handles that must be duplicated to each
+      generated node
+    required: true
+  - name: modelCatalogEntry
+    type: object
+    description: User-facing model choice with label, routing metadata, and minimal
+      reference capability
+    required: true
+  - name: serviceAdapter
+    type: string
+    description: Internal adapter used to call Replicate or another model-serving
+      service
+    required: true
+  - name: supportsReferences
+    type: boolean
+    description: Whether the selected catalog model accepts reference inputs
+    required: true
+  - name: maxReferenceCount
+    type: number
+    description: Maximum supported connected references for the catalog model
+    required: true
+  - name: batchRunId
+    type: string
+    description: Optional internal id linking sibling outputs from one execution
+    required: true
+  - name: validationError
+    type: string
+    description: Inline compatibility error shown when model/reference requirements
+      fail
+    required: true
+evaluation_principles:
+- name: ReferenceEdgeCorrectness
+  description: Every generated output preserves visible edges from all valid connected
+    reference/source handles
+  weight: 0.3
+- name: CatalogAbstraction
+  description: Replicate and other serving APIs are hidden behind adapters while users
+    choose catalog models
+  weight: 0.25
+- name: ValidationSafety
+  description: Incompatible reference counts block before fan-out without creating
+    nodes or dropping references
+  weight: 0.25
+- name: UIRestraint
+  description: The Image Block remains generation-first and avoids exposing advanced
+    model controls prematurely
+  weight: 0.2
+exit_conditions:
+- name: ValidFanoutComplete
+  description: x3 valid execution produces independent output nodes with duplicated
+    visible reference edges
+  criteria: manual or automated test passes
+- name: AdapterCatalogComplete
+  description: user-facing model choices route through service adapters and preserve
+    model metadata on outputs
+  criteria: catalog and node metadata tests pass
+- name: CompatibilityBlockingComplete
+  description: invalid reference/model combinations create no output nodes or edges
+    and show inline error
+  criteria: acceptance scenario passes
+- name: DeferredScopeMaintained
+  description: advanced capability controls remain out of the base node UI
+  criteria: first-slice UI review confirms prompt/reference focus
+metadata:
+  seed_id: seed_f02200db0442
+  version: 1.0.0
+  created_at: "2026-05-17T07:55:20.292603Z"
+  ambiguity_score: 0.123
+  interview_id: interview_20260517_071611
+  parent_seed_id: null

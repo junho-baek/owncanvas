@@ -2752,3 +2752,9 @@
 - 실패한 duplicated Image Block retry는 기존 node id 하나만 `fanOutCount: 1` batch로 재시도하고, source Image Block rerun은 기존 seed처럼 새 xN visual batch를 append하도록 분리했다. 새 fan-out output nodes는 duplicated node 자체가 결과물이므로 `batchCount: 1`로 초기화한다.
 - 검증: `npm run skills:check`(DDD/marketing 외부 skill 8개 누락, 문서 fallback 사용), `GOCACHE=/private/tmp/owncanvas-go-build-cache go test ./...` in `generation`, full TS suite 532/532 pass, `npm run typecheck`, `npm run build`, `git diff --check`.
 - GitHub triage: 구현 완료된 #20, #21, #22, #23을 close했다. 실제 브라우저 수동 demo artifact가 필요한 #24와 parent epic #19는 open 유지하고 남은 체크리스트를 comment로 남겼다.
+
+## [2026-05-17] image-block-reference-fanout-catalog-seed | seed publish
+
+- Ouroboros interview `interview_20260517_071611` 결정사항을 바탕으로 Seed `seed_f02200db0442`를 생성했다. 범위는 Image Block xN fan-out 시 참조 이미지 edge를 각 독립 output node로 복제하고, Replicate 같은 실행 서비스를 user-facing model/provider로 노출하지 않는 catalog/adapter layer를 추가하는 첫 slice다.
+- Seed 사본을 `docs/seeds/image-block-reference-fanout-catalog.seed.yaml`에 저장했다. 표준 Ouroboros seed 위치에도 `~/.ouroboros/seeds/seed_f02200db0442.yaml`로 보관했다.
+- GitHub publish 결과: parent epic #25, fan-out reference edge task #26, model catalog/adapter task #27, incompatible reference fan-out blocking task #28을 생성했다.
