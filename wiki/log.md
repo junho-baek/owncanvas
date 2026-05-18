@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-18] cli-image-video-canvas-qa | CLI authoring to web canvas
+
+- `feature/video-generation-provider`를 `main`에 fast-forward merge하고 `origin/main`으로 push했다.
+- CLI로 `/tmp/owncanvas-cli-ui-demo` 워크스페이스에 `cli-image-video-demo` Campaign을 만들고, Image Block `image_hero`와 Video Block `video_hero`를 생성했다. 생성 실행은 하지 않았다.
+- CLI `edge connect`로 `image_hero:outputs.generated_image_asset -> video_hero:inputs.frame` 연결을 만들고 `validate --run-ready`를 통과했다.
+- 웹 UI는 현재 Campaign을 `owncanvas.campaigns.v1` localStorage에서 읽으므로 CLI export JSON을 깨끗한 브라우저 세션에 주입해 `/campaigns/cli-image-video-demo/canvas`에서 렌더링을 확인했다.
+- 증거: `output/playwright/cli-image-video-demo/.playwright-cli/page-2026-05-18T09-05-10-820Z.png`, `output/playwright/cli-image-video-demo/.playwright-cli/page-2026-05-18T09-07-01-460Z.png`. 접근성 스냅샷에서 `Edge from image_hero to video_hero`와 label `video source`가 확인됐다.
+
 ## [2026-05-18] owncanvas-cli-agent-contracts | Issues #31-#33
 
 - Superpowers 계획 문서 [OwnCanvas CLI Agent Contracts Implementation Plan](../docs/superpowers/plans/2026-05-18-owncanvas-cli-agent-contracts.md)을 작성하고, 남은 CLI 이슈 `#33`, `#31`, `#32`를 순서대로 이행했다.
