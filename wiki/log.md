@@ -11,6 +11,16 @@
 - 구체 코드 gap이 없어 source code는 수정하지 않았다. 이번 변경은 #37 audit plan과 wiki log만 포함한다.
 - 검증: `node --test app/features/plugins/model/plugin-representation.test.ts app/features/plugins/model/instagram-comment-dm-flow.test.ts` 통과(91 tests, 0 failures).
 
+## [2026-05-19] issue-38-dm-gate-comment-keyword-fixture-audit | Issue #38
+
+- Superpowers plan `docs/superpowers/plans/2026-05-19-issue-38-instagram-dm-gate-comment-keyword-fixtures.md`에 따라 #38 범위만 감사했다.
+- Hermes가 `gh issue view 38 -R junho-baek/owncanvas --json number,title,state,labels,body,comments`로 #38 본문/댓글을 확인했고, Codex 실행 중 일시적인 GitHub 조회 실패가 있었지만 로컬 seed/wiki/code context와 대조해 감사했다.
+- `instagramDmGateActionConfigurationFixture.responseMappings`가 comment keyword matcher `condition.drop-link`를 단일 DM Gate resource variant `mapping.drop-guide` / `COMMENT_TO_DM_GATE_RESOURCE_URL`로 매핑함을 확인했다.
+- matching comment와 non-matching comment의 `selectInstagramDmResponseForCommentEvent()` / `resolveInstagramDmGateActionOutcome()` fixture coverage를 확인했다. non-matching comment는 `events: ["no_match"]`를 반환한다.
+- 새 node type, 별도 quick-reply mapping system, live Meta OAuth/webhook/Graph API/token storage/token UI/real DM sending/real follow verification은 추가하지 않았다.
+- UI 변경은 없으며 screenshot은 필요하지 않았다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.test.ts` 통과(91 tests, 0 failures), `git diff --check` 통과.
+
 ## [2026-05-19] instagram-dm-gate-final-qa | Issue #41
 
 - read-only Codex QA가 `mapping.resourceUrl`에 invalid URL이 있어도 valid `landingUrl` 때문에 검증을 통과하고 outcome에서 invalid resource를 선택할 수 있는 blocker를 발견했다.
