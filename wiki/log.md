@@ -2,6 +2,15 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-19] instagram-dm-gate-issue-37-schema-audit | Issue #37
+
+- Superpowers process-correction plan을 [Issue #37 Instagram DM Gate Schema Audit Implementation Plan](../docs/superpowers/plans/2026-05-19-issue-37-instagram-dm-gate-schema-audit.md)에 먼저 작성한 뒤 #37 범위만 감사했다.
+- Codex 실행 중에는 `gh issue view 37 -R junho-baek/owncanvas --comments`가 일시적으로 `api.github.com` 연결 실패를 보고했지만, Hermes가 후속 확인에서 #37 조회 가능 상태를 검증했다. 감사 기준은 #37 scope와 `docs/seeds/instagram-dm-gate.mcp.seed.yaml`이다.
+- commit `170a959`의 Direct Message plugin `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA`/`InstagramDmActionConfiguration`/fixture/test/README를 대조한 결과 #37 schema AC는 PASS로 판단했다.
+- canonical source는 기존 direct-message Instagram DM action configuration이며 별도 Campaign-only DM Gate schema, 새 node type, live Meta OAuth/webhook/Graph API/token storage/token UI/real DM sending/real follow verification은 추가되지 않았다.
+- 구체 코드 gap이 없어 source code는 수정하지 않았다. 이번 변경은 #37 audit plan과 wiki log만 포함한다.
+- 검증: `node --test app/features/plugins/model/plugin-representation.test.ts app/features/plugins/model/instagram-comment-dm-flow.test.ts` 통과(91 tests, 0 failures).
+
 ## [2026-05-19] instagram-dm-gate-final-qa | Issue #41
 
 - read-only Codex QA가 `mapping.resourceUrl`에 invalid URL이 있어도 valid `landingUrl` 때문에 검증을 통과하고 outcome에서 invalid resource를 선택할 수 있는 blocker를 발견했다.
