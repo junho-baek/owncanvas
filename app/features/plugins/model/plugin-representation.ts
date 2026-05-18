@@ -2370,6 +2370,13 @@ export const DM_AUTOMATION_CONFIGURATION_SCHEMA = {
   ],
   properties: [
     {
+      key: "schemaVersion",
+      type: "string",
+      required: true,
+      description:
+        "Instagram DM action configuration schema version used by the DM Gate contract.",
+    },
+    {
       key: "campaignId",
       type: "string",
       required: true,
@@ -3299,6 +3306,8 @@ export const INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION =
 export const INSTAGRAM_COMMENT_TO_DM_RESPONSE_MAPPING_SCHEMA_VERSION =
   "owncanvas.instagram-comment-to-dm-response-mapping.v1";
 
+export const INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD = "FOLLOW_CHECK";
+
 export type InstagramDmActionConfigurationAttribution = {
   source: "instagram";
   medium: "dm";
@@ -3313,11 +3322,27 @@ export type InstagramDmActionConfigurationMessage = {
   variables?: Record<string, string | number | boolean>;
 };
 
+export type InstagramDmGateQuickReply = {
+  contentType: "text";
+  title: string;
+  payload: string;
+};
+
+export type InstagramDmGateFollowGateConfiguration = {
+  enabled: boolean;
+  checkQuickReply?: InstagramDmGateQuickReply;
+  successMessage?: InstagramDmActionConfigurationMessage;
+  notFollowingMessage?: InstagramDmActionConfigurationMessage;
+  quickReplies?: NonEmptyArray<InstagramDmGateQuickReply>;
+  simulatedFollowStatus?: boolean;
+};
+
 export type InstagramCommentToDmResponseMapping = {
   id: string;
   triggerMatcherId: string;
   message: InstagramDmActionConfigurationMessage;
-  landingUrl: string;
+  landingUrl?: string;
+  resourceUrl?: string;
   attributionTermTemplate?: string;
   metadata?: Record<string, unknown>;
 };
@@ -3329,7 +3354,9 @@ export type InstagramDmActionConfiguration = {
   triggerConfiguration: InstagramCommentTriggerConfiguration;
   message?: InstagramDmActionConfigurationMessage;
   landingUrl?: string;
+  resourceUrl?: string;
   responseMappings?: NonEmptyArray<InstagramCommentToDmResponseMapping>;
+  followGate?: InstagramDmGateFollowGateConfiguration;
   attribution?: InstagramDmActionConfigurationAttribution;
   metadata?: Record<string, unknown>;
 };
@@ -3348,6 +3375,7 @@ export type InstagramDmResponseSelectionResult =
       mappingId: string;
       message: InstagramDmActionConfigurationMessage;
       landingUrl: string;
+      resourceUrl?: string;
       attribution?: InstagramDmActionConfigurationAttribution;
     }
   | {
@@ -3372,6 +3400,7 @@ export type PluginActionConfigurationSchema = {
   attributionFields: readonly string[];
   responseMappingSchemaVersion?: string;
   mappingFields?: readonly string[];
+  followGateFields?: readonly string[];
   properties: readonly PluginTriggerEventSchemaProperty[];
 };
 
@@ -3385,9 +3414,12 @@ export const INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA = {
   channel: "instagram",
   trigger: "comment",
   requiredFields: [
+    "schemaVersion",
     "campaignId",
     "capabilityId",
     "triggerConfiguration",
+    "message.text",
+    "landingUrl|resourceUrl",
     "responseMappings",
   ],
   attributionFields: [
@@ -3403,7 +3435,17 @@ export const INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA = {
     "responseMappings.triggerMatcherId",
     "responseMappings.message.templateId",
     "responseMappings.message.text",
-    "responseMappings.landingUrl",
+    "responseMappings.landingUrl|resourceUrl",
+  ],
+  followGateFields: [
+    "followGate.enabled",
+    "followGate.checkQuickReply.title",
+    "followGate.checkQuickReply.payload",
+    "followGate.successMessage.text",
+    "followGate.notFollowingMessage.text",
+    "followGate.quickReplies.title",
+    "followGate.quickReplies.payload",
+    "followGate.simulatedFollowStatus",
   ],
   properties: [
     {
@@ -3439,11 +3481,25 @@ export const INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA = {
         "Legacy single tracked landing URL to include in every DM response.",
     },
     {
+      key: "resourceUrl",
+      type: "url",
+      required: false,
+      description:
+        "Direct campaign resource URL used when the DM Gate sends a gated asset instead of a landing page.",
+    },
+    {
       key: "responseMappings",
       type: "json",
       required: true,
       description:
-        "Mappings from comment trigger matcher IDs to DM response templates and tracked landing URLs.",
+        "Mappings from comment trigger matcher IDs to DM response templates and tracked landing or resource URLs.",
+    },
+    {
+      key: "followGate",
+      type: "json",
+      required: false,
+      description:
+        "Optional soft follow-gate prompt, quick replies, and deterministic offline follow status for DM Gate fixtures.",
     },
     {
       key: "attribution",
@@ -3466,6 +3522,14 @@ export type InstagramDmActionConfigurationValidationErrorCode =
   | "instagram-dm-config.response_mapping_trigger_matcher_not_found"
   | "instagram-dm-config.response_mapping_message_text_required"
   | "instagram-dm-config.response_mapping_landing_url_invalid"
+  | "instagram-dm-config.response_mapping_resource_url_invalid"
+  | "instagram-dm-config.follow_gate_check_quick_reply_required"
+  | "instagram-dm-config.follow_gate_check_quick_reply_payload_invalid"
+  | "instagram-dm-config.follow_gate_success_message_required"
+  | "instagram-dm-config.follow_gate_not_following_message_required"
+  | "instagram-dm-config.follow_gate_quick_replies_required"
+  | "instagram-dm-config.follow_gate_quick_reply_invalid"
+  | "instagram-dm-config.follow_gate_simulated_follow_status_required"
   | "instagram-dm-config.attribution_source_invalid"
   | "instagram-dm-config.attribution_medium_invalid"
   | "instagram-dm-config.attribution_campaign_mismatch"
@@ -3491,8 +3555,15 @@ export function validateInstagramDmActionConfiguration(
   const responseMappings = Array.isArray(value.responseMappings)
     ? value.responseMappings
     : [];
+  const followGate = isRecord(value.followGate) ? value.followGate : undefined;
   const attribution = isRecord(value.attribution) ? value.attribution : undefined;
   const errors: InstagramDmActionConfigurationValidationError[] = [];
+  const usesDmGateResource =
+    value.resourceUrl !== undefined ||
+    responseMappings.some(
+      (mapping) => isRecord(mapping) && mapping.resourceUrl !== undefined,
+    ) ||
+    followGate !== undefined;
 
   if (value.schemaVersion !== INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION) {
     errors.push({
@@ -3531,7 +3602,10 @@ export function validateInstagramDmActionConfiguration(
     });
   }
 
-  if (responseMappings.length === 0 && !isNonEmptyString(message.text)) {
+  if (
+    (responseMappings.length === 0 || usesDmGateResource) &&
+    !isNonEmptyString(message.text)
+  ) {
     errors.push({
       code: "instagram-dm-config.message_text_required",
       message: "Instagram DM action configurations require message text.",
@@ -3539,12 +3613,42 @@ export function validateInstagramDmActionConfiguration(
     });
   }
 
-  if (responseMappings.length === 0 && !isHttpUrl(value.landingUrl)) {
+  if (
+    (responseMappings.length === 0 || usesDmGateResource) &&
+    !isHttpUrl(value.landingUrl) &&
+    !isHttpUrl(value.resourceUrl)
+  ) {
     errors.push({
       code: "instagram-dm-config.landing_url_invalid",
       message:
-        "Instagram DM action configurations require an http or https landing URL.",
-      path: "landingUrl",
+        "Instagram DM action configurations require an http or https landing or resource URL.",
+      path: "landingUrl|resourceUrl",
+    });
+  } else {
+    if (value.landingUrl !== undefined && !isHttpUrl(value.landingUrl)) {
+      errors.push({
+        code: "instagram-dm-config.landing_url_invalid",
+        message:
+          "Instagram DM action landing URLs must use http or https.",
+        path: "landingUrl",
+      });
+    }
+
+    if (value.resourceUrl !== undefined && !isHttpUrl(value.resourceUrl)) {
+      errors.push({
+        code: "instagram-dm-config.response_mapping_resource_url_invalid",
+        message:
+          "Instagram DM action resource URLs must use http or https.",
+        path: "resourceUrl",
+      });
+    }
+  }
+
+  if (usesDmGateResource && responseMappings.length === 0) {
+    errors.push({
+      code: "instagram-dm-config.response_mapping_id_required",
+      message: "Instagram DM Gate configurations require response mappings.",
+      path: "responseMappings",
     });
   }
 
@@ -3590,15 +3694,44 @@ export function validateInstagramDmActionConfiguration(
       });
     }
 
-    if (!isHttpUrl(mappingValue.landingUrl)) {
+    const mappingHasLandingUrl = isHttpUrl(mappingValue.landingUrl);
+    const mappingHasResourceUrl = isHttpUrl(mappingValue.resourceUrl);
+
+    if (!mappingHasLandingUrl && !mappingHasResourceUrl) {
       errors.push({
         code: "instagram-dm-config.response_mapping_landing_url_invalid",
         message:
-          "Instagram DM response mappings require an http or https landing URL.",
-        path: `responseMappings.${index}.landingUrl`,
+          "Instagram DM response mappings require an http or https landing or resource URL.",
+        path: `responseMappings.${index}.landingUrl|resourceUrl`,
       });
+    } else {
+      if (
+        mappingValue.landingUrl !== undefined &&
+        !isHttpUrl(mappingValue.landingUrl)
+      ) {
+        errors.push({
+          code: "instagram-dm-config.response_mapping_landing_url_invalid",
+          message:
+            "Instagram DM response mapping landing URLs must use http or https.",
+          path: `responseMappings.${index}.landingUrl`,
+        });
+      }
+
+      if (
+        mappingValue.resourceUrl !== undefined &&
+        !isHttpUrl(mappingValue.resourceUrl)
+      ) {
+        errors.push({
+          code: "instagram-dm-config.response_mapping_resource_url_invalid",
+          message:
+            "Instagram DM response mapping resource URLs must use http or https.",
+          path: `responseMappings.${index}.resourceUrl`,
+        });
+      }
     }
   });
+
+  validateInstagramDmGateFollowGateConfiguration(followGate, errors);
 
   if (attribution !== undefined && attribution.source !== "instagram") {
     errors.push({
@@ -3649,6 +3782,120 @@ export function validateInstagramDmActionConfiguration(
     ok: errors.length === 0,
     errors,
   };
+}
+
+function validateInstagramDmGateFollowGateConfiguration(
+  followGate: Record<string, unknown> | undefined,
+  errors: InstagramDmActionConfigurationValidationError[],
+) {
+  if (followGate === undefined || followGate.enabled !== true) {
+    return;
+  }
+
+  const checkQuickReply = isRecord(followGate.checkQuickReply)
+    ? followGate.checkQuickReply
+    : undefined;
+  const successMessage = isRecord(followGate.successMessage)
+    ? followGate.successMessage
+    : undefined;
+  const notFollowingMessage = isRecord(followGate.notFollowingMessage)
+    ? followGate.notFollowingMessage
+    : undefined;
+  const quickReplies = Array.isArray(followGate.quickReplies)
+    ? followGate.quickReplies
+    : [];
+
+  if (!isInstagramDmGateQuickReply(checkQuickReply)) {
+    errors.push({
+      code: "instagram-dm-config.follow_gate_check_quick_reply_required",
+      message:
+        "Enabled Instagram DM Gate follow gates require a text quick reply for follow checks.",
+      path: "followGate.checkQuickReply",
+    });
+  } else if (
+    checkQuickReply.payload !== INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD
+  ) {
+    errors.push({
+      code: "instagram-dm-config.follow_gate_check_quick_reply_payload_invalid",
+      message:
+        "The follow check quick reply must own the FOLLOW_CHECK payload.",
+      path: "followGate.checkQuickReply.payload",
+    });
+  }
+
+  if (!isNonEmptyString(successMessage?.text)) {
+    errors.push({
+      code: "instagram-dm-config.follow_gate_success_message_required",
+      message:
+        "Enabled Instagram DM Gate follow gates require a success message.",
+      path: "followGate.successMessage.text",
+    });
+  }
+
+  if (!isNonEmptyString(notFollowingMessage?.text)) {
+    errors.push({
+      code: "instagram-dm-config.follow_gate_not_following_message_required",
+      message:
+        "Enabled Instagram DM Gate follow gates require a not-following retry message.",
+      path: "followGate.notFollowingMessage.text",
+    });
+  }
+
+  if (quickReplies.length === 0) {
+    errors.push({
+      code: "instagram-dm-config.follow_gate_quick_replies_required",
+      message:
+        "Enabled Instagram DM Gate follow gates require text quick replies.",
+      path: "followGate.quickReplies",
+    });
+  } else {
+    quickReplies.forEach((quickReply, index) => {
+      if (!isInstagramDmGateQuickReply(quickReply)) {
+        errors.push({
+          code: "instagram-dm-config.follow_gate_quick_reply_invalid",
+          message:
+            "Instagram DM Gate quick replies must be text replies with title and payload.",
+          path: `followGate.quickReplies.${index}`,
+        });
+      }
+    });
+
+    if (
+      isInstagramDmGateQuickReply(checkQuickReply) &&
+      !quickReplies.some(
+        (quickReply) =>
+          isInstagramDmGateQuickReply(quickReply) &&
+          quickReply.payload === checkQuickReply.payload,
+      )
+    ) {
+      errors.push({
+        code: "instagram-dm-config.follow_gate_quick_reply_invalid",
+        message:
+          "Instagram DM Gate quick replies must include the configured follow check payload.",
+        path: "followGate.quickReplies",
+      });
+    }
+  }
+
+  if (typeof followGate.simulatedFollowStatus !== "boolean") {
+    errors.push({
+      code: "instagram-dm-config.follow_gate_simulated_follow_status_required",
+      message:
+        "Enabled Instagram DM Gate follow gates require deterministic simulated follow status for offline tests.",
+      path: "followGate.simulatedFollowStatus",
+    });
+  }
+}
+
+function isInstagramDmGateQuickReply(
+  value: unknown,
+): value is InstagramDmGateQuickReply {
+  return (
+    isRecord(value) &&
+    value.contentType === "text" &&
+    isNonEmptyString(value.title) &&
+    isNonEmptyString(value.payload)
+  );
 }
 
 export function selectInstagramDmResponseForCommentEvent(
@@ -3707,6 +3954,7 @@ export function selectInstagramDmResponseForCommentEvent(
       matcher !== undefined &&
       doesInstagramCommentTriggerMatcherMatchEvent(matcher, triggerEvent)
     ) {
+      const selectedUrl = resolveInstagramDmActionResourceUrl(value, mapping);
       const attribution = buildInstagramDmResponseSelectionAttribution(
         value.attribution,
         mapping,
@@ -3718,7 +3966,10 @@ export function selectInstagramDmResponseForCommentEvent(
         matcherId: mapping.triggerMatcherId,
         mappingId: mapping.id,
         message: mapping.message,
-        landingUrl: mapping.landingUrl,
+        landingUrl: selectedUrl,
+        ...(mapping.resourceUrl === undefined
+          ? {}
+          : { resourceUrl: mapping.resourceUrl }),
         ...(attribution === undefined ? {} : { attribution }),
       };
     }
@@ -3728,6 +3979,128 @@ export function selectInstagramDmResponseForCommentEvent(
     matched: false,
     reason: "no_matching_response_mapping",
   };
+}
+
+export type InstagramDmGateActionEventName =
+  | "prompt_sent"
+  | "follow_check_requested"
+  | "resource_link_ready"
+  | "resource_link_sent"
+  | "not_following_retry_prompted"
+  | "no_match";
+
+export type InstagramDmGateActionOutcome =
+  | {
+      matched: true;
+      matcherId: string;
+      mappingId: string;
+      events: NonEmptyArray<InstagramDmGateActionEventName>;
+      message: InstagramDmActionConfigurationMessage;
+      resourceUrl?: string;
+      quickReplies?: NonEmptyArray<InstagramDmGateQuickReply>;
+      checkQuickReply?: InstagramDmGateQuickReply;
+      followStatus?: "following" | "not_following";
+    }
+  | {
+      matched: false;
+      reason: InstagramDmResponseSelectionFailureReason;
+      events: readonly ["no_match"];
+      errors?: readonly (
+        | InstagramDmActionConfigurationValidationError
+        | InstagramCommentTriggerEventValidationError
+      )[];
+    };
+
+export function resolveInstagramDmGateActionOutcome(
+  configuration: unknown,
+  event: unknown,
+  input: { quickReplyPayload?: string } = {},
+): InstagramDmGateActionOutcome {
+  const selection = selectInstagramDmResponseForCommentEvent(configuration, event);
+
+  if (!selection.matched) {
+    return {
+      matched: false,
+      reason: selection.reason,
+      events: ["no_match"],
+      ...(selection.errors === undefined ? {} : { errors: selection.errors }),
+    };
+  }
+
+  const value = configuration as InstagramDmActionConfiguration;
+  const followGate = value.followGate;
+  const resourceUrl = selection.resourceUrl ?? selection.landingUrl;
+
+  if (followGate?.enabled !== true) {
+    return {
+      matched: true,
+      matcherId: selection.matcherId,
+      mappingId: selection.mappingId,
+      events: ["resource_link_ready", "resource_link_sent"],
+      message: selection.message,
+      resourceUrl,
+    };
+  }
+
+  const checkQuickReply = followGate.checkQuickReply as InstagramDmGateQuickReply;
+
+  if (input.quickReplyPayload !== checkQuickReply.payload) {
+    return {
+      matched: true,
+      matcherId: selection.matcherId,
+      mappingId: selection.mappingId,
+      events: ["prompt_sent"],
+      message: value.message as InstagramDmActionConfigurationMessage,
+      resourceUrl,
+      quickReplies: followGate.quickReplies as NonEmptyArray<InstagramDmGateQuickReply>,
+    };
+  }
+
+  if (followGate.simulatedFollowStatus === true) {
+    return {
+      matched: true,
+      matcherId: selection.matcherId,
+      mappingId: selection.mappingId,
+      events: [
+        "follow_check_requested",
+        "resource_link_ready",
+        "resource_link_sent",
+      ],
+      followStatus: "following",
+      message: followGate.successMessage as InstagramDmActionConfigurationMessage,
+      resourceUrl,
+      checkQuickReply,
+    };
+  }
+
+  return {
+    matched: true,
+    matcherId: selection.matcherId,
+    mappingId: selection.mappingId,
+    events: ["follow_check_requested", "not_following_retry_prompted"],
+    followStatus: "not_following",
+    message: followGate.notFollowingMessage as InstagramDmActionConfigurationMessage,
+    quickReplies: followGate.quickReplies as NonEmptyArray<InstagramDmGateQuickReply>,
+    checkQuickReply,
+  };
+}
+
+function resolveInstagramDmActionResourceUrl(
+  configuration: InstagramDmActionConfiguration,
+  mapping: InstagramCommentToDmResponseMapping,
+): string {
+  return (
+    firstHttpUrl(
+      mapping.landingUrl,
+      mapping.resourceUrl,
+      configuration.landingUrl,
+      configuration.resourceUrl,
+    ) ?? ""
+  );
+}
+
+function firstHttpUrl(...values: readonly unknown[]): string | undefined {
+  return values.find(isHttpUrl);
 }
 
 function collectInstagramCommentTriggerMatchers(

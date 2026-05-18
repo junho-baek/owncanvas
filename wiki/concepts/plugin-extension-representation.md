@@ -60,8 +60,15 @@ type-specific detail 조합으로 표현한다.
   account/media/comment id, commenter, text, timestamp, attribution field를
   명시한다. Instagram DM action configuration은 `responseMappings`로
   comment matcher id를 DM template/text와 tracked landing URL에 연결해
-  여러 comment trigger가 서로 다른 DM 응답을 선택할 수 있게 한다. plugin
-  detail의 `triggerConfigurationSchemas`, `triggerEventSchemas`,
+  여러 comment trigger가 서로 다른 DM 응답을 선택할 수 있게 한다. DM Gate
+  v1도 별도 Campaign-only schema가 아니라 같은
+  `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA`를 canonical source로 사용한다.
+  `message.text`는 follow prompt, `landingUrl` 또는 `resourceUrl`은 gated
+  destination, `followGate`는 선택적 soft follow gate다. `followGate.enabled`
+  가 true이면 `checkQuickReply`, `successMessage`, `notFollowingMessage`,
+  `quickReplies`, fixture 전용 `simulatedFollowStatus`가 필요하고,
+  `checkQuickReply.payload`가 `FOLLOW_CHECK` branch를 소유한다. plugin detail의
+  `triggerConfigurationSchemas`, `triggerEventSchemas`,
   `actionConfigurationSchemas`로 이 계약을 광고할 수 있다.
 - `landing`: creative asset과 offer를 landing URL로 publish하는
   `landing.page` capability를 제공한다. `LANDING_PAGE_HANDOFF_EVENT_SCHEMA`와

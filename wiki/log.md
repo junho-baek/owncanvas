@@ -2,6 +2,45 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-19] instagram-dm-gate-final-qa | Issue #41
+
+- read-only Codex QA가 `mapping.resourceUrl`에 invalid URL이 있어도 valid `landingUrl` 때문에 검증을 통과하고 outcome에서 invalid resource를 선택할 수 있는 blocker를 발견했다.
+- `validateInstagramDmActionConfiguration()`이 제공된 top-level `landingUrl`/`resourceUrl`과 mapping-level `landingUrl`/`resourceUrl`을 각각 독립적으로 http(s) 검증하도록 보완했다.
+- `plugin-representation.test.ts`에 valid landing + invalid resource URL regression을 추가해 `instagram-dm-config.response_mapping_resource_url_invalid`를 고정했다.
+- UI 파일 변경은 없으며, diff scope는 plugin model/tests/docs/wiki/seed로 제한된다. live Meta OAuth/webhook/Graph API/token storage/token UI/real DM sending/real follow verification은 추가하지 않았다.
+- 검증: focused plugin tests 91개 통과, `npm run typecheck` 통과, `git diff --check` 통과, creative-canvas 포함 targeted suite 204개 통과, `npx -y @google/design.md lint DESIGN.md` errors 0/warnings 12/infos 1.
+
+## [2026-05-19] instagram-dm-gate-meta-credentials-docs | Issue #40
+
+- 기존 #37 미커밋 문서 변경이 #40의 hosted/self-host Meta credentials 및 Docker URL 문서 범위를 이미 충족함을 확인했다.
+- `app/features/plugins/model/README.md`는 Hosted OwnCanvas가 OwnCanvas-owned Meta apps for Business Portfolio connections를 사용하고, self-host 설치는 Meta app credentials를 environment variables 또는 deployment secret store로 가져와야 한다고 설명한다.
+- 같은 문서는 Docker/cloud 배포에서 `PUBLIC_BASE_URL`을 환경별 public HTTPS origin으로 두고, Meta OAuth redirect URL과 webhook callback URL을 staging/production 등 환경별 HTTPS callback URL로 등록해야 한다고 명시한다.
+- first slice에는 Meta OAuth, webhook receiving, Graph API transport, token storage/token UI, real DM sending, real follow-state checks가 없다는 scope boundary도 문서화되어 있다. Direct Message plugin / `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA`가 계속 canonical source이며 별도 Campaign-only schema는 만들지 않는다.
+- 추가 code/docs/model/test 변경은 하지 않았다. 이번 변경은 누락된 wiki log entry뿐이다.
+
+## [2026-05-19] instagram-dm-gate-dispatch-outcomes | Issue #39
+
+- 기존 #37/#38 미커밋 변경이 #39의 Offline follow-gate dispatch outcome 범위를 이미 충족함을 확인했다.
+- `resolveInstagramDmGateActionOutcome()`는 Quick Reply prompt(`prompt_sent`), follow check request(`follow_check_requested`), following success/resource-link dispatch(`resource_link_ready`, `resource_link_sent`), not-following retry prompt(`not_following_retry_prompted`), unmatched comment(`no_match`) outcome을 fixture-only `simulatedFollowStatus`로 모델링한다.
+- canonical source는 계속 Direct Message plugin의 `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA`이며, 별도 Campaign-only schema, node explosion, live Meta OAuth/webhook/Graph API/token storage/token UI/real DM sending/real follow verification 변경은 없다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.test.ts` 90개 테스트 통과.
+
+## [2026-05-19] instagram-dm-gate-response-variant-fixture | Issue #38
+
+- 기존 #37 변경은 DM Gate match/follow-gate outcome을 대부분 포함했지만, DM Gate fixture 자체의 `no_match` 경로 검증이 비어 있었다.
+- `instagram-comment-dm-flow.test.ts`에만 focused assertion을 추가해 `instagramDmGateActionConfigurationFixture.responseMappings`가 하나의 `mapping.drop-guide` resource variant를 선택하고, non-matching comment는 `resolveInstagramDmGateActionOutcome()`에서 `events: ["no_match"]`를 반환하는 계약을 고정했다.
+- production model, live Meta OAuth/webhook/Graph API/token storage/token UI/real DM sending/follow verification 변경은 없다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.test.ts` 90개 테스트 통과.
+
+## [2026-05-19] instagram-dm-gate-schema | Issue #37
+
+- 기존 Direct Message plugin의 `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA`를 DM Gate v1 canonical source로 확장했다. 별도 Campaign-only schema나 새 seed 파일은 만들지 않았다.
+- `InstagramDmActionConfiguration`에 `resourceUrl`, optional `followGate`, text quick reply(`title`/`payload`) 모델을 추가했고, response mapping은 `landingUrl` 또는 `resourceUrl`을 받을 수 있게 했다.
+- `followGate.enabled === true`일 때 `checkQuickReply`, `successMessage`, `notFollowingMessage`, `quickReplies`, fixture 전용 `simulatedFollowStatus`를 검증한다. `INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD`는 `FOLLOW_CHECK`이며 `resolveInstagramDmGateActionOutcome()`의 follow branch를 소유한다.
+- `instagram-comment-dm-flow` fixture에 canonical Instagram DM Gate action 예시를 추가했고, README에 hosted/self-host Meta app credential ownership, `PUBLIC_BASE_URL`, 환경별 HTTPS OAuth redirect/webhook callback URL 계약, first-slice 제외 범위를 문서화했다.
+- `npm run skills:check`는 기존처럼 DDD/marketing 외부 skill 8개 누락을 보고해 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다.
+- 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.test.ts app/features/creative-canvas/model/creative-canvas.test.ts` 203개 테스트 통과, `npm run typecheck` 통과, `git diff --check` 통과.
+
 ## [2026-05-18] cli-image-video-canvas-qa | CLI authoring to web canvas
 
 - `feature/video-generation-provider`를 `main`에 fast-forward merge하고 `origin/main`으로 push했다.

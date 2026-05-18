@@ -10,18 +10,22 @@ import {
   loadActivatedPluginsIntoAgentWorkflowRuntime,
 } from "../../creative-canvas/model/creative-canvas.ts";
 import {
+  INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
   LANDING_FLOW_DESTINATION_MAPPING_SCHEMA_VERSION,
   createInstagramDmTrackedLandingUrl,
   createInstagramDmDispatchAdapter,
   executeInstagramCommentDmLandingFlow,
   mapDmResponseEventToLandingDestinationMetadata,
+  resolveInstagramDmGateActionOutcome,
   selectInstagramDmResponseForCommentEvent,
+  validateInstagramDmActionConfiguration,
   validateLandingFlowDestinationMappingAction,
 } from "./plugin-representation.ts";
 import {
   COMMENT_TO_DM_ACCOUNT_ID,
   COMMENT_TO_DM_CAMPAIGN_ID,
   COMMENT_TO_DM_CAPABILITY_ID,
+  COMMENT_TO_DM_GATE_RESOURCE_URL,
   COMMENT_TO_DM_LANDING_URL,
   COMMENT_TO_DM_PLUGIN_ID,
   commentToDmFixturePluginMetadata,
@@ -32,6 +36,7 @@ import {
   commentToDmLandingSampleIoFixture,
   commentToDmPluginFixture,
   createDmExecutionRequestFromSelectionFixture,
+  instagramDmGateActionConfigurationFixture,
   matchingCommentEventFixture,
   nonMatchingCommentEventFixture,
 } from "./instagram-comment-dm-flow.fixtures.ts";
@@ -491,6 +496,118 @@ test("comment-to-DM rule fixture selects a mapped response and skips unmatched c
     {
       matched: false,
       reason: "no_matching_response_mapping",
+    },
+  );
+});
+
+test("DM Gate fixture uses the canonical Instagram DM action configuration", () => {
+  assert.deepEqual(
+    validateInstagramDmActionConfiguration(
+      instagramDmGateActionConfigurationFixture,
+    ),
+    {
+      ok: true,
+      errors: [],
+    },
+  );
+  assert.equal(
+    instagramDmGateActionConfigurationFixture.schemaVersion,
+    "owncanvas.instagram-dm-action-configuration.v1",
+  );
+  assert.equal(
+    instagramDmGateActionConfigurationFixture.capabilityId,
+    COMMENT_TO_DM_CAPABILITY_ID,
+  );
+  assert.equal(
+    instagramDmGateActionConfigurationFixture.responseMappings.length,
+    1,
+  );
+
+  assert.deepEqual(
+    selectInstagramDmResponseForCommentEvent(
+      instagramDmGateActionConfigurationFixture,
+      matchingCommentEventFixture,
+    ),
+    {
+      matched: true,
+      matcherId: "condition.drop-link",
+      mappingId: "mapping.drop-guide",
+      message: {
+        templateId: "template.drop-guide",
+        text: "Your private launch guide is ready: {{resourceUrl}}",
+      },
+      landingUrl: COMMENT_TO_DM_GATE_RESOURCE_URL,
+      resourceUrl: COMMENT_TO_DM_GATE_RESOURCE_URL,
+      attribution: {
+        source: "instagram",
+        medium: "dm",
+        campaign: COMMENT_TO_DM_CAMPAIGN_ID,
+        content: "ig.media.fixture",
+        term: "Please send the DROP link",
+      },
+    },
+  );
+
+  assert.deepEqual(
+    resolveInstagramDmGateActionOutcome(
+      instagramDmGateActionConfigurationFixture,
+      matchingCommentEventFixture,
+    ),
+    {
+      matched: true,
+      matcherId: "condition.drop-link",
+      mappingId: "mapping.drop-guide",
+      events: ["prompt_sent"],
+      message: {
+        templateId: "template.follow-prompt",
+        text: "Follow @owncanvas.fixture, then tap I follow to get the private launch guide.",
+      },
+      resourceUrl: COMMENT_TO_DM_GATE_RESOURCE_URL,
+      quickReplies: [
+        {
+          contentType: "text",
+          title: "I follow",
+          payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    resolveInstagramDmGateActionOutcome(
+      instagramDmGateActionConfigurationFixture,
+      matchingCommentEventFixture,
+      { quickReplyPayload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD },
+    ),
+    {
+      matched: true,
+      matcherId: "condition.drop-link",
+      mappingId: "mapping.drop-guide",
+      events: [
+        "follow_check_requested",
+        "resource_link_ready",
+        "resource_link_sent",
+      ],
+      followStatus: "following",
+      message: {
+        text: "You are following. Here is the guide: {{resourceUrl}}",
+      },
+      resourceUrl: COMMENT_TO_DM_GATE_RESOURCE_URL,
+      checkQuickReply: {
+        contentType: "text",
+        title: "I follow",
+        payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+      },
+    },
+  );
+  assert.deepEqual(
+    resolveInstagramDmGateActionOutcome(
+      instagramDmGateActionConfigurationFixture,
+      nonMatchingCommentEventFixture,
+    ),
+    {
+      matched: false,
+      reason: "no_matching_response_mapping",
+      events: ["no_match"],
     },
   );
 });

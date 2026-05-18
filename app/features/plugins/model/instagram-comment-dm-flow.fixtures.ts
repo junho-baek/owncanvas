@@ -7,6 +7,7 @@ import {
 import {
   INSTAGRAM_COMMENT_TRIGGER_CONFIGURATION_SCHEMA_VERSION,
   INSTAGRAM_COMMENT_TRIGGER_EVENT_SCHEMA_VERSION,
+  INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
   INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION,
   INSTAGRAM_DM_ACTION_EXECUTION_SCHEMA_VERSION,
   LANDING_CONVERSION_EVENT_SCHEMA,
@@ -34,6 +35,8 @@ export const COMMENT_TO_DM_LANDING_PLUGIN_ID = "plugin.landing-page.fixture";
 export const COMMENT_TO_DM_LANDING_CAPABILITY_ID = "cap.publish-landing-page";
 export const COMMENT_TO_DM_LANDING_URL =
   "https://shop.example.test/drop?utm_source=instagram&utm_medium=dm&utm_campaign=campaign.comment-to-dm.fixture";
+export const COMMENT_TO_DM_GATE_RESOURCE_URL =
+  "https://shop.example.test/private-launch-guide.pdf";
 
 const COMMENT_TO_DM_WORKFLOW_TIMESTAMP = "2026-05-11T00:03:00.000Z";
 
@@ -392,6 +395,65 @@ export const commentToDmActionConfigurationFixture = {
     medium: "dm",
     campaign: COMMENT_TO_DM_CAMPAIGN_ID,
     content: "ig.media.fixture",
+  },
+} satisfies InstagramDmActionConfiguration;
+
+export const instagramDmGateActionConfigurationFixture = {
+  schemaVersion: INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION,
+  campaignId: COMMENT_TO_DM_CAMPAIGN_ID,
+  capabilityId: COMMENT_TO_DM_CAPABILITY_ID,
+  triggerConfiguration: commentToDmActionConfigurationFixture.triggerConfiguration,
+  message: {
+    templateId: "template.follow-prompt",
+    text: "Follow @owncanvas.fixture, then tap I follow to get the private launch guide.",
+  },
+  resourceUrl: COMMENT_TO_DM_GATE_RESOURCE_URL,
+  responseMappings: [
+    {
+      id: "mapping.drop-guide",
+      triggerMatcherId: "condition.drop-link",
+      message: {
+        templateId: "template.drop-guide",
+        text: "Your private launch guide is ready: {{resourceUrl}}",
+      },
+      resourceUrl: COMMENT_TO_DM_GATE_RESOURCE_URL,
+      attributionTermTemplate: "{{commentText}}",
+      metadata: {
+        route: "dm-gate-private-guide",
+      },
+    },
+  ],
+  followGate: {
+    enabled: true,
+    checkQuickReply: {
+      contentType: "text",
+      title: "I follow",
+      payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+    },
+    successMessage: {
+      text: "You are following. Here is the guide: {{resourceUrl}}",
+    },
+    notFollowingMessage: {
+      text: "I could not confirm it yet. Follow and tap I follow again.",
+    },
+    quickReplies: [
+      {
+        contentType: "text",
+        title: "I follow",
+        payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+      },
+    ],
+    simulatedFollowStatus: true,
+  },
+  attribution: {
+    source: "instagram",
+    medium: "dm",
+    campaign: COMMENT_TO_DM_CAMPAIGN_ID,
+    content: "ig.media.fixture",
+  },
+  metadata: {
+    campaignAction: "instagram-dm-gate",
+    scope: "offline-fixture",
   },
 } satisfies InstagramDmActionConfiguration;
 

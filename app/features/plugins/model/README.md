@@ -250,7 +250,32 @@ and runtime rules.
 - `validateInstagramDmActionConfiguration()` verifies campaign-time DM action
   setup before an Instagram DM capability can execute. Response mappings must
   reference configured comment matcher IDs and provide non-empty DM text plus an
-  http(s) landing URL.
+  http(s) landing or resource URL.
+- The same `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA` is the canonical DM Gate
+  v1 configuration. Campaign code should adapt one Instagram DM Gate action from
+  this direct-message action model instead of introducing a campaign-only DM Gate
+  schema. A DM Gate v1 configuration uses `schemaVersion`, `campaignId`,
+  `capabilityId`, `triggerConfiguration`, a prompt in `message.text`, either
+  `landingUrl` or `resourceUrl`, and `responseMappings`. A response mapping can
+  point to either a tracked landing URL or a direct campaign resource URL.
+- `followGate` is optional. When `followGate.enabled` is true, the offline model
+  requires `checkQuickReply`, `successMessage`, `notFollowingMessage`,
+  `quickReplies`, and fixture-only `simulatedFollowStatus`. Quick replies are
+  text replies with `title` and `payload`; `followGate.checkQuickReply` owns the
+  `FOLLOW_CHECK` payload and therefore owns the follow-check branch in tests.
+  `simulatedFollowStatus` is only deterministic test input for this model slice;
+  it is not real Instagram follow-state verification.
+- This slice does not add Meta OAuth, webhook receiving, Graph API transport,
+  token storage, token UI, real DM sending, or real follow-state checks. Hosted
+  OwnCanvas can later use OwnCanvas-owned Meta apps for Business Portfolio
+  connections. Self-hosted installations should bring their own Meta app
+  credentials through environment variables or a deployment secret store.
+- Future Docker and cloud deployments must set `PUBLIC_BASE_URL` to the public
+  HTTPS origin for that environment. Meta OAuth redirect URLs and webhook
+  callback URLs must be registered per environment from that origin, for example
+  staging and production use separate HTTPS callback URLs. Local development
+  that needs Meta callbacks should use an HTTPS tunnel rather than treating
+  localhost as the deployed callback origin.
 - `INSTAGRAM_COMMENT_TRIGGER_CONFIGURATION_SCHEMA` defines the canonical
   `owncanvas.instagram-comment-trigger-configuration.v1` configuration shape
   for Instagram comment triggers, including monitored account, optional media

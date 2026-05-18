@@ -1,0 +1,175 @@
+goal: Define the first-slice Instagram DM Gate contract for OwnCanvas as a reusable
+  Direct Message plugin capability surfaced as one Campaign canvas action, with offline
+  model/tests/docs only.
+task_type: code
+brownfield_context:
+  project_type: brownfield
+  context_references: []
+  existing_patterns: []
+  existing_dependencies: []
+constraints:
+- Brownfield OwnCanvas project
+- Direct Message plugin schema / Instagram DM action configuration is canonical source
+  of truth
+- Campaign canvas must adapt/render one product-facing Instagram DM Gate action from
+  the plugin model
+- Avoid node explosion and n8n-like workflow complexity
+- Use existing dm/direct-message plugin model
+- Do not duplicate a campaign-only schema
+- Open-source self-host uses BYO Meta app credentials via env/secrets
+- Hosted SaaS uses OwnCanvas Business Portfolio Meta apps
+- Docker/cloud support must use PUBLIC_BASE_URL and env-specific OAuth redirect/webhook
+  callback HTTPS URLs
+- Follow root DESIGN.md
+- Avoid AI slop, console/debug/provider jargon, box-in-box UI, duplicate CTAs
+- First slice stops at model/tests/docs
+- No live Meta OAuth
+- No webhook receiver
+- No Graph API transport
+- No encrypted token storage
+- No real DM sending
+- Do not claim real Instagram follow-state verification
+- Follow verification deferred to future Meta integration
+acceptance_criteria:
+- Existing comment keyword matching can select a DM Gate response/resource variant
+- 'DM Gate v1 config defines required fields: schemaVersion, campaignId, capabilityId,
+  triggerConfiguration, message/prompt template, landingUrl or resourceUrl, responseMappings'
+- followGate can be represented as optional configuration
+- When followGate.enabled is true, checkQuickReply, successMessage, notFollowingMessage,
+  quickReplies, and simulatedFollowStatus test input are required
+- quickReplies can represent text quick replies with title and payload
+- responseMappings map comment keywords to a single DM Gate response/resource variant
+- followGate.checkQuickReply owns the FOLLOW_CHECK payload and follow branch behavior
+- Dispatch output can include Quick Reply prompt
+- Modeled outcomes include following success/resource-link dispatch and not-following
+  retry prompt
+- Dispatch/outcome event names are derived around prompt_sent, follow_check_requested,
+  resource_link_ready, resource_link_sent, not_following_retry_prompted, and no_match
+- Tests use deterministic fixture/mock simulatedFollowStatus only
+- Docs explain hosted vs self-host Meta app credential ownership
+- Docs explain Docker/cloud PUBLIC_BASE_URL and env-specific OAuth redirect/webhook
+  callback HTTPS URL contracts
+- All behavior is verified offline with fixtures/tests only
+ontology_schema:
+  name: InstagramDMGateActionContract
+  description: Canonical Direct Message plugin configuration and offline dispatch
+    model for an Instagram comment-keyword DM Gate that can prompt a user, model a
+    soft follow gate, and prepare resource-link or retry outcomes without live Meta
+    integration.
+  fields:
+  - name: schemaVersion
+    type: string
+    description: Version of the DM Gate action configuration schema
+    required: true
+  - name: campaignId
+    type: string
+    description: Campaign identifier that owns the surfaced canvas action
+    required: true
+  - name: capabilityId
+    type: string
+    description: Reusable Direct Message plugin capability identifier
+    required: true
+  - name: triggerConfiguration
+    type: object
+    description: Comment keyword trigger settings used to select the DM Gate response
+    required: true
+  - name: messageTemplate
+    type: string
+    description: Initial DM prompt or message template sent after keyword match
+    required: true
+  - name: landingUrl
+    type: string
+    description: Optional landing page URL for the gated resource
+    required: true
+  - name: resourceUrl
+    type: string
+    description: Optional direct resource URL for the gated resource
+    required: true
+  - name: responseMappings
+    type: array
+    description: Mappings from comment keywords to one DM Gate response/resource variant
+    required: true
+  - name: followGate
+    type: object
+    description: Optional soft follow-gate configuration with enabled flag, promptMessage,
+      successMessage, notFollowingMessage, and checkQuickReply
+    required: true
+  - name: quickReplies
+    type: array
+    description: Optional text quick replies, required when followGate.enabled is
+      true
+    required: true
+  - name: checkQuickReply
+    type: object
+    description: Follow-check quick reply with title and payload, owning the FOLLOW_CHECK
+      branch
+    required: true
+  - name: simulatedFollowStatus
+    type: boolean
+    description: Deterministic fixture/mock test signal for following versus not-following
+      behavior
+    required: true
+  - name: attribution
+    type: object
+    description: Campaign, channel, and source attribution metadata
+    required: true
+  - name: metadata
+    type: object
+    description: Extensible non-runtime metadata for docs, fixtures, and future integration
+    required: true
+  - name: dispatchEvents
+    type: array
+    description: Modeled offline dispatch/outcome events such as prompt_sent and not_following_retry_prompted
+    required: true
+evaluation_principles:
+- name: CanonicalModelIntegrity
+  description: Direct Message plugin schema remains the single source of truth and
+    campaign canvas only adapts from it
+  weight: 0.25
+- name: ScopeControl
+  description: First slice excludes live OAuth, webhook, Graph API, encrypted storage,
+    and real DM sending
+  weight: 0.2
+- name: OfflineVerifiability
+  description: Behavior is proven through fixtures and tests using simulatedFollowStatus
+    with no real API calls
+  weight: 0.2
+- name: ProductSimplicity
+  description: One Instagram DM Gate action avoids micro-node or n8n-like complexity
+  weight: 0.15
+- name: CredentialAndUrlClarity
+  description: Docs clearly distinguish hosted versus self-host Meta credential ownership
+    and PUBLIC_BASE_URL callback URL contracts
+  weight: 0.1
+- name: DesignConsistency
+  description: UI-facing language and behavior follow OwnCanvas DESIGN.md and product
+    vocabulary
+  weight: 0.1
+exit_conditions:
+- name: ContractPinned
+  description: DM Gate v1 required and optional fields are documented and tested
+  criteria: All listed configuration fields and followGate requirements are represented
+    in fixtures/tests/docs
+- name: OfflineBehaviorVerified
+  description: Keyword selection and follow-gate outcomes are proven without live
+    Meta transport
+  criteria: Tests cover match, no_match, following, and not-following paths using
+    simulatedFollowStatus
+- name: BrownfieldAlignmentConfirmed
+  description: Campaign canvas uses the canonical Direct Message plugin model
+  criteria: No separate campaign-only DM Gate schema is introduced
+- name: DocumentationComplete
+  description: Credential ownership and URL contracts are documented
+  criteria: Docs cover hosted OwnCanvas Business Portfolio apps, self-host BYO Meta
+    env/secrets, PUBLIC_BASE_URL, OAuth redirect URLs, and webhook callback URLs
+- name: ScopeBoundaryEnforced
+  description: No live integration work is implemented
+  criteria: No Meta OAuth, webhook receiver, Graph transport, encrypted token storage,
+    or real DM sending exists in the slice
+metadata:
+  seed_id: seed_5cfa11218f46
+  version: 1.0.0
+  created_at: '2026-05-18T20:25:14.099508Z'
+  ambiguity_score: 0.077
+  interview_id: interview_20260518_201744
+  parent_seed_id: null

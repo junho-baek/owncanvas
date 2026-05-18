@@ -12,6 +12,7 @@ import {
   INSTAGRAM_COMMENT_TRIGGER_EVENT_SCHEMA,
   INSTAGRAM_COMMENT_TRIGGER_EVENT_SCHEMA_VERSION,
   INSTAGRAM_COMMENT_TRIGGER_SUPPORTED_OPERATORS,
+  INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
   INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA,
   INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION,
   INSTAGRAM_DM_ACTION_EXECUTION_SCHEMA,
@@ -49,6 +50,7 @@ import {
   listSelectableWorkflowCapabilitiesForAgent,
   parseLandingDmReferralContext,
   createLandingConversionEventFromFlow,
+  resolveInstagramDmGateActionOutcome,
   selectInstagramDmResponseForCommentEvent,
   listPluginKindDefinitions,
   isPluginLifecycleTransitionAllowed,
@@ -3729,7 +3731,7 @@ test("Instagram DM action configuration maps comment triggers to response templa
     "responseMappings.triggerMatcherId",
     "responseMappings.message.templateId",
     "responseMappings.message.text",
-    "responseMappings.landingUrl",
+    "responseMappings.landingUrl|resourceUrl",
   ]);
 
   const result = validateInstagramDmActionConfiguration({
@@ -3794,6 +3796,249 @@ test("Instagram DM action configuration maps comment triggers to response templa
     ok: true,
     errors: [],
   });
+});
+
+function createInstagramDmGateConfigurationFixture(
+  followGate?: Record<string, unknown>,
+) {
+  return {
+    schemaVersion: INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION,
+    campaignId: "campaign.launch-1",
+    capabilityId: "cap.comment-to-dm",
+    triggerConfiguration: {
+      schemaVersion: INSTAGRAM_COMMENT_TRIGGER_CONFIGURATION_SCHEMA_VERSION,
+      accountId: "ig.account.1",
+      conditionMatchers: [
+        {
+          id: "condition.drop-link",
+          field: "text",
+          operator: "any_keyword",
+          keywords: ["drop", "link"],
+        },
+      ],
+    },
+    message: {
+      templateId: "template.follow-prompt",
+      text: "Tap below after you follow and I will send the launch guide.",
+    },
+    resourceUrl: "https://shop.example.test/private-launch-guide.pdf",
+    responseMappings: [
+      {
+        id: "mapping.drop-guide",
+        triggerMatcherId: "condition.drop-link",
+        message: {
+          templateId: "template.drop-guide",
+          text: "Your guide is ready: {{resourceUrl}}",
+        },
+        resourceUrl: "https://shop.example.test/private-launch-guide.pdf",
+        attributionTermTemplate: "{{commentText}}",
+      },
+    ],
+    attribution: {
+      source: "instagram",
+      medium: "dm",
+      campaign: "campaign.launch-1",
+    },
+    ...(followGate === undefined ? {} : { followGate }),
+  };
+}
+
+const instagramDmGateCommentEventFixture = {
+  schemaVersion: INSTAGRAM_COMMENT_TRIGGER_EVENT_SCHEMA_VERSION,
+  id: "evt.instagram-comment.dm-gate",
+  campaignId: "campaign.launch-1",
+  occurredAt: "2026-05-11T00:00:00.000Z",
+  channel: "instagram",
+  trigger: "comment",
+  accountId: "ig.account.1",
+  mediaId: "ig.media.1",
+  commentId: "ig.comment.1",
+  commenter: {
+    id: "ig.user.1",
+    username: "creativebuyer",
+  },
+  text: "Please send the DROP guide",
+} as const;
+
+test("Instagram DM action configuration defines canonical DM Gate v1 fields without a campaign-only schema", () => {
+  assert.equal(
+    INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA.configurationSchemaVersion,
+    INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION,
+  );
+  assert.equal(
+    INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA.actionType,
+    "instagram.dm.configure-send",
+  );
+  assert.deepEqual(INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA.requiredFields, [
+    "schemaVersion",
+    "campaignId",
+    "capabilityId",
+    "triggerConfiguration",
+    "message.text",
+    "landingUrl|resourceUrl",
+    "responseMappings",
+  ]);
+  assert.deepEqual(INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA.mappingFields, [
+    "responseMappings.triggerMatcherId",
+    "responseMappings.message.templateId",
+    "responseMappings.message.text",
+    "responseMappings.landingUrl|resourceUrl",
+  ]);
+  assert.ok(
+    INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA.properties.some(
+      (property) => property.key === "followGate",
+    ),
+  );
+
+  assert.deepEqual(
+    validateInstagramDmActionConfiguration(
+      createInstagramDmGateConfigurationFixture(),
+    ),
+    {
+      ok: true,
+      errors: [],
+    },
+  );
+});
+
+test("validateInstagramDmActionConfiguration requires followGate fields when enabled", () => {
+  const result = validateInstagramDmActionConfiguration(
+    createInstagramDmGateConfigurationFixture({
+      enabled: true,
+    }),
+  );
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(
+    result.errors.map((error) => error.code),
+    [
+      "instagram-dm-config.follow_gate_check_quick_reply_required",
+      "instagram-dm-config.follow_gate_success_message_required",
+      "instagram-dm-config.follow_gate_not_following_message_required",
+      "instagram-dm-config.follow_gate_quick_replies_required",
+      "instagram-dm-config.follow_gate_simulated_follow_status_required",
+    ],
+  );
+});
+
+test("DM Gate followGate quick reply owns the FOLLOW_CHECK branch behavior", () => {
+  const followingConfiguration = createInstagramDmGateConfigurationFixture({
+    enabled: true,
+    checkQuickReply: {
+      contentType: "text",
+      title: "I follow",
+      payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+    },
+    successMessage: {
+      text: "You are following. Here is the guide: {{resourceUrl}}",
+    },
+    notFollowingMessage: {
+      text: "I could not confirm it yet. Follow and tap the button again.",
+    },
+    quickReplies: [
+      {
+        contentType: "text",
+        title: "I follow",
+        payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+      },
+    ],
+    simulatedFollowStatus: true,
+  });
+
+  assert.deepEqual(validateInstagramDmActionConfiguration(followingConfiguration), {
+    ok: true,
+    errors: [],
+  });
+
+  assert.deepEqual(
+    resolveInstagramDmGateActionOutcome(
+      followingConfiguration,
+      instagramDmGateCommentEventFixture,
+    ),
+    {
+      matched: true,
+      matcherId: "condition.drop-link",
+      mappingId: "mapping.drop-guide",
+      events: ["prompt_sent"],
+      message: {
+        templateId: "template.follow-prompt",
+        text: "Tap below after you follow and I will send the launch guide.",
+      },
+      resourceUrl: "https://shop.example.test/private-launch-guide.pdf",
+      quickReplies: [
+        {
+          contentType: "text",
+          title: "I follow",
+          payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    resolveInstagramDmGateActionOutcome(
+      followingConfiguration,
+      instagramDmGateCommentEventFixture,
+      { quickReplyPayload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD },
+    ),
+    {
+      matched: true,
+      matcherId: "condition.drop-link",
+      mappingId: "mapping.drop-guide",
+      events: [
+        "follow_check_requested",
+        "resource_link_ready",
+        "resource_link_sent",
+      ],
+      followStatus: "following",
+      message: {
+        text: "You are following. Here is the guide: {{resourceUrl}}",
+      },
+      resourceUrl: "https://shop.example.test/private-launch-guide.pdf",
+      checkQuickReply: {
+        contentType: "text",
+        title: "I follow",
+        payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+      },
+    },
+  );
+
+  const notFollowingConfiguration = {
+    ...followingConfiguration,
+    followGate: {
+      ...followingConfiguration.followGate,
+      simulatedFollowStatus: false,
+    },
+  };
+
+  assert.deepEqual(
+    resolveInstagramDmGateActionOutcome(
+      notFollowingConfiguration,
+      instagramDmGateCommentEventFixture,
+      { quickReplyPayload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD },
+    ),
+    {
+      matched: true,
+      matcherId: "condition.drop-link",
+      mappingId: "mapping.drop-guide",
+      events: ["follow_check_requested", "not_following_retry_prompted"],
+      followStatus: "not_following",
+      message: {
+        text: "I could not confirm it yet. Follow and tap the button again.",
+      },
+      quickReplies: [
+        {
+          contentType: "text",
+          title: "I follow",
+          payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+        },
+      ],
+      checkQuickReply: {
+        contentType: "text",
+        title: "I follow",
+        payload: INSTAGRAM_DM_GATE_FOLLOW_CHECK_PAYLOAD,
+      },
+    },
+  );
 });
 
 test("selectInstagramDmResponseForCommentEvent selects a mapped DM response from comment text", () => {
@@ -4094,6 +4339,47 @@ test("validateInstagramDmActionConfiguration rejects unsafe response mappings", 
       "instagram-dm-config.response_mapping_landing_url_invalid",
       "instagram-dm-config.response_mapping_trigger_matcher_not_found",
     ],
+  );
+});
+
+test("validateInstagramDmActionConfiguration rejects invalid resource URLs even with valid landing URLs", () => {
+  const result = validateInstagramDmActionConfiguration({
+    schemaVersion: INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA_VERSION,
+    campaignId: "campaign.launch-1",
+    capabilityId: "cap.comment-to-dm",
+    triggerConfiguration: {
+      schemaVersion: INSTAGRAM_COMMENT_TRIGGER_CONFIGURATION_SCHEMA_VERSION,
+      accountId: "ig.account.1",
+      conditionMatchers: [
+        {
+          id: "condition.drop-link",
+          field: "text",
+          operator: "any_keyword",
+          keywords: ["drop"],
+        },
+      ],
+    },
+    message: {
+      text: "Follow, then tap I follow.",
+    },
+    resourceUrl: "https://shop.example.test/private-guide.pdf",
+    responseMappings: [
+      {
+        id: "mapping.drop-guide",
+        triggerMatcherId: "condition.drop-link",
+        message: {
+          text: "Here is the guide: {{resourceUrl}}",
+        },
+        landingUrl: "https://shop.example.test/drop",
+        resourceUrl: "javascript:alert(1)",
+      },
+    ],
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(
+    result.errors.map((error) => error.code),
+    ["instagram-dm-config.response_mapping_resource_url_invalid"],
   );
 });
 
