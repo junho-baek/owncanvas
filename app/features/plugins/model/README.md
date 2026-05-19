@@ -274,8 +274,9 @@ and runtime rules.
   HTTPS origin for that environment. Meta OAuth redirect URLs and webhook
   callback URLs must be registered per environment from that origin, for example
   staging and production use separate HTTPS callback URLs. Local development
-  that needs Meta callbacks should use an HTTPS tunnel rather than treating
-  localhost as the deployed callback origin.
+  that needs Meta callbacks should use an HTTPS tunnel such as ngrok, Cloudflare
+  Tunnel, Tailscale Funnel, or localtunnel rather than treating localhost as the
+  deployed callback origin.
 - `INSTAGRAM_COMMENT_TRIGGER_CONFIGURATION_SCHEMA` defines the canonical
   `owncanvas.instagram-comment-trigger-configuration.v1` configuration shape
   for Instagram comment triggers, including monitored account, optional media

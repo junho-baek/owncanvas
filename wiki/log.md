@@ -2,6 +2,17 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-19] issue-40-meta-credentials-docker-url-docs-audit | Issue #40
+
+- #40 전용 Superpowers 계획 문서 `docs/superpowers/plans/2026-05-19-issue-40-instagram-dm-gate-meta-credentials-docs.md`를 먼저 만든 뒤, 그 계획 범위만 실행했다.
+- Hermes는 `gh issue view 40 -R junho-baek/owncanvas --json number,title,state,body,comments`로 #40 본문/댓글과 OPEN 상태를 확인했다. Codex 실행 중 별도 sandbox에서는 `api.github.com` 연결 실패가 있었지만, Hermes의 GitHub CLI 조회 결과를 기준으로 감사했다.
+- MCP seed `docs/seeds/instagram-dm-gate.mcp.seed.yaml`, commit `170a959`, 이후 감사 commits `b7020d8`/`af37c58`/`15d6676`, 현재 `app/features/plugins/model/README.md`를 대조했다. 이후 감사 commits는 plan/wiki log만 추가했고 plugin README 변경은 없었다.
+- commit `170a959`의 README는 Hosted OwnCanvas가 OwnCanvas-owned Meta apps for Business Portfolio connections를 사용할 수 있고, self-host 설치는 Meta app credentials를 environment variables 또는 deployment secret store로 가져와야 하며, Docker/cloud는 `PUBLIC_BASE_URL` public HTTPS origin과 환경별 Meta OAuth redirect URL/webhook callback URL 등록이 필요하다고 문서화했다.
+- #40 확장 범위에서 local dev tunnel 예시가 빠진 gap을 확인해 README의 기존 local development 문장에 ngrok, Cloudflare Tunnel, Tailscale Funnel, localtunnel 예시만 추가했다.
+- first-slice exclusions는 live Meta OAuth, webhook receiving, Graph API transport, token storage/token UI, real DM sending, real follow-state checks 없음으로 유지된다.
+- 새 node type, n8n-like workflow, product-facing UI 변경은 없었고 screenshot evidence는 필요하지 않았다.
+- #40 AC 평가는 targeted README fix 이후 PASS다. 검증: `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.test.ts` 통과(91 tests, 0 failures), `git diff --check` 통과.
+
 ## [2026-05-19] issue-39-offline-follow-gate-dispatch-outcomes-audit | Issue #39
 
 - Superpowers plan `docs/superpowers/plans/2026-05-19-issue-39-instagram-dm-gate-follow-gate-outcomes.md`에 따라 #39 범위만 감사했다.
