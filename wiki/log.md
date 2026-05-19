@@ -2,6 +2,20 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-19] issue-41-instagram-dm-gate-final-scope-design-qa | Issue #41
+
+- #41 전용 Superpowers 최종 QA 계획 문서 `docs/superpowers/plans/2026-05-19-issue-41-instagram-dm-gate-final-scope-design-qa.md`를 먼저 만든 뒤 그 계획만 실행했다.
+- `gh issue view 41 -R junho-baek/owncanvas --comments`와 `gh issue view 41 -R junho-baek/owncanvas --json number,title,state,body,comments`는 sandbox의 `api.github.com` 연결 실패로 읽지 못했다. 감사 기준은 사용자 제공 #41 gate, MCP seed, local wiki/source, corrected commits다.
+- #37-#40 corrected evidence를 read-only로 확인했다. `b7020d8`, `af37c58`, `15d6676`, `b0fc6ea`는 각각 issue-specific Superpowers plan/wiki evidence를 포함하며, #40만 좁은 plugin README 문서 보완을 포함한다.
+- 현재 branch diff는 plugin model/tests/docs, MCP seed, Superpowers plans, wiki로 제한된다. Creative Canvas UI/routes, `DESIGN.md`, product-marketing/context 파일은 이 corrected pass에서 변경되지 않았다.
+- first-slice contract는 여전히 Direct Message plugin `INSTAGRAM_DM_ACTION_CONFIGURATION_SCHEMA`와 offline fixtures/tests가 canonical source이며, 실제 Instagram auto-DM 완성을 claim하지 않는다.
+- live Meta OAuth, webhook receiver/receiving, Graph API transport, encrypted token storage, token UI, real DM sending, real follow verification, 새 node type, n8n-like workflow complexity는 추가되지 않았다.
+- product-facing Campaign canvas surface는 아직 구현되지 않았다. 이 slice는 model/tests/docs contract로 보는 것이 맞고, 필요하면 별도 follow-up issue `Surface Instagram DM Gate as one campaign canvas action`가 필요하다.
+- UI/product-facing source 변경이 없어 screenshot은 필요하지 않았다. DESIGN.md anti-slop 기준은 product-facing UI에는 적용 대상 변경이 없고, docs/model wording은 first-slice boundary와 fixture-only wording을 명시한다.
+- 검증: targeted model/canvas suite `node --experimental-strip-types --test app/features/plugins/model/instagram-comment-dm-flow.test.ts app/features/plugins/model/plugin-representation.test.ts app/features/creative-canvas/model/creative-canvas.test.ts` 통과(204 tests, 0 failures), `npm run typecheck` 통과, `git diff --check` 통과.
+- Hermes가 `npx -y @google/design.md lint DESIGN.md` exact command를 재실행했고 errors 0 / warnings 12 / infos 1을 확인했다.
+- QA 판정은 source/scope/DESIGN.md lint 기준 PASS이며 #41 close-ready로 판단한다.
+
 ## [2026-05-19] issue-40-meta-credentials-docker-url-docs-audit | Issue #40
 
 - #40 전용 Superpowers 계획 문서 `docs/superpowers/plans/2026-05-19-issue-40-instagram-dm-gate-meta-credentials-docs.md`를 먼저 만든 뒤, 그 계획 범위만 실행했다.
