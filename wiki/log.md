@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-19] instagram-dm-gate-live-meta-integration-plan | Meta Integration Plan
+
+- Superpowers planning workflow로 다음 live Meta integration 경로를 `docs/superpowers/plans/2026-05-19-instagram-dm-gate-live-meta-integration-plan.md`에 작성했다.
+- 계획은 이전 #36/#37-#41 first slice가 model/tests/docs only였고 live Meta OAuth, webhook receiver, Graph API transport, token storage, real DM/private reply sending, Quick Reply webhook handling, real follow verification을 구현하지 않았다는 boundary를 유지한다.
+- 순차 issue slice는 Meta App setup/runbook, OAuth/account connection contract와 env/secrets model, OAuth start/callback handshake, webhook verify/signature handling, comment normalization과 dry-run executor, Private Reply/DM transport boundary, Quick Reply와 follow-check boundary, queue/idempotency/rate-limit/logging guardrails, Campaign canvas one-action surface와 DESIGN.md anti-slop QA로 나눴다.
+- recommended first implementation issue는 live sending이 아니라 docs/runbook + env contract로 잡았다. App ID는 공유 가능하지만 App Secret/access tokens/webhook verify token은 chat이 아니라 local env/secret store에 둬야 한다는 원칙을 계획에 명시했다.
+- DDD/marketing 외부 skills는 `npm run skills:check`에서 누락으로 확인되어 `CONTEXT.md`, `.agents/product-marketing-context.md`, `DESIGN.md`, `wiki/` fallback을 사용했다.
+
 ## [2026-05-19] issue-41-instagram-dm-gate-final-scope-design-qa | Issue #41
 
 - #41 전용 Superpowers 최종 QA 계획 문서 `docs/superpowers/plans/2026-05-19-issue-41-instagram-dm-gate-final-scope-design-qa.md`를 먼저 만든 뒤 그 계획만 실행했다.
