@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-19] issue-39-offline-follow-gate-dispatch-outcomes-audit | Issue #39
+
+- Superpowers plan `docs/superpowers/plans/2026-05-19-issue-39-instagram-dm-gate-follow-gate-outcomes.md`에 따라 #39 범위만 감사했다.
+- GitHub CLI issue 조회는 sandbox 네트워크 제한으로 실패했으며, 사용자 제공 #39 AC와 local seed/code/wiki context를 기준으로 감사했다.
+- `resolveInstagramDmGateActionOutcome()`와 fixture/test coverage가 `prompt_sent`, `follow_check_requested`, `resource_link_ready`, `resource_link_sent`, `not_following_retry_prompted`, `no_match` offline outcome을 `simulatedFollowStatus`로 검증함을 확인했다.
+- live Meta OAuth/webhook/Graph API/token storage/token UI/real DM sending/real follow verification, 새 node type, n8n-like workflow, Campaign-only schema 변경은 없다.
+- 검증: required plugin model test command 통과, `git diff --check` 통과.
+
 ## [2026-05-19] instagram-dm-gate-issue-37-schema-audit | Issue #37
 
 - Superpowers process-correction plan을 [Issue #37 Instagram DM Gate Schema Audit Implementation Plan](../docs/superpowers/plans/2026-05-19-issue-37-instagram-dm-gate-schema-audit.md)에 먼저 작성한 뒤 #37 범위만 감사했다.
