@@ -2,6 +2,14 @@
 
 위키 ingest, query, lint, 유지보수, 구현 결과를 시간순으로 남기는 append-only 기록이다.
 
+## [2026-05-19] issue-42-instagram-dm-gate-meta-runbook-env-contract | Issue #42
+
+- #42 전용 Superpowers 계획 문서 `docs/superpowers/plans/2026-05-19-issue-42-instagram-dm-gate-meta-runbook-env-contract.md`를 먼저 만든 뒤 그 계획만 실행했다.
+- `docs/meta/instagram-dm-gate-operator-runbook.md`를 추가해 Hosted OwnCanvas와 self-host Meta app ownership, self-host/local HTTPS tunnel path, Meta dashboard setup, OAuth redirect URL, webhook callback URL, staging/production separation을 문서화했다.
+- `.env.example`을 새로 만들어 `PUBLIC_BASE_URL`, `OWNCANVAS_META_APP_ID`, `OWNCANVAS_META_GRAPH_API_VERSION`, optional Page/Instagram account IDs, App Secret, webhook verify token, optional manual test access token names를 값 없이 기록했다.
+- App ID는 공유 가능하지만 App Secret, access token, webhook verify token, long-lived token, authorization code, callback query value는 env/secret store에만 두고 chat/docs/issues/fixtures/browser storage/Campaign JSON에는 두지 않는다고 명시했다.
+- 이 docs/env-contract slice는 live Meta OAuth, webhook receiver, Graph API transport, token exchange/storage, Private Reply/DM sending, Quick Reply webhook handling, real follow verification, Campaign canvas UI를 추가하지 않았고 Instagram automation이 아직 runnable하지 않다.
+
 ## [2026-05-19] instagram-dm-gate-live-meta-integration-plan | Meta Integration Plan
 
 - Superpowers planning workflow로 다음 live Meta integration 경로를 `docs/superpowers/plans/2026-05-19-instagram-dm-gate-live-meta-integration-plan.md`에 작성했다.
